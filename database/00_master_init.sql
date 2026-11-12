@@ -40,6 +40,8 @@
 
 -- Order ownership, fulfillment facility scope, transfer projection and loyalty ledger.
 \i /docker-entrypoint-initdb.d/schemas/11_logistics_transport.sql
+-- Named employee role groups (warehouse roles) used by the policies and functions below.
+\i /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
 \i /docker-entrypoint-initdb.d/security/order/order_rls.sql
 
 -- Voucher management, exact-code previews and order-bound consumption.

@@ -30,7 +30,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
  WHERE t.id = target_transfer AND e.status = 'ACTIVE'
  AND current_setting('app.order_operation', true) IN ('transfer_read', 'dispatch')
  AND current_setting('app.current_user_type', true) = 'employee'
- AND current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF')
+ AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
  AND public.order_staff(t.from_facility_id)
  ORDER BY e.full_name, e.id
 $$;
@@ -47,7 +47,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
  AND (event.shipment_id IS NOT NULL OR (event.transfer_id IS NOT NULL AND event.new_status NOT IN ('REQUESTED','CANCELLED')))
  AND current_setting('app.order_operation',true) IN ('read','transfer_read')
  AND current_setting('app.current_user_type',true)='employee'
- AND current_setting('app.current_user_role',true) IN ('SUPER_ADMIN','STORE_MANAGER','PHARMACIST','WAREHOUSE_STAFF')
+ AND (current_setting('app.current_user_role',true) IN ('SUPER_ADMIN','STORE_MANAGER','PHARMACIST') OR public.app_role_in_group('WH_ALL'))
  AND NULLIF(current_setting('app.current_user_id',true),'') IS NOT NULL
  AND (EXISTS (SELECT FROM public.shipments shipment JOIN public.orders ord ON ord.id=shipment.order_id
        WHERE shipment.id=event.shipment_id AND public.order_staff(ord.export_facility_id))

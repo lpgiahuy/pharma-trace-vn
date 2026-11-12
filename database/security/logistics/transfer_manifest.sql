@@ -24,7 +24,7 @@ DECLARE transfer public.internal_transfers%ROWTYPE; expected jsonb; line jsonb; 
 BEGIN
   IF current_setting('app.order_operation', true) IS DISTINCT FROM 'dispatch'
     OR current_setting('app.current_user_type', true) IS DISTINCT FROM 'employee'
-    OR coalesce(current_setting('app.current_user_role', true), '') NOT IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF') THEN
+    OR NOT (coalesce(current_setting('app.current_user_role', true), '') IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL')) THEN
     RAISE EXCEPTION 'Manifest preparation is not authorized' USING ERRCODE = '42501';
   END IF;
   actor := nullif(current_setting('app.current_user_id', true), '')::integer;
