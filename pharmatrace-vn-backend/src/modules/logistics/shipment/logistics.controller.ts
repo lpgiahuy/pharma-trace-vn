@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { WH_ALL } from '../../../common/warehouse-roles';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { LogisticsService } from './logistics.service';
 import { ShipmentQueryDto } from './dto/shipment-query.dto';
@@ -21,19 +22,19 @@ export class LogisticsController {
   constructor(private readonly logistics: LogisticsService) {}
 
   @Get('shipments')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', 'WAREHOUSE_STAFF', 'WarehouseStaff')
+  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', ...WH_ALL)
   async shipments(@Query() query: ShipmentQueryDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, ...await this.logistics.shipments(query, user) };
   }
 
   @Get('shipments/:id')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', 'WAREHOUSE_STAFF', 'WarehouseStaff')
+  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', ...WH_ALL)
   async shipment(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.logistics.shipment(id, user) };
   }
 
   @Patch('shipments/:id/status')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', 'WAREHOUSE_STAFF', 'WarehouseStaff')
+  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', ...WH_ALL)
   async updateShipment(@Param('id', ParseIntPipe) id: number, @Body() dto: ShipmentStatusDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.logistics.changeStatus(id, dto, user) };
   }
@@ -69,7 +70,7 @@ export class LogisticsController {
   }
 
   @Post('shipments/:id/receive-return')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'WAREHOUSE_STAFF', 'WarehouseStaff')
+  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', ...WH_ALL)
   async receiveReturn(@Param('id', ParseIntPipe) id: number, @Body() dto: ReceiveReturnDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.logistics.receiveReturn(id, dto, user) };
   }
