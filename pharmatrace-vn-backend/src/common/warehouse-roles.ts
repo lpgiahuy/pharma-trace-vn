@@ -11,6 +11,8 @@ import { normalizeRole } from './auth-identity';
 export const WH_STAFF = ['WAREHOUSE_STAFF'] as const;
 export const WH_MANAGER = ['WAREHOUSE_MANAGER', 'SUPER_ADMIN'] as const;
 export const WH_ALL = [...WH_STAFF, ...WH_MANAGER] as const;
+/** Read-only inventory and batch views; factory staff read their own factory. */
+export const WH_READ = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
 export type WarehouseRole = (typeof WH_ALL)[number];
 
@@ -30,8 +32,10 @@ interface ScopeUser {
  * - Warehouse staff and managers always get the warehouse from their token; passing another facilityId is refused.
  * - SUPER_ADMIN may pick any warehouse with ?facilityId=, or gets null (all warehouses) without it.
  */
-export function warehouseScope(user: ScopeUser | undefined, query: { facilityId?: number } = {}): number | null {
-  if (!user || user.type !== 'employee' || !isWarehouseRole(user.role)) throw warehouseError('WAREHOUSE_ACCOUNT_REQUIRED');
+export function warehouseScope(
+  user: ScopeUser | undefined, query: { facilityId?: number } = {}, group: readonly string[] = WH_ALL,
+): number | null {
+  if (!user || user.type !== 'employee' || !isWarehouseRole(user.role, group)) throw warehouseError('WAREHOUSE_ACCOUNT_REQUIRED');
   const requested = query.facilityId;
   if (normalizeRole(user.role) === 'SUPER_ADMIN') return requested ?? null;
   const own = Number(user.facilityId);

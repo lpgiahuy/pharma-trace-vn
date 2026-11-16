@@ -20,6 +20,11 @@ export const ORDER_DETAILS_INCLUDE = {
 
 export { AVAILABLE_BOX_STATUSES, isBoxUnit } from "../../../common/inventory/box.helper";
 
+/** Units that can still be sold or reserved: stock minus reservations, never negative. */
+export function availableStock(inv: { stock_quantity: number; reserved_quantity: number | null }): number {
+  return Math.max(0, inv.stock_quantity - (inv.reserved_quantity ?? 0));
+}
+
 export function normalizeOrderStatus(status?: string | null): string {
   if (!status) return "PENDING";
   const s = status.trim().toUpperCase();
