@@ -9,6 +9,7 @@ import { App } from 'antd';
 import { AuthLayoutWrapper } from '@/components/layout/AuthLayoutWrapper';
 import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/store/useAuthStore';
+import { WAREHOUSE_PORTAL_ROLES } from '@/components/layout/WarehouseLayout';
 
 export default function WarehouseLoginPage() {
   const { message } = App.useApp();
@@ -53,14 +54,7 @@ export default function WarehouseLoginPage() {
       const result = await login(credentials);
       const userRole = result.user?.role;
 
-      const allowedWarehouseRoles = [
-        'SUPER_ADMIN',
-        'WAREHOUSE_MANAGER',
-        'WAREHOUSE_STAFF',
-        'FACTORY_WAREHOUSE_STAFF',
-      ];
-
-      if (!allowedWarehouseRoles.includes(userRole || '')) {
+      if (!WAREHOUSE_PORTAL_ROLES.includes(userRole || '')) {
         await useAuthStore.getState().logout();
         message.error('Incorrect username or password!');
         return;
