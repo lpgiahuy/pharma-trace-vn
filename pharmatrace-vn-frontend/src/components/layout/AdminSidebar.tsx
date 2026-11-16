@@ -32,7 +32,6 @@ const LOGO_URL = 'https://res.cloudinary.com/dc64co0el/image/upload/v1777731026/
 
 interface SidebarContentProps {
   isCollapsed: boolean;
-  isWarehouseStaff: boolean;
   selectedKey: string;
   menuItems: MenuProps['items'];
   onCollapse: () => void;
@@ -42,7 +41,6 @@ interface SidebarContentProps {
 
 function SidebarContent({
   isCollapsed,
-  isWarehouseStaff,
   selectedKey,
   menuItems,
   onCollapse,
@@ -76,7 +74,7 @@ function SidebarContent({
       {!isCollapsed && (
         <div className="shrink-0 px-5 pt-4 pb-1">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            {isWarehouseStaff ? 'WMS LOGISTICS' : 'ADMIN PORTAL'}
+            ADMIN PORTAL
           </span>
         </div>
       )}
@@ -110,31 +108,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 
   const normalizedRole = (role || '').toUpperCase().replace(/[\s_-]/g, '');
   const canManageStaff = normalizedRole === 'SUPERADMIN' || normalizedRole === 'STOREMANAGER';
-  const isWarehouseStaff = normalizedRole === 'WAREHOUSESTAFF' || normalizedRole === 'WAREHOUSEMANAGER';
   const isFinanceStaff = normalizedRole === 'ACCOUNTANT' || normalizedRole === 'FINANCEMANAGER';
 
   const menuItems = isFinanceStaff
     ? [
         { key: '/admin/orders', icon: <ShoppingOutlined style={{ fontSize: 16 }} />, label: 'Order Payments' },
         { key: '/admin/logistics/cod', icon: <CarOutlined style={{ fontSize: 16 }} />, label: 'COD Reconciliation' },
-      ]
-    : isWarehouseStaff
-    ? [
-        {
-          key: '/admin/logistics',
-          icon: <CarOutlined style={{ fontSize: 16 }} />,
-          label: 'Logistics Operations',
-        },
-        {
-          key: '/admin/orders',
-          icon: <ShoppingOutlined style={{ fontSize: 16 }} />,
-          label: 'Orders & Packing',
-        },
-        {
-          key: '/admin/returns',
-          icon: <RollbackOutlined style={{ fontSize: 16 }} />,
-          label: 'Returns & Exchanges',
-        },
       ]
     : [
         {
@@ -199,7 +178,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       (item) =>
         pathname === item.key ||
         (item.key !== '/admin' && pathname.startsWith(item.key))
-    )?.key || (isWarehouseStaff ? '/admin/logistics' : '/admin');
+    )?.key || '/admin';
 
   // If not mounted yet (SSR), render standard Sider to avoid Drawer SSR hydration errors
   if (!mounted) {
@@ -221,7 +200,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       >
         <SidebarContent
           isCollapsed={collapsed}
-          isWarehouseStaff={isWarehouseStaff}
           selectedKey={selectedKey}
           menuItems={menuItems}
           onCollapse={onCollapse}
@@ -243,7 +221,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       >
         <SidebarContent
           isCollapsed={false}
-          isWarehouseStaff={isWarehouseStaff}
           selectedKey={selectedKey}
           menuItems={menuItems}
           onCollapse={onCollapse}
@@ -273,7 +250,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     >
       <SidebarContent
         isCollapsed={collapsed}
-        isWarehouseStaff={isWarehouseStaff}
         selectedKey={selectedKey}
         menuItems={menuItems}
         onCollapse={onCollapse}

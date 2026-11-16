@@ -42,13 +42,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const isAuthenticated = mounted ? getIsAuthenticated() : false;
   const user = mounted ? getUser() : null;
 
+  // Admin sessions issued to warehouse roles before the warehouse portal existed.
+  const isWarehouseRole = ['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'FACTORY_WAREHOUSE_STAFF'].includes(String(user?.role ?? '').toUpperCase());
+
   useEffect(() => {
     if (mounted && !isAuthenticated) {
       router.push('/admin/login');
+    } else if (isWarehouseRole) {
+      router.replace('/warehouse');
     }
-  }, [mounted, isAuthenticated, router]);
+  }, [mounted, isAuthenticated, isWarehouseRole, router]);
 
-  if (!mounted || !isAuthenticated || !user) {
+  if (!mounted || !isAuthenticated || !user || isWarehouseRole) {
     return null;
   }
 
