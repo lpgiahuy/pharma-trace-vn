@@ -499,7 +499,7 @@ export function ShipmentsBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
               </Descriptions>
             </div>
 
-            <ShipmentWorkflowActions key={selectedShipment.id} shipment={selectedShipment} canManage={canUpdateStatus} canIntake={['SUPERADMIN', 'STOREMANAGER', 'WAREHOUSESTAFF'].includes(role)} canRefund={portal === 'admin' && ['SUPERADMIN', 'STOREMANAGER'].includes(role)} onSaved={async () => { await loadShipmentDetail(selectedShipment.id); fetchShipments(); }} />
+            <ShipmentWorkflowActions key={selectedShipment.id} shipment={selectedShipment} canManage={canUpdateStatus} canIntake={['SUPERADMIN', 'STOREMANAGER', 'WAREHOUSESTAFF', 'WAREHOUSEMANAGER'].includes(role)} canRefund={portal === 'admin' && ['SUPERADMIN', 'STOREMANAGER'].includes(role)} onSaved={async () => { await loadShipmentDetail(selectedShipment.id); fetchShipments(); }} />
 
             {/* Status Change Operations */}
             {canUpdateStatus && (
