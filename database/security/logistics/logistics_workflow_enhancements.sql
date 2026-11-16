@@ -92,7 +92,7 @@ RETURNS TABLE (order_status varchar, prescription_review_status varchar)
 LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog AS $$
     SELECT o.order_status, o.prescription_review_status FROM public.orders o
     WHERE o.id = target_order AND current_setting('app.order_operation', true) IN ('dispatch', 'receive', 'replace', 'cancel', 'status')
-      AND current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF', 'PHARMACIST')
+      AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_ALL'))
       AND (
         current_setting('app.current_user_role', true) = 'SUPER_ADMIN'
         OR EXISTS (SELECT FROM public.internal_transfers t WHERE t.order_id = o.id AND (public.order_staff(t.from_facility_id) OR public.order_staff(t.to_facility_id)))

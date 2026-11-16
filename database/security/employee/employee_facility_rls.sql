@@ -26,6 +26,14 @@ GRANT EXECUTE ON FUNCTION public.employee_facility_scope(integer,text) TO app_us
 DROP POLICY IF EXISTS employee_facility_management ON public.employees;
 CREATE POLICY employee_facility_management ON public.employees FOR ALL TO app_user
  USING (public.employee_facility_scope(facility_id,role)) WITH CHECK (public.employee_facility_scope(facility_id,role));
+-- Warehouse managers read (never write) the staff roster of their own warehouse; SUPER_ADMIN reads every warehouse.
+DROP POLICY IF EXISTS employee_warehouse_read ON public.employees;
+CREATE POLICY employee_warehouse_read ON public.employees FOR SELECT TO app_user USING (
+ current_setting('app.employee_operation',true)='warehouse_read'
+ AND NULLIF(current_setting('app.current_user_id',true),'') IS NOT NULL
+ AND public.app_role_in_group('WH_MANAGER')
+ AND (current_setting('app.current_user_role',true)='SUPER_ADMIN'
+   OR facility_id = NULLIF(current_setting('app.current_unit_id',true),'')::integer));
 CREATE OR REPLACE FUNCTION public.guard_employee_write() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 BEGIN

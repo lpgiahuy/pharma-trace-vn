@@ -5,7 +5,9 @@ DO $$ BEGIN
         AND tablename IN ('orders', 'order_items', 'shipments', 'internal_transfers', 'loyalty_point_logs')
         AND policyname NOT IN ('prescription_order_scope_select', 'prescription_order_scope_update',
             'order_read', 'order_insert', 'order_update', 'item_read', 'item_insert', 'item_update',
-            'shipment_read', 'shipment_insert', 'shipment_update', 'transfer_read', 'transfer_insert', 'transfer_update', 'points_read', 'points_insert')) THEN
+            'shipment_read', 'shipment_insert', 'shipment_update', 'transfer_read', 'transfer_insert', 'transfer_update', 'points_read', 'points_insert',
+            -- Added later by security/logistics/logistics_integrity.sql; listed so this script can be re-applied.
+            'order_transfer_return_read', 'item_transfer_return_update', 'shipment_return_intake')) THEN
         RAISE EXCEPTION 'Existing order policies need manual review';
     END IF;
 END $$;
@@ -20,7 +22,7 @@ CREATE OR REPLACE FUNCTION public.order_staff(unit_id integer) RETURNS boolean
 LANGUAGE sql STABLE SET search_path = pg_catalog AS $$
     SELECT current_setting('app.current_user_type', true) = 'employee'
       AND NULLIF(current_setting('app.current_user_id', true), '') IS NOT NULL
-      AND current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'WAREHOUSE_STAFF', 'ACCOUNTANT', 'FINANCE_MANAGER')
+      AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'ACCOUNTANT', 'FINANCE_MANAGER') OR public.app_role_in_group('WH_ALL'))
       AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'ACCOUNTANT', 'FINANCE_MANAGER')
         OR unit_id = NULLIF(current_setting('app.current_unit_id', true), '')::integer)
 $$;
@@ -43,10 +45,10 @@ LANGUAGE sql STABLE SET search_path = pg_catalog AS $$
       WHEN current_setting('app.current_user_type', true) = 'employee' THEN
         CASE current_setting('app.order_operation', true)
           WHEN 'status' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST')
-          WHEN 'pack' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'WAREHOUSE_STAFF')
-          WHEN 'dispatch' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF')
-          WHEN 'receive' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF')
-          WHEN 'replace' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF')
+          WHEN 'pack' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_ALL'))
+          WHEN 'dispatch' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
+          WHEN 'receive' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
+          WHEN 'replace' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
           WHEN 'prescription' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'PHARMACIST')
           ELSE false END
       ELSE false END
@@ -59,7 +61,7 @@ RETURNS TABLE (order_status varchar, prescription_review_status varchar)
 LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog AS $$
     SELECT o.order_status, o.prescription_review_status FROM public.orders o
     WHERE o.id = target_order AND current_setting('app.order_operation', true) = 'dispatch'
-      AND current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF')
+      AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
       AND EXISTS (SELECT FROM public.internal_transfers t WHERE t.order_id = o.id AND public.order_staff(t.from_facility_id))
     FOR UPDATE OF o
 $$;
@@ -230,7 +232,7 @@ WITH CHECK (EXISTS (SELECT FROM public.orders o WHERE o.id = order_id AND public
 DROP POLICY IF EXISTS transfer_read ON public.internal_transfers;
 CREATE POLICY transfer_read ON public.internal_transfers FOR SELECT TO app_user USING (
     ((public.order_staff(from_facility_id) OR public.order_staff(to_facility_id))
-      AND current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'WAREHOUSE_STAFF'))
+      AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_ALL')))
     OR EXISTS (SELECT FROM public.orders o WHERE o.id = order_id AND (public.order_customer(o.customer_id) OR public.order_staff(o.export_facility_id))));
 DROP POLICY IF EXISTS transfer_insert ON public.internal_transfers;
 CREATE POLICY transfer_insert ON public.internal_transfers FOR INSERT TO app_user WITH CHECK (public.order_operation_allowed() AND status = 'REQUESTED'

@@ -33,6 +33,24 @@ describe('Account role boundaries', () => {
     expect(new CustomerGuard().canActivate(context({ id: 1, role: 'CUSTOMER', type: 'customer' }))).toBe(true);
   });
 
+  it('lets a warehouse manager use routes opened to warehouse managers', () => {
+    expect(guard(['SUPER_ADMIN', 'WAREHOUSE_MANAGER']).canActivate(context({ role: 'WAREHOUSE_MANAGER', type: 'employee' }))).toBe(true);
+    expect(guard(['SUPER_ADMIN', 'WAREHOUSE_MANAGER']).canActivate(context({ role: 'WarehouseManager', type: 'employee' }))).toBe(true);
+  });
+
+  it('does not treat warehouse staff or store managers as warehouse managers', () => {
+    expect(guard(['WAREHOUSE_MANAGER']).canActivate(context({ role: 'WAREHOUSE_STAFF', type: 'employee' }))).toBe(false);
+    expect(guard(['WAREHOUSE_MANAGER']).canActivate(context({ role: 'STORE_MANAGER', type: 'employee' }))).toBe(false);
+  });
+
+  it('does not let factory warehouse staff use warehouse staff routes', () => {
+    expect(guard(['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER']).canActivate(context({ role: 'FACTORY_WAREHOUSE_STAFF', type: 'employee' }))).toBe(false);
+  });
+
+  it('rejects a warehouse manager role on a customer token', () => {
+    expect(guard(['WAREHOUSE_MANAGER']).canActivate(context({ role: 'WAREHOUSE_MANAGER', type: 'customer' }))).toBe(false);
+  });
+
   it('rejects a missing identity', () => {
     expect(() => new CustomerGuard().canActivate(context(undefined))).toThrow();
   });

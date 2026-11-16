@@ -32,7 +32,7 @@ DECLARE facility integer; medicine integer; reference text; previous integer; cu
 BEGIN
   actor := nullif(current_setting('app.current_user_id', true),'')::integer;
   IF actor IS NULL OR current_setting('app.current_user_type', true) IS DISTINCT FROM 'employee'
-    OR coalesce(current_setting('app.current_user_role', true),'') NOT IN ('SUPER_ADMIN','STORE_MANAGER','PHARMACIST','WAREHOUSE_STAFF')
+    OR NOT (coalesce(current_setting('app.current_user_role', true),'') IN ('SUPER_ADMIN','STORE_MANAGER','PHARMACIST') OR public.app_role_in_group('WH_ALL'))
     OR kind NOT IN ('SHIPMENT','TRANSFER','TRANSFER_RETURN') OR units IS NULL OR units <= 0 THEN
     RAISE EXCEPTION 'Invalid quarantine movement' USING ERRCODE = '42501';
   END IF;

@@ -12,7 +12,7 @@ database/
 ├── 00_master_init.sql              # Docker entrypoint: orchestrates SQL scripts
 ├── README.md
 ├── security/                       # Database access policies and workflow safeguards
-│   ├── access/                     # Runtime role and base permissions
+│   ├── access/                     # Runtime role, base permissions and named role groups (app_role_groups.sql)
 │   └── <module>/                   # Related policies and workflows, grouped by module
 ├── schemas/                        # Table DDL, constraints, primary & foreign keys
 │   ├── 01_core_master_tables.sql   # Categories, facilities, customers, employees, manufacturers, medicines, packaging_variants, medicine_categories, customer_wishlists
@@ -34,7 +34,8 @@ database/
     ├── review_rls_test.sql         # Review visibility and write restrictions
     ├── order_rls_test.sql          # Customer/facility ownership and transfer projection
     ├── voucher_rls_test.sql        # Exact-code previews, management and consumption
-    └── manufacturer_rls_test.sql   # Manufacturer permissions and facility assignment
+    ├── manufacturer_rls_test.sql   # Manufacturer permissions and facility assignment
+    └── warehouse_manager_access_test.sql # Warehouse manager scope, discrepancy gate and staff roster
 ```
 
 `backups/` contains ignored local database dumps. Master initialization includes both prescription and auth security scripts. Auth roles and policies are prepared by the auth RLS script; the employee and customer RLS scripts enable RLS on employees and customers. Backend authentication must use the corresponding RLS configuration. These bootstrap scripts do not track applied versions or update existing Docker volumes automatically.
@@ -182,7 +183,7 @@ Docker runs only the top-level `.sh` and `.sql` entrypoints, in filename order. 
 8. `security/wishlist/wishlist_rls.sql` restricts `app_user` to SELECT/INSERT/DELETE and enables/forces customer ownership policies on `customer_wishlists`.
 9. `security/cart/cart_rls.sql` enables/forces customer cart ownership; UPDATE is limited to quantity/variant, and sequence reset/TRUNCATE are not granted.
 10. `security/review/review_rls.sql` enforces review/report/audit scopes.
-11. `security/order/order_rls.sql` enforces order ownership, fulfillment scope and loyalty ledger access.
+11. `security/access/app_role_groups.sql` defines `public.app_role_in_group()`, then `security/order/order_rls.sql` enforces order ownership, fulfillment scope and loyalty ledger access.
 12. `security/voucher/voucher_rls.sql` adds order voucher references and enforces voucher scopes and consumption rules.
 
 All tables must exist before importing the seed. Review grants are explicitly restricted after import so blanket or default privileges cannot add DELETE/TRUNCATE access. The SQL files are intended to run as `postgres` through `psql`.
@@ -781,3 +782,53 @@ The matching local app serves the resolution endpoints under `/admin/orders/:id`
 - `security/logistics/normalize_legacy_box_status.sql` maps the legacy seed values `TrongKho` to `IN_STOCK` and `HopLe` to `ACTIVE`; the application and dispatch functions only recognise the English values.
 - `security/order/order_item_variant_restrict.sql` changes `order_items.variant_id` to `ON DELETE RESTRICT` so a packaging variant that is on an order can no longer be deleted (it used to be set to NULL, which stranded transfers).
 - `security/logistics/logistics_workflow_enhancements.sql` now also grants `INSERT` on `internal_transfers.variance_details` and `discrepancy_status`, which Prisma writes explicitly when checkout creates a transfer.
+
+## Warehouse manager access
+
+`WAREHOUSE_MANAGER` can now do everything `WAREHOUSE_STAFF` can do on orders, transfers, shipments and returns, at its own warehouse only, and can also resolve transfer discrepancies at its warehouse. It also gets a read-only staff roster through the `employee_warehouse_read` policy (`app.employee_operation = 'warehouse_read'`). `FACTORY_WAREHOUSE_STAFF` gets no new access. It will be granted per feature, together with the workflows that need it.
+
+Role lists no longer repeat warehouse roles. Policies and functions call `public.app_role_in_group('WH_STAFF' | 'WH_MANAGER' | 'WH_ALL')` from `security/access/app_role_groups.sql`. These groups mirror `pharmatrace-vn-backend/src/common/warehouse-roles.ts`; change both together. An unknown group name raises, and the function never returns NULL.
+
+### Applying to an existing database
+
+Back up the database first. Re-applying `security/order/order_rls.sql` also re-installs older copies of functions that later scripts replace (`guard_order_write`, `order_staff`, `transfer_order_state`, ...). For that reason the whole chain below must be applied, in this order, as the database owner. Stop after the first error:
+
+1. `security/access/app_role_groups.sql`
+2. `security/order/order_rls.sql`
+3. `security/employee/employee_rls.sql`
+4. `security/employee/employee_facility_rls.sql`
+5. `security/logistics/logistics_rls.sql`
+6. `security/order/order_pickup_status.sql`
+7. `security/logistics/logistics_workflow_enhancements.sql`
+8. `security/logistics/logistics_integrity.sql`
+9. `security/logistics/transfer_manifest.sql`
+10. `security/inventory/quarantine_balances.sql`
+11. `security/payment/disable_unverified_cod_collection.sql`
+12. `security/payment/cod_receivable_and_net_cash.sql`
+13. `security/payment/online_payment_evidence.sql`
+14. `security/payment/cod_statement_approval.sql`
+15. `security/logistics/in_transit_custody.sql`
+16. `security/logistics/source_manifest_assignment.sql`
+17. `security/logistics/transfer_discrepancy_resolution.sql`
+18. `security/payment/payment_exceptions.sql`
+19. `security/order/unpacked_customer_cancellation.sql`
+20. `security/order/order_resolution.sql`
+21. `security/returns/return_requests.sql`
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
+```
+
+Repeat the command for each path above. Every script runs in its own transaction and can be re-applied. `order_rls.sql` now allows the three policies that `logistics_integrity.sql` adds to the order tables, so it can run on an installed database. `in_transit_custody.sql` still refuses to run while a `DISPATCHED` or `RETURN_REQUESTED` transfer has no custody record. Reconcile such transfers first, as described in [LOGISTICS_WORKFLOWS.md](LOGISTICS_WORKFLOWS.md).
+
+How this was verified, using disposable containers only:
+
+- A database built from the previous scripts and then upgraded with this chain produced a `pg_dump --schema-only` identical to a fresh initialization, grants included.
+- Applying the chain a second time changed nothing.
+- On the upgrade copy, the seeded demo transfer had to be reconciled first, because it has no custody record.
+
+Run `tests/warehouse_manager_access_test.sql` after applying:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/warehouse_manager_access_test.sql
+```

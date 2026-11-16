@@ -29,7 +29,7 @@ BEGIN
   SELECT * INTO t FROM public.internal_transfers WHERE id=target FOR UPDATE;
   IF actor IS NULL OR current_setting('app.current_user_type',true) IS DISTINCT FROM 'employee'
     OR current_setting('app.order_operation',true) IS DISTINCT FROM 'replace'
-    OR coalesce(current_setting('app.current_user_role',true),'') NOT IN ('SUPER_ADMIN','STORE_MANAGER')
+    OR NOT (coalesce(current_setting('app.current_user_role',true),'') IN ('SUPER_ADMIN','STORE_MANAGER') OR public.app_role_in_group('WH_MANAGER'))
     OR public.order_staff(t.to_facility_id) IS NOT TRUE THEN
     RAISE EXCEPTION 'Destination manager approval is required' USING ERRCODE='42501';
   END IF;

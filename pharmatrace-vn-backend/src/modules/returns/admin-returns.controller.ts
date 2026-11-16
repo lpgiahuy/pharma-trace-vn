@@ -6,6 +6,7 @@ import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { WH_ALL } from '../../common/warehouse-roles';
 import {
   ApproveReturnDto, InspectReturnDto, ReceiveReturnDto, ReturnCarrierDto, ReturnNoteDto, ReturnQueryDto, ReturnRefundDto,
   ReturnRefundPaymentDto, StaffCreateReturnDto,
@@ -13,9 +14,9 @@ import {
 import { ReturnsService } from './returns.service';
 
 type Upload = { buffer: Buffer; mimetype: string; size: number };
-const STAFF = ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'WAREHOUSE_STAFF'];
+const STAFF = ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL];
 const REVIEWERS = ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST'];
-const RECEIVERS = ['SUPER_ADMIN', 'STORE_MANAGER', 'WAREHOUSE_STAFF'];
+const RECEIVERS = ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL];
 const MANAGERS = ['SUPER_ADMIN', 'STORE_MANAGER'];
 
 @ApiTags('Admin - Returns (RMA)')

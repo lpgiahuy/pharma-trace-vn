@@ -28,6 +28,7 @@ import { ApproveCancellationRefundDto, RecordCancellationRefundDto, ResolveDeliv
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
+import { WH_ALL } from "../../common/warehouse-roles";
 import {
   CurrentUser,
   CurrentUserPayload,
@@ -44,7 +45,7 @@ export class AdminOrderController {
   ) {}
 
   @Get(':id/resolution')
-  @Roles('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'WAREHOUSE_STAFF', 'ACCOUNTANT', 'FINANCE_MANAGER')
+  @Roles('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL, 'ACCOUNTANT', 'FINANCE_MANAGER')
   async resolution(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.orderService.getOrderResolution(id, user) };
   }
@@ -120,8 +121,7 @@ export class AdminOrderController {
     "StoreManager",
     "PHARMACIST",
     "Pharmacist",
-    "WAREHOUSE_STAFF",
-    "WarehouseStaff",
+    ...WH_ALL,
     "ACCOUNTANT",
     "FINANCE_MANAGER",
   )
@@ -152,8 +152,7 @@ export class AdminOrderController {
     "StoreManager",
     "PHARMACIST",
     "Pharmacist",
-    "WAREHOUSE_STAFF",
-    "WarehouseStaff",
+    ...WH_ALL,
     "ACCOUNTANT",
     "FINANCE_MANAGER",
   )
@@ -239,8 +238,7 @@ export class AdminOrderController {
     "StoreManager",
     "PHARMACIST",
     "Pharmacist",
-    "WAREHOUSE_STAFF",
-    "WarehouseStaff",
+    ...WH_ALL,
   )
   @ApiOperation({
     summary: "Get available in-stock medicine boxes for order packing (Admin)",
@@ -275,8 +273,7 @@ export class AdminOrderController {
     "StoreManager",
     "PHARMACIST",
     "Pharmacist",
-    "WAREHOUSE_STAFF",
-    "WarehouseStaff",
+    ...WH_ALL,
   )
   @ApiOperation({
     summary: "Pack order and dispatch shipment (Warehouse / Admin)",
