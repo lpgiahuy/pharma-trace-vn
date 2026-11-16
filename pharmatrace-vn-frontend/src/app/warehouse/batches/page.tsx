@@ -67,7 +67,7 @@ function BatchesPage() {
       <Tabs
         activeKey={tab}
         onChange={key => { setLoading(true); setPage(1); setTab(key); }}
-        items={[{ key: 'all', label: 'In stock' }, { key: 'expiring', label: 'Expiring within 30 days' }]}
+        items={[{ key: 'all', label: 'At this warehouse' }, { key: 'expiring', label: 'Expiring within 30 days' }]}
       />
       <Input.Search
         allowClear

@@ -51,13 +51,13 @@ export class WarehouseInventoryController {
   }
 
   @Get('batches')
-  @ApiOperation({ summary: 'Batches with boxes in stock at your warehouse' })
+  @ApiOperation({ summary: 'Batches with boxes at your warehouse' })
   async batches(@Query() query: WarehouseBatchQueryDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, ...await this.inventory.batches(user, query) };
   }
 
   @Get('batches/expiring')
-  @ApiOperation({ summary: 'Batches in stock that expire within `days` (default 30), expired ones included' })
+  @ApiOperation({ summary: 'Batches at your warehouse that expire within `days` (default 30), expired ones included' })
   async expiring(@Query() query: WarehouseBatchQueryDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, ...await this.inventory.batches(user, { ...query, days: query.days ?? 30 }) };
   }

@@ -85,9 +85,14 @@ function toBatchItem(row: BatchRow, boxesInStock: number): BatchItem {
   };
 }
 
-/** Boxes that are physically in stock, at the given warehouse when one is set. */
+/** Boxes at the given warehouse (any warehouse when none is set), whatever their status. */
+function boxesAtWhere(facilityId: number | null): Prisma.medicine_boxesWhereInput {
+  return facilityId === null ? { current_facility_id: { not: null } } : { current_facility_id: facilityId };
+}
+
+/** Boxes at the warehouse that can still be picked (not reserved, in transit or sold). */
 function boxesInStockWhere(facilityId: number | null): Prisma.medicine_boxesWhereInput {
-  return { status: { in: AVAILABLE_BOX_STATUSES }, ...(facilityId === null ? {} : { current_facility_id: facilityId }) };
+  return { status: { in: AVAILABLE_BOX_STATUSES }, ...boxesAtWhere(facilityId) };
 }
 
 function daysFromNow(days: number): Date {
@@ -202,14 +207,14 @@ export class WarehouseInventoryService {
     });
   }
 
-  /** Batches with boxes in stock at the warehouse; `days` keeps only those expiring within that many days. */
+  /** Batches with boxes at the warehouse; `days` keeps only those expiring within that many days. */
   async batches(user: CurrentUserPayload, query: WarehouseBatchQueryDto): Promise<Page<BatchItem>> {
     const facilityId = warehouseScope(user, query, WH_READ);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const boxWhere = boxesInStockWhere(facilityId);
     const where: Prisma.batchesWhereInput = {
-      medicine_boxes: { some: boxWhere },
+      medicine_boxes: { some: boxesAtWhere(facilityId) },
       ...(query.days ? { expiry_date: { lte: daysFromNow(query.days) } } : {}),
       ...(query.search ? { OR: [
         { batch_number: { contains: query.search, mode: 'insensitive' } },
@@ -235,7 +240,7 @@ export class WarehouseInventoryService {
       const [row, counts] = await Promise.all([
         tx.batches.findUnique({ where: { id }, select: { ...batchSelect, initial_quantity: true, remaining_quantity: true, certificate_co_cq: true } }),
         tx.medicine_boxes.groupBy({
-          by: ['status'], where: { batch_id: id, ...(facilityId === null ? {} : { current_facility_id: facilityId }) }, _count: { _all: true },
+          by: ['status'], where: { batch_id: id, ...boxesAtWhere(facilityId) }, _count: { _all: true },
         }),
       ]);
       if (!row || (facilityId !== null && counts.length === 0)) throw warehouseError('WAREHOUSE_BATCH_NOT_FOUND');
@@ -262,7 +267,7 @@ export class WarehouseInventoryService {
         tx.$queryRaw<{ units: number }[]>`
           SELECT coalesce(sum(quantity), 0)::integer AS units FROM public.quarantine_balances
           WHERE ${facilityId}::integer IS NULL OR facility_id = ${facilityId}::integer`,
-        tx.batches.count({ where: { medicine_boxes: { some: boxesInStockWhere(facilityId) }, expiry_date: { lte: daysFromNow(30) } } }),
+        tx.batches.count({ where: { medicine_boxes: { some: boxesAtWhere(facilityId) }, expiry_date: { lte: daysFromNow(30) } } }),
       ]);
       return {
         stockUnits: rows.reduce((sum, r) => sum + r.stock_quantity, 0),
