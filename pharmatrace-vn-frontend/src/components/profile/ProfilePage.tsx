@@ -44,7 +44,7 @@ interface Profile {
   createdAt?: string;
 }
 
-export default function ProfilePage({ portal }: { portal: 'customer' | 'admin' }) {
+export default function ProfilePage({ portal }: { portal: 'customer' | 'admin' | 'warehouse' }) {
   const router = useRouter();
   const { message } = App.useApp();
   const [form] = Form.useForm();
@@ -70,7 +70,7 @@ export default function ProfilePage({ portal }: { portal: 'customer' | 'admin' }
       .catch((err: any) => {
         if (!active) return;
         if (err?.statusCode === 401 || err?.response?.status === 401) {
-          router.replace(portal === 'admin' ? '/admin/login' : '/login');
+          router.replace(portal === 'customer' ? '/login' : `/${portal}/login`);
         } else {
           setError(err?.response?.data?.message || err?.message || 'Unable to load your profile.');
         }
@@ -173,7 +173,7 @@ export default function ProfilePage({ portal }: { portal: 'customer' | 'admin' }
             ) : (
               <Shield className="w-6 h-6 text-[#1e4287] shrink-0 stroke-[2]" />
             )}
-            <span>{portal === 'customer' ? 'My Profile' : 'Admin Profile'}</span>
+            <span>{portal === 'customer' ? 'My Profile' : portal === 'warehouse' ? 'Warehouse Profile' : 'Admin Profile'}</span>
           </h1>
           <p className="text-slate-500 text-xs sm:text-sm m-0 mt-1">
             {portal === 'customer'

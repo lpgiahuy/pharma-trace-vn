@@ -21,6 +21,7 @@ export class AuthAdminController {
     description: "Login successful, returns user information and JWT token",
   })
   @ApiResponse({ status: 401, description: "Invalid email or password" })
+  @ApiResponse({ status: 403, description: "USE_WAREHOUSE_PORTAL: warehouse accounts must sign in at the Warehouse portal" })
   async login(@Body() dto: AdminLoginDto) {
     const data = await this.authAdminService.loginStaff(dto);
     return {

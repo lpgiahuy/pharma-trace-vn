@@ -15,6 +15,7 @@ export default function AdminLoginPage() {
   const { message } = App.useApp();
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
+  const [warehouseEmail, setWarehouseEmail] = useState<string | null>(null);
   const login = useAuthStore((state) => state.login);
 
   const {
@@ -59,7 +60,6 @@ export default function AdminLoginPage() {
         'ADMIN',
         'STORE_MANAGER',
         'PHARMACIST',
-        'WAREHOUSE_STAFF',
         'ACCOUNTANT',
         'FINANCE_MANAGER',
       ];
@@ -74,6 +74,10 @@ export default function AdminLoginPage() {
       message.success(`Welcome ${userName}!`);
       router.push(['ACCOUNTANT', 'FINANCE_MANAGER'].includes(userRole || '') ? '/admin/orders' : '/admin');
     } catch (err: any) {
+      if (err?.code === 'USE_WAREHOUSE_PORTAL') {
+        setWarehouseEmail(data.email);
+        return;
+      }
       message.error(err.response?.data?.message || err.message || 'Incorrect username or password!');
     }
   };
@@ -95,6 +99,15 @@ export default function AdminLoginPage() {
             Restricted to Store Managers, Pharmacists, and PharmaTrace System Administrators.
           </p>
         </div>
+
+        {warehouseEmail && (
+          <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Warehouse accounts sign in at the Warehouse portal.{' '}
+            <Link href={`/warehouse/login?email=${encodeURIComponent(warehouseEmail)}`} className="font-semibold underline">
+              Go to Warehouse sign in &rarr;
+            </Link>
+          </div>
+        )}
 
         <form
           method="POST"

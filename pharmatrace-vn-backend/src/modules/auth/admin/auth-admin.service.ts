@@ -5,6 +5,9 @@ import { AdminLoginDto } from './dto/admin-login.dto';
 import { AdminSetupDto } from './dto/admin-setup.dto';
 import * as bcrypt from 'bcryptjs';
 import { normalizeRole } from '../../../common/auth-identity';
+import { warehouseError } from '../../warehouse/warehouse-errors';
+
+const WAREHOUSE_PORTAL_ROLES = ['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'FACTORY_WAREHOUSE_STAFF'];
 
 function sanitizeStaff(employee: any) {
   return {
@@ -48,6 +51,7 @@ export class AuthAdminService {
     if (!ok) throw new UnauthorizedException('Invalid email or password');
     const role = normalizeRole(employee.role || '');
     if (!role || role === 'CUSTOMER') throw new UnauthorizedException('Invalid employee role');
+    if (WAREHOUSE_PORTAL_ROLES.includes(role)) throw warehouseError('USE_WAREHOUSE_PORTAL');
 
     const token = this.jwtService.sign({
       sub: employee.id,

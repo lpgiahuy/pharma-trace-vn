@@ -11,7 +11,7 @@ import { formatDateTime } from '@/utils';
 type Kind = 'approve' | 'reject' | 'reject-receipt' | 'request-info' | 'carrier' | 'receive' | 'inspection' | 'refund' | 'refund/payment';
 
 const REVIEW = ['SUPERADMIN', 'STOREMANAGER', 'PHARMACIST'];
-const RECEIVE = ['SUPERADMIN', 'STOREMANAGER', 'WAREHOUSESTAFF'];
+const RECEIVE = ['SUPERADMIN', 'STOREMANAGER', 'WAREHOUSESTAFF', 'WAREHOUSEMANAGER'];
 const MANAGE = ['SUPERADMIN', 'STOREMANAGER'];
 const CUSTOMER_CHOICE = ['CHANGED_MIND', 'ORDERED_WRONG', 'NO_LONGER_NEEDED', 'OTHER'];
 const COURIERS = ['GHN', 'GHTK', 'Viettel Post', 'VNPost', 'J&T Express', 'Ninja Van', 'Best Express'];
@@ -140,14 +140,15 @@ function situation(detail: ReturnDetail, { exchange, pickup, nothingCredited }: 
   }
 }
 
-export function ReturnActions({ detail, role, onChanged }: { detail: ReturnDetail; role: string; onChanged: () => void }) {
+export function ReturnActions({ portal, detail, role, onChanged }: { portal: 'admin' | 'warehouse'; detail: ReturnDetail; role: string; onChanged: () => void }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<Values>();
   const [kind, setKind] = useState<Kind>();
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
-  const can = (roles: string[]) => roles.includes(role);
+  // The warehouse portal only receives goods; review, approval and refund stay in /admin.
+  const can = (roles: string[]) => roles.includes(role) && (portal === 'admin' || roles === RECEIVE);
   const { status } = detail;
   const exchange = detail.resolution === 'EXCHANGE';
   const wrongItemOnly = detail.lines.every(line => line.reason_code === 'WRONG_ITEM');
