@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Layout, Menu, Dropdown } from 'antd';
+import { Layout, Menu, Dropdown, Grid } from 'antd';
 import type { MenuProps } from 'antd';
 import { DashboardOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, RollbackOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { LogOut, User, Warehouse } from 'lucide-react';
@@ -30,6 +30,7 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
   const getUser = useAuthStore((state) => state.getUser);
   const logout = useAuthStore((state) => state.logout);
   const [collapsed, setCollapsed] = useState(false);
+  const isMobile = !Grid.useBreakpoint().md;
 
   const user = mounted && getIsAuthenticated() ? getUser() : null;
   const allowed = !!user && WAREHOUSE_PORTAL_ROLES.includes(user.role);
@@ -51,12 +52,14 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="light" breakpoint="lg" onBreakpoint={setCollapsed} collapsed={collapsed} collapsedWidth={80} width={220} className="border-r border-slate-100">
+      <Sider theme="light" trigger={null} breakpoint="lg" onBreakpoint={setCollapsed} collapsed={collapsed} collapsedWidth={isMobile ? 0 : 80} width={220} className="border-r border-slate-100"
+        style={isMobile ? { position: 'fixed', height: '100vh', zIndex: 100 } : undefined}>
         <div className="flex items-center justify-center gap-2 h-16 px-5 border-b border-slate-100 font-bold text-[#1e4287] whitespace-nowrap">
           <Warehouse className="w-5 h-5 shrink-0" /> {!collapsed && 'Warehouse Portal'}
         </div>
-        <Menu mode="inline" selectedKeys={[selectedKey]} items={NAV_ITEMS} onClick={({ key }) => router.push(key)} className="border-r-0!" />
+        <Menu mode="inline" selectedKeys={[selectedKey]} items={NAV_ITEMS} onClick={({ key }) => { router.push(key); if (isMobile) setCollapsed(true); }} className="border-r-0!" />
       </Sider>
+      {isMobile && !collapsed && <div className="fixed inset-0 z-99 bg-black/30" onClick={() => setCollapsed(true)} />}
       <Layout>
         <Header className="bg-white! border-b border-slate-100 flex items-center px-6! gap-3">
           <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-[6px] hover:bg-slate-100 text-slate-600 cursor-pointer border-none bg-transparent flex items-center">
