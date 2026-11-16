@@ -11,7 +11,7 @@ import { formatDateTime } from '@/utils';
 type Kind = 'approve' | 'reject' | 'reject-receipt' | 'request-info' | 'carrier' | 'receive' | 'inspection' | 'refund' | 'refund/payment';
 
 const REVIEW = ['SUPERADMIN', 'STOREMANAGER', 'PHARMACIST'];
-const RECEIVE = ['SUPERADMIN', 'STOREMANAGER', 'WAREHOUSESTAFF'];
+const RECEIVE = ['SUPERADMIN', 'STOREMANAGER', 'WAREHOUSESTAFF', 'WAREHOUSEMANAGER'];
 const MANAGE = ['SUPERADMIN', 'STOREMANAGER'];
 const CUSTOMER_CHOICE = ['CHANGED_MIND', 'ORDERED_WRONG', 'NO_LONGER_NEEDED', 'OTHER'];
 const COURIERS = ['GHN', 'GHTK', 'Viettel Post', 'VNPost', 'J&T Express', 'Ninja Van', 'Best Express'];
