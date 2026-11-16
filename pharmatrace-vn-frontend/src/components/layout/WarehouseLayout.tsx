@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Layout, Menu, Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
-import { DashboardOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, RollbackOutlined } from '@ant-design/icons';
+import { DashboardOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, RollbackOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { LogOut, User, Warehouse } from 'lucide-react';
 import { useHydrated } from '@/hooks/useHydrated';
 import { useAuthStore } from '@/store/useAuthStore';
-import { formatRole } from '@/utils';
+import { formatRole, getAvatarColor } from '@/utils';
 
 const { Sider, Header, Content } = Layout;
 
@@ -29,6 +29,7 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
   const getIsAuthenticated = useAuthStore((state) => state.getIsAuthenticated);
   const getUser = useAuthStore((state) => state.getUser);
   const logout = useAuthStore((state) => state.logout);
+  const [collapsed, setCollapsed] = useState(false);
 
   const user = mounted && getIsAuthenticated() ? getUser() : null;
   const allowed = !!user && WAREHOUSE_PORTAL_ROLES.includes(user.role);
@@ -50,19 +51,27 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="light" breakpoint="lg" collapsedWidth={0} width={220} className="border-r border-slate-100">
-        <div className="flex items-center gap-2 h-16 px-5 border-b border-slate-100 font-bold text-[#1e4287]">
-          <Warehouse className="w-5 h-5" /> Warehouse Portal
+      <Sider theme="light" breakpoint="lg" onBreakpoint={setCollapsed} collapsed={collapsed} collapsedWidth={80} width={220} className="border-r border-slate-100">
+        <div className="flex items-center justify-center gap-2 h-16 px-5 border-b border-slate-100 font-bold text-[#1e4287] whitespace-nowrap">
+          <Warehouse className="w-5 h-5 shrink-0" /> {!collapsed && 'Warehouse Portal'}
         </div>
         <Menu mode="inline" selectedKeys={[selectedKey]} items={NAV_ITEMS} onClick={({ key }) => router.push(key)} className="border-r-0!" />
       </Sider>
       <Layout>
-        <Header className="bg-white! border-b border-slate-100 flex items-center justify-between px-6! gap-4">
+        <Header className="bg-white! border-b border-slate-100 flex items-center px-6! gap-3">
+          <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-[6px] hover:bg-slate-100 text-slate-600 cursor-pointer border-none bg-transparent flex items-center">
+            {collapsed ? <MenuUnfoldOutlined style={{ fontSize: 18 }} /> : <MenuFoldOutlined style={{ fontSize: 18 }} />}
+          </button>
           <span className="text-sm font-semibold text-slate-600 truncate">{user.facility?.name ?? 'No warehouse assigned'}</span>
           <Dropdown menu={{ items: userMenu }} trigger={['click']} placement="bottomRight">
-            <button className="text-right leading-tight border-none bg-transparent cursor-pointer">
-              <div className="text-sm font-semibold text-slate-800">{user.fullName}</div>
-              <div className="text-xs text-slate-500">{formatRole(user.role)}</div>
+            <button className="ml-auto flex items-center gap-2.5 py-1 px-2 rounded-[6px] hover:bg-slate-100 border-none bg-transparent cursor-pointer">
+              <div style={{ backgroundColor: getAvatarColor(user.fullName) }} className="w-8 h-8 rounded-full text-white font-bold flex items-center justify-center text-xs">
+                {user.fullName.charAt(0).toUpperCase()}
+              </div>
+              <div className="text-left leading-tight hidden sm:block">
+                <div className="text-sm font-semibold text-slate-800">{user.fullName}</div>
+                <div className="text-xs text-slate-500">{formatRole(user.role)}</div>
+              </div>
             </button>
           </Dropdown>
         </Header>
