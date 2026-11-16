@@ -5,6 +5,7 @@ BEGIN;
 --   WH_STAFF   : warehouse floor staff
 --   WH_MANAGER : warehouse managers (SUPER_ADMIN is always allowed by the callers' own lists)
 --   WH_ALL     : WH_STAFF + WH_MANAGER
+--   WH_READ    : WH_ALL + FACTORY_WAREHOUSE_STAFF, for read-only inventory and batch views
 -- FACTORY_WAREHOUSE_STAFF is added per feature, together with the workflows that need it.
 CREATE OR REPLACE FUNCTION public.app_role_group(group_name text) RETURNS text[]
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
@@ -12,6 +13,7 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
     WHEN 'WH_STAFF' THEN ARRAY['WAREHOUSE_STAFF']
     WHEN 'WH_MANAGER' THEN ARRAY['WAREHOUSE_MANAGER', 'SUPER_ADMIN']
     WHEN 'WH_ALL' THEN ARRAY['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SUPER_ADMIN']
+    WHEN 'WH_READ' THEN ARRAY['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SUPER_ADMIN', 'FACTORY_WAREHOUSE_STAFF']
   END
 $$;
 

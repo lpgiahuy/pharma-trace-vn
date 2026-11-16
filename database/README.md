@@ -832,3 +832,23 @@ Run `tests/warehouse_manager_access_test.sql` after applying:
 ```powershell
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/warehouse_manager_access_test.sql
 ```
+
+## Warehouse inventory reads
+
+`security/inventory/warehouse_inventory_read.sql` lets the warehouse portal read stock, inventory logs and quarantine of its own facility. It turns on RLS for `inventories`, `inventory_logs`, `quarantine_balances` and `quarantine_movements`, and grants `SELECT` on the two quarantine tables to `app_user`.
+
+- When the backend sets `app.inventory_operation = 'warehouse_read'`, only the `*_warehouse_read` policies apply. `WAREHOUSE_STAFF`, `WAREHOUSE_MANAGER` and `FACTORY_WAREHOUSE_STAFF` see only rows of `app.current_unit_id`; `SUPER_ADMIN` sees every facility. These roles form the new `WH_READ` group in `security/access/app_role_groups.sql`.
+- Every other flow (checkout, cart, catalog, transfers, returns) does not set that operation and keeps its current access through the `inventory_default` and `inventory_log_default` policies. A plain `app_user` session without the warehouse read context is therefore not facility-scoped yet.
+- Quarantine tables have no default policy: `app_user` can read them only in the warehouse read context. Writes still go through the `SECURITY DEFINER` quarantine functions.
+
+### Applying to an existing database
+
+Back up the database first, then run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/inventory/warehouse_inventory_read.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/warehouse_inventory_rls_test.sql
+```
+
+Both scripts can be re-applied.

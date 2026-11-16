@@ -111,5 +111,6 @@
 \i /docker-entrypoint-initdb.d/security/order/unpacked_customer_cancellation.sql
 \i /docker-entrypoint-initdb.d/security/order/order_resolution.sql
 \i /docker-entrypoint-initdb.d/security/returns/return_requests.sql
+\i /docker-entrypoint-initdb.d/security/inventory/warehouse_inventory_read.sql
 
 \unset bootstrap_current_functions
