@@ -111,6 +111,7 @@ model medicines {
   effective_price      Decimal?               @default(dbgenerated("COALESCE(NULLIF(promotional_price, (0)::numeric), unit_price)")) @db.Decimal(15, 2)
   slug                 String?                @db.VarChar(255)
   manufacturer_id      Int?
+  min_remaining_shelf_life_days Int?
   manufacturer_rel     manufacturers?         @relation(fields: [manufacturer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   batches              batches[]
   inventory_logs       inventory_logs[]
@@ -510,6 +511,9 @@ model batches {
   remaining_quantity   Int                    @default(0)
   status               String?                @default("ACTIVE") @db.VarChar(50)
   certificate_co_cq    String?
+  hold_reason          String?
+  held_by_id           Int?
+  held_at              DateTime?              @db.Timestamptz(6)
   created_at           DateTime?              @default(now()) @db.Timestamptz(6)
   facilities           facilities?            @relation(fields: [legacy_manufacturer_facility_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   manufacturer         manufacturers?          @relation(fields: [manufacturer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)

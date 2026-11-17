@@ -34,11 +34,13 @@ BEGIN
       END IF;
       UPDATE public.medicine_boxes b SET status='RESERVED'
         WHERE b.uid=ANY(scanned) AND b.current_facility_id=t.from_facility_id AND b.status='IN_STOCK'
-          AND EXISTS (SELECT FROM public.batches batch WHERE batch.id=b.batch_id AND batch.medicine_id=item.medicine_id
-            AND batch.status='ACTIVE' AND batch.expiry_date>current_date);
+          AND EXISTS (SELECT FROM public.batches batch WHERE batch.id=b.batch_id AND batch.medicine_id=item.medicine_id)
+          AND public.box_sellable(b.uid, current_date);
       GET DIAGNOSTICS changed=ROW_COUNT;
       IF changed<>item.quantity THEN RAISE EXCEPTION 'Scanned packages are unavailable, ineligible or belong to another medicine' USING ERRCODE='22023'; END IF;
       UPDATE public.order_items SET assigned_uids=scanned WHERE id=item.id;
+    ELSIF EXISTS (SELECT FROM unnest(item.assigned_uids) uid WHERE NOT public.box_sellable(uid, current_date)) THEN
+      RAISE EXCEPTION 'A reserved package belongs to a held, recalled or expired batch, or lacks the minimum shelf life. Replace it before dispatch.' USING ERRCODE='22023';
     END IF;
   END LOOP;
   -- The existing validator checks completeness and exact agreement with every transfer line.
