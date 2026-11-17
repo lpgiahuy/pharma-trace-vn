@@ -3,7 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AuthActor, authActor } from '../common/auth-identity';
-import { WH_ALL, WH_MANAGER } from '../common/warehouse-roles';
+import { WH_ALL, WH_MANAGER, WH_READ } from '../common/warehouse-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
 export type VoucherScope = 'validate' | 'read' | 'manage' | 'available';
@@ -187,6 +187,28 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       `;
       if (!state?.ready) throw new ServiceUnavailableException('Warehouse staff RLS setup is not ready');
       await tx.$queryRaw`SELECT set_config('app.employee_operation', ${'warehouse_read'}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
+      return run(tx);
+    });
+  }
+
+  /** Read-only warehouse view of stock, logs and quarantine (warehouse_read policies, own facility only). */
+  async withWarehouseRead<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const actor = authActor(identity);
+    if (actor.type !== 'employee' || !(WH_READ as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid warehouse read scope');
+    if (actor.role !== 'SUPER_ADMIN' && (!Number.isInteger(actor.facilityId) || Number(actor.facilityId) <= 0)) throw new ForbiddenException('Staff account is not assigned to a facility');
+    return this.$transaction(async tx => {
+      const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
+        SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relowner <> r.oid
+          AND EXISTS (SELECT FROM pg_policy p WHERE p.polrelid=c.oid AND p.polname='inventory_warehouse_read') AS ready
+        FROM pg_roles r JOIN pg_class c ON c.relname = 'inventories'
+        JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public' WHERE r.rolname = current_user
+      `;
+      if (!state?.ready) throw new ServiceUnavailableException('Warehouse inventory RLS setup is not ready');
+      await tx.$queryRaw`SELECT set_config('app.inventory_operation', ${'warehouse_read'}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;

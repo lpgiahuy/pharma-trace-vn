@@ -21,6 +21,7 @@ import {
 import { geocodeAddress, isValidCoordinates } from "./helpers/geocoding.helper";
 import {
   ORDER_DETAILS_INCLUDE,
+  availableStock,
   STATUS_DB_MAPPINGS,
   formatOrder,
   isBoxUnit,
@@ -224,7 +225,7 @@ export class OrderService {
 
     const getAvailableStock = (facility: (typeof allFacilities)[0], variantId: number) => {
       const inv = facility.inventories.find((entry) => entry.variant_id === variantId);
-      return inv ? Math.max(0, inv.stock_quantity - (inv.reserved_quantity ?? 0)) : 0;
+      return inv ? availableStock(inv) : 0;
     };
 
     const scoredFacilities = allFacilities.map((facility) => ({
