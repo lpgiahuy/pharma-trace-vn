@@ -91,6 +91,52 @@ integration('M1 validated fulfillment checkout with the restricted application r
     await expect(orders.createOrder(customer, { ...request, latitude: 21, longitude: 105.8 }, true)).rejects.toThrow(/suitable fulfillment/i);
   });
 
+  describe('batch sellability', () => {
+    const request = (variant: number) => ({ items: [{ variantId: variant, quantity: 1 }], paymentMethod: 'COD' as const, shippingAddress: 'Verified test address', recipientName: 'Test buyer', recipientPhone: '0900000000', latitude: 10.77, longitude: 106.7 });
+    async function stocked(batchStatus: string, expiryDays: number) {
+      const f = await fixture();
+      await configure(destination); await finance.saveTransportRequirement(f.medicine, 'APPROVED_STANDARD', actor());
+      await db.query('UPDATE batches SET status=$2, production_date=current_date-400, expiry_date=current_date+$3::int WHERE id=$1', [f.batch, batchStatus, expiryDays]);
+      await db.query('INSERT INTO inventories(facility_id,variant_id,stock_quantity,reserved_quantity) VALUES ($1,$2,1,0)', [destination, f.variant]);
+      const box = (await db.query("INSERT INTO medicine_boxes(batch_id,current_facility_id,status) VALUES ($1,$2,'IN_STOCK') RETURNING uid", [f.batch, destination])).rows[0].uid as string;
+      return { ...f, box };
+    }
+
+    it('does not quote or reserve a box from an ON_HOLD batch', async () => {
+      const f = await stocked('ON_HOLD', 365);
+      await expect(orders.createOrder(customer, request(f.variant), true)).rejects.toThrow(/out of stock/i);
+      await expect(orders.createOrder(customer, request(f.variant))).rejects.toThrow(/out of stock/i);
+      expect((await db.query('SELECT status FROM medicine_boxes WHERE uid=$1', [f.box])).rows[0].status).toBe('IN_STOCK');
+    });
+
+    it('excludes a box with 30 days left when the medicine requires 90', async () => {
+      const f = await stocked('ACTIVE', 30);
+      await db.query('UPDATE medicines SET min_remaining_shelf_life_days=90 WHERE id=$1', [f.medicine]);
+      await expect(orders.createOrder(customer, request(f.variant), true)).rejects.toThrow(/out of stock/i);
+      await db.query('UPDATE medicines SET min_remaining_shelf_life_days=NULL WHERE id=$1', [f.medicine]);
+      await expect(orders.createOrder(customer, request(f.variant), true)).resolves.toMatchObject({ facilityId: destination });
+    });
+
+    it('excludes a box from an expired batch', async () => {
+      const f = await stocked('ACTIVE', -1);
+      await expect(orders.createOrder(customer, request(f.variant), true)).rejects.toThrow(/out of stock/i);
+    });
+
+    it('refuses to pack a reserved box whose batch was held afterwards, without cancelling the order', async () => {
+      const f = await stocked('ACTIVE', 365);
+      const order = await orders.createOrder(customer, request(f.variant));
+      if (!('id' in order)) throw new Error('Expected created order');
+      expect((await db.query('SELECT status FROM medicine_boxes WHERE uid=$1', [f.box])).rows[0].status).toBe('RESERVED');
+      const replacement = (await db.query("INSERT INTO medicine_boxes(batch_id,current_facility_id,status) VALUES ($1,$2,'IN_STOCK') RETURNING uid", [await id("INSERT INTO batches(batch_number,medicine_id,production_date,expiry_date,status) VALUES ($1,$2,current_date-1,current_date+365,'ACTIVE') RETURNING id", [randomUUID(), f.medicine]), destination])).rows[0].uid as string;
+      await db.query("UPDATE batches SET status='ON_HOLD', hold_reason='Quality check' WHERE id=$1", [f.batch]);
+      await expect(finance.adminPackOrder(order.id, { boxUids: [f.box] }, actor())).rejects.toMatchObject({
+        code: 'BOX_NOT_SELLABLE', details: { uids: [f.box], replacementUids: [replacement] },
+      });
+      expect((await db.query('SELECT order_status FROM orders WHERE id=$1', [order.id])).rows[0].order_status).toBe('PENDING');
+      expect((await finance.adminGetAvailableBoxesForOrder(order.id, actor())).map(box => box.uid)).toEqual([replacement]);
+    });
+  });
+
   it('restricts sellers, link administration and stale checkout without rewriting accepted orders', async () => {
     const f = await fixture(1);
     const depot = await id("INSERT INTO facilities(facility_name,facility_type,latitude,longitude) VALUES ('Linked warehouse','BRANCH_WAREHOUSE',10.77,106.7) RETURNING id");

@@ -72,14 +72,18 @@ integration('Logistics database integrity under app_user', () => {
   it('requires a source scan matching the reserved UID before dispatch', async () => {
     const sourceEmployee = await id("INSERT INTO employees(full_name,role,facility_id) VALUES ('Source dispatcher','WAREHOUSE_STAFF',$1) RETURNING id", [source]);
     const order = await id("INSERT INTO orders(order_code,export_facility_id,order_status,payment_method) VALUES (gen_random_uuid()::text,$1,'WAITING_INTERNAL_TRANSFER','COD') RETURNING id", [destination]);
-    const box = (await admin.query("INSERT INTO medicine_boxes(current_facility_id,status) VALUES ($1,'RESERVED') RETURNING uid", [source])).rows[0].uid as string;
-    const other = (await admin.query("INSERT INTO medicine_boxes(current_facility_id,status) VALUES ($1,'RESERVED') RETURNING uid", [source])).rows[0].uid as string;
+    const batch = await id("INSERT INTO batches(batch_number,medicine_id,production_date,expiry_date) VALUES (gen_random_uuid()::text,$1,current_date-1,current_date+365) RETURNING id", [medicine]);
+    const box = (await admin.query("INSERT INTO medicine_boxes(batch_id,current_facility_id,status) VALUES ($1,$2,'RESERVED') RETURNING uid", [batch, source])).rows[0].uid as string;
+    const other = (await admin.query("INSERT INTO medicine_boxes(batch_id,current_facility_id,status) VALUES ($1,$2,'RESERVED') RETURNING uid", [batch, source])).rows[0].uid as string;
     await admin.query("INSERT INTO order_items(order_id,medicine_id,variant_id,quantity,source_facility_id,inventory_reserved,assigned_uids,unit_name) VALUES ($1,$2,$3,1,$4,true,$5,'Box')", [order, medicine, variant, source, [box]]);
     const transfer = await id("INSERT INTO internal_transfers(transfer_code,order_id,from_facility_id,to_facility_id,status,items) VALUES (gen_random_uuid()::text,$1,$2,$3,'REQUESTED',$4) RETURNING id", [order, source, destination, JSON.stringify([{ variantId: variant, medicineId: medicine, quantity: 1 }])]);
     await admin.query('INSERT INTO inventories(facility_id,variant_id,stock_quantity,reserved_quantity) VALUES ($1,$2,1,1)', [source, variant]);
     const sourceActor = { id: sourceEmployee, type: 'employee' as const, role: 'WAREHOUSE_STAFF', facilityId: source };
     const payload = { transportMode: 'INTERNAL' as const, transportEmployeeId: sourceEmployee, manifest: [{ variantId: variant, quantity: 1, boxUids: [other] }] };
     await expect(transfers.adminDispatchInternalTransfer(transfer, payload, sourceActor)).rejects.toThrow(/UID/i);
+    await admin.query("UPDATE batches SET status='ON_HOLD' WHERE id=$1", [batch]);
+    await expect(transfers.adminDispatchInternalTransfer(transfer, { ...payload, manifest: [{ variantId: variant, quantity: 1, boxUids: [box] }] }, sourceActor)).rejects.toThrow(/held, recalled or expired/i);
+    await admin.query("UPDATE batches SET status='ACTIVE' WHERE id=$1", [batch]);
     await transfers.adminDispatchInternalTransfer(transfer, { ...payload, manifest: [{ variantId: variant, quantity: 1, boxUids: [box] }] }, sourceActor);
     expect((await admin.query('SELECT lines FROM transfer_manifests WHERE transfer_id=$1', [transfer])).rows[0].lines[0].boxUids).toEqual([box]);
   });

@@ -144,7 +144,7 @@ describe("AdminOrderService packing", () => {
     ],
   };
 
-  function setup(otherStatus = "RESERVED", reviewStatus?: string) {
+  function setup(otherStatus = "RESERVED", reviewStatus?: string, unsellable: string[] = []) {
     const boxes = [ownUid, otherUid].map((uid) => ({
       uid,
       status: uid === ownUid ? "RESERVED" : otherStatus,
@@ -165,7 +165,12 @@ describe("AdminOrderService packing", () => {
         findUnique: jest.fn().mockResolvedValue({ stock_quantity: 2 }),
       },
       $executeRaw: jest.fn().mockResolvedValue(1),
-      $queryRaw: jest.fn().mockImplementation((sql: TemplateStringsArray) => Promise.resolve(sql.join('').includes('RETURNING "stock_quantity"') ? [{ stock_quantity: 1 }] : [])),
+      $queryRaw: jest.fn().mockImplementation((sql: TemplateStringsArray) => {
+        const text = sql.join('');
+        if (text.includes('NOT public.box_sellable(uid')) return Promise.resolve(unsellable.map((uid) => ({ uid })));
+        if (text.includes('public.box_sellable(b.uid')) return Promise.resolve([{ uid: otherUid }]);
+        return Promise.resolve(text.includes('RETURNING "stock_quantity"') ? [{ stock_quantity: 1 }] : []);
+      }),
       order_items: { update: jest.fn() },
       inventory_logs: { create: jest.fn() },
       batches: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -265,6 +270,28 @@ describe("AdminOrderService packing", () => {
       where: { id: 10 },
       data: { assigned_uids: [otherUid], inventory_reserved: false },
     });
+  });
+
+  it("refuses to pack a reserved box whose batch was held after reservation and suggests a replacement", async () => {
+    const { service, tx, prisma } = setup("IN_STOCK", undefined, [ownUid]);
+
+    await expect(service.adminPackOrder(1, { boxUids: [ownUid] }, facilityStaff)).rejects.toMatchObject({
+      code: "BOX_NOT_SELLABLE",
+      details: { uids: [ownUid], replacementUids: [otherUid] },
+    });
+    expect(tx.medicine_boxes.updateMany).not.toHaveBeenCalled();
+    expect(tx.order_items.update).not.toHaveBeenCalled();
+    expect(tx.shipments.create).not.toHaveBeenCalled();
+    expect(tx.orders.update).not.toHaveBeenCalled();
+    expect(prisma.orders.findFirst).toHaveBeenCalled();
+  });
+
+  it("lists replacements instead of a reserved box from a blocked batch", async () => {
+    const { service } = setup("IN_STOCK", undefined, [ownUid]);
+
+    const boxes = await service.adminGetAvailableBoxesForOrder(1, facilityStaff);
+
+    expect(boxes.map((box) => box.uid)).toEqual([otherUid]);
   });
 
   it("stops packing if another worker claims the replacement first", async () => {
