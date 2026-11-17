@@ -862,6 +862,8 @@ Both scripts can be re-applied.
 - `box_sellable(uid, as_of)` is true only when the box is not `QUARANTINED`, its batch is `ACTIVE`, the batch has not expired on `as_of`, and the remaining days meet the minimum.
 - `unsellable_box_counts(medicine_ids)` returns per facility and medicine the number of unreserved boxes that may not be sold. Checkout subtracts them from aggregate stock.
 - `security/logistics/source_manifest_assignment.sql` now uses `box_sellable` when a transfer is dispatched, including packages reserved earlier.
+- `default_min_shelf_life_days()` returns the system default to `app_user`; `set_default_min_shelf_life_days(days)` changes it and requires `SUPER_ADMIN`.
+- `batch_status_events` records every batch hold and release with the reason and the employee. `app_user` may only read and insert: warehouse roles read, warehouse managers insert rows for themselves. A daily backend job sets `EXPIRED` on `ACTIVE` and `ON_HOLD` batches past their expiry date.
 
 ### Applying to an existing database
 

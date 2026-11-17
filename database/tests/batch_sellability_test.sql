@@ -60,5 +60,51 @@ UPDATE public.medicines SET min_remaining_shelf_life_days = 90 WHERE id = :m_id;
 DO $$ BEGIN
   IF public.box_sellable(current_setting('test.short')::uuid, current_date) THEN RAISE EXCEPTION '30-day box accepted with a 90-day medicine minimum'; END IF;
 END $$;
+
+-- System default: everyone may read it, only SUPER_ADMIN may change it.
+INSERT INTO public.employees(full_name,role,facility_id) VALUES ('Sellability manager','WAREHOUSE_MANAGER',:f_wh) RETURNING id AS manager \gset e_
+SELECT set_config('test.manager',:'e_manager',true), set_config('test.batch',:'b_hold',true);
+SET LOCAL ROLE app_user;
+DO $$ BEGIN
+  PERFORM set_config('app.current_user_type','employee',true);
+  PERFORM set_config('app.current_user_id',current_setting('test.manager'),true);
+  PERFORM set_config('app.current_user_role','WAREHOUSE_MANAGER',true);
+  IF public.default_min_shelf_life_days() IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'Default shelf life not readable'; END IF;
+  BEGIN
+    PERFORM public.set_default_min_shelf_life_days(30);
+    RAISE EXCEPTION 'Warehouse manager changed the default shelf life';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  PERFORM set_config('app.current_user_role','SUPER_ADMIN',true);
+  PERFORM public.set_default_min_shelf_life_days(30);
+  IF public.default_min_shelf_life_days() IS DISTINCT FROM 30 THEN RAISE EXCEPTION 'Default shelf life not saved'; END IF;
+END $$;
+
+-- Batch status events: managers record their own actions; staff cannot write; nobody may edit or delete.
+DO $$ DECLARE manager int := current_setting('test.manager')::int; batch int := current_setting('test.batch')::int;
+BEGIN
+  PERFORM set_config('app.current_user_role','WAREHOUSE_MANAGER',true);
+  INSERT INTO public.batch_status_events(batch_id,from_status,to_status,reason,actor_id) VALUES (batch,'ACTIVE','ON_HOLD','Damaged carton',manager);
+  BEGIN
+    INSERT INTO public.batch_status_events(batch_id,from_status,to_status,reason,actor_id) VALUES (batch,'ON_HOLD','ACTIVE','Spoofed actor',manager + 1);
+    RAISE EXCEPTION 'Event recorded for another actor';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    UPDATE public.batch_status_events SET reason = 'Edited';
+    RAISE EXCEPTION 'Batch status event was edited';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  PERFORM set_config('app.current_user_role','WAREHOUSE_STAFF',true);
+  IF (SELECT count(*) FROM public.batch_status_events WHERE batch_id = batch) <> 1 THEN RAISE EXCEPTION 'Staff cannot read batch events'; END IF;
+  BEGIN
+    INSERT INTO public.batch_status_events(batch_id,from_status,to_status,reason,actor_id) VALUES (batch,'ON_HOLD','ACTIVE','Staff release',manager);
+    RAISE EXCEPTION 'Warehouse staff recorded a batch event';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  PERFORM set_config('app.current_user_role','PHARMACIST',true);
+  IF EXISTS (SELECT FROM public.batch_status_events) THEN RAISE EXCEPTION 'Pharmacist read batch events'; END IF;
+END $$;
+RESET ROLE;
 ROLLBACK;
 \echo 'batch_sellability_test passed'

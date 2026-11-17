@@ -54,4 +54,48 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
 $$;
 REVOKE ALL ON FUNCTION public.unsellable_box_counts(integer[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.unsellable_box_counts(integer[]) TO app_user;
+
+CREATE OR REPLACE FUNCTION public.default_min_shelf_life_days() RETURNS integer
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+  SELECT default_min_shelf_life_days FROM public.system_settings
+$$;
+REVOKE ALL ON FUNCTION public.default_min_shelf_life_days() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.default_min_shelf_life_days() TO app_user;
+
+CREATE OR REPLACE FUNCTION public.set_default_min_shelf_life_days(days integer) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+BEGIN
+  IF current_setting('app.current_user_type', true) IS DISTINCT FROM 'employee'
+    OR current_setting('app.current_user_role', true) IS DISTINCT FROM 'SUPER_ADMIN'
+    OR nullif(current_setting('app.current_user_id', true), '') IS NULL THEN
+    RAISE EXCEPTION 'Super administrator approval is required' USING ERRCODE = '42501';
+  END IF;
+  UPDATE public.system_settings SET default_min_shelf_life_days = days, updated_at = now();
+END $$;
+REVOKE ALL ON FUNCTION public.set_default_min_shelf_life_days(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_default_min_shelf_life_days(integer) TO app_user;
+
+-- Append-only record of who held or released a batch and why.
+CREATE TABLE IF NOT EXISTS public.batch_status_events (
+  id bigserial PRIMARY KEY,
+  batch_id integer NOT NULL REFERENCES public.batches(id),
+  from_status varchar(50) NOT NULL,
+  to_status varchar(50) NOT NULL,
+  reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 500),
+  actor_id integer NOT NULL REFERENCES public.employees(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_batch_status_events_batch ON public.batch_status_events(batch_id);
+REVOKE ALL ON public.batch_status_events FROM PUBLIC, app_user;
+GRANT SELECT, INSERT ON public.batch_status_events TO app_user;
+GRANT USAGE ON SEQUENCE public.batch_status_events_id_seq TO app_user;
+ALTER TABLE public.batch_status_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.batch_status_events FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS batch_status_event_read ON public.batch_status_events;
+CREATE POLICY batch_status_event_read ON public.batch_status_events FOR SELECT TO app_user
+  USING (public.app_role_in_group('WH_READ'));
+DROP POLICY IF EXISTS batch_status_event_insert ON public.batch_status_events;
+CREATE POLICY batch_status_event_insert ON public.batch_status_events FOR INSERT TO app_user
+  WITH CHECK (public.app_role_in_group('WH_MANAGER')
+    AND actor_id = nullif(current_setting('app.current_user_id', true), '')::integer);
 COMMIT;
