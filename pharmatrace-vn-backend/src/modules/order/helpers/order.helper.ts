@@ -18,7 +18,7 @@ export const ORDER_DETAILS_INCLUDE = {
   },
 } as const satisfies Prisma.ordersInclude;
 
-export { AVAILABLE_BOX_STATUSES, isBoxUnit } from "../../../common/inventory/box.helper";
+export { AVAILABLE_BOX_STATUSES, findSellableBoxUids, findUnsellableUids, isBoxUnit } from "../../../common/inventory/box.helper";
 
 /** Units that can still be sold or reserved: stock minus reservations, never negative. */
 export function availableStock(inv: { stock_quantity: number; reserved_quantity: number | null }): number {
