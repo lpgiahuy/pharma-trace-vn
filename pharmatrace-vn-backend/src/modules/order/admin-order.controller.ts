@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Put,
   Body,
   Param,
   Query,
@@ -23,7 +24,7 @@ import { OrderQueryDto } from "./dto/order-query.dto";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import { PackOrderDto } from "./dto/pack-order.dto";
 import { OnlinePaymentDto, RejectOnlinePaymentDto, PaymentExceptionDto, ResolvePaymentExceptionDto } from "./dto/online-payment.dto";
-import { FulfillmentPolicyDto, TransportRequirementDto, WarehouseSellingPharmaciesDto } from './dto/fulfillment-policy.dto';
+import { DefaultShelfLifeDto, FulfillmentPolicyDto, TransportRequirementDto, WarehouseSellingPharmaciesDto } from './dto/fulfillment-policy.dto';
 import { ApproveCancellationRefundDto, RecordCancellationRefundDto, ResolveDeliveryDisputeDto } from './dto/order-resolution.dto';
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -84,7 +85,14 @@ export class AdminOrderController {
   @Post('fulfillment/medicines/:medicineId')
   @Roles('SUPER_ADMIN')
   async saveTransportRequirement(@Param('medicineId', ParseIntPipe) id: number, @Body() dto: TransportRequirementDto, @CurrentUser() user: CurrentUserPayload) {
-    await this.orderService.saveTransportRequirement(id, dto.condition, user);
+    await this.orderService.saveTransportRequirement(id, dto.condition, user, dto.minRemainingShelfLifeDays ?? null);
+    return { success: true };
+  }
+
+  @Put('fulfillment/shelf-life-default')
+  @Roles('SUPER_ADMIN')
+  async setDefaultShelfLife(@Body() dto: DefaultShelfLifeDto, @CurrentUser() user: CurrentUserPayload) {
+    await this.orderService.setDefaultShelfLife(dto.days, user);
     return { success: true };
   }
 

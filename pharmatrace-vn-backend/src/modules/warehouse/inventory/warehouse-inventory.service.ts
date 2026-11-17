@@ -238,7 +238,7 @@ export class WarehouseInventoryService {
     const facilityId = warehouseScope(user, query, WH_READ);
     return this.prisma.withWarehouseRead(authActor(user), async tx => {
       const [row, counts] = await Promise.all([
-        tx.batches.findUnique({ where: { id }, select: { ...batchSelect, initial_quantity: true, remaining_quantity: true, certificate_co_cq: true } }),
+        tx.batches.findUnique({ where: { id }, select: { ...batchSelect, initial_quantity: true, remaining_quantity: true, certificate_co_cq: true, hold_reason: true, held_at: true } }),
         tx.medicine_boxes.groupBy({
           by: ['status'], where: { batch_id: id, ...boxesAtWhere(facilityId) }, _count: { _all: true },
         }),
@@ -249,6 +249,7 @@ export class WarehouseInventoryService {
       return {
         ...toBatchItem(row, inStock),
         initialQuantity: row.initial_quantity, remainingQuantity: row.remaining_quantity, certificate: row.certificate_co_cq, boxes,
+        holdReason: row.hold_reason, heldAt: row.held_at,
       };
     });
   }

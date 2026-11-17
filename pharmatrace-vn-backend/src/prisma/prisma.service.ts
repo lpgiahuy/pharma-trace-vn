@@ -217,6 +217,25 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
   }
 
+  /** Batch hold and release by a warehouse manager (batch_status_event_insert policy). */
+  async withBatchStatus<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const actor = authActor(identity);
+    if (actor.type !== 'employee' || !(WH_MANAGER as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid batch status scope');
+    return this.$transaction(async tx => {
+      const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
+        SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relowner <> r.oid
+          AND EXISTS (SELECT FROM pg_policy p WHERE p.polrelid=c.oid AND p.polname='batch_status_event_insert') AS ready
+        FROM pg_roles r JOIN pg_class c ON c.relname = 'batch_status_events'
+        JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public' WHERE r.rolname = current_user
+      `;
+      if (!state?.ready) throw new ServiceUnavailableException('Batch status RLS setup is not ready');
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      return run(tx);
+    });
+  }
+
   async withFacilityManagement<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
     if (actor.type !== 'employee' || actor.role !== 'SUPER_ADMIN') throw new ForbiddenException('Invalid facility management scope');

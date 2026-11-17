@@ -1,6 +1,6 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { WarehouseStaffQueryDto } from '../../dto/warehouse-staff-query.dto';
 
 export class WarehouseFacilityQueryDto {
@@ -72,4 +72,12 @@ export class WarehouseBatchQueryDto extends WarehouseStaffQueryDto {
   @Min(1)
   @Max(3650)
   days?: number;
+}
+
+export class BatchStatusReasonDto {
+  @ApiProperty({ example: 'Damaged cartons found during receiving' })
+  @IsString()
+  @Matches(/\S/, { message: 'reason must not be blank' })
+  @MaxLength(500)
+  reason: string;
 }

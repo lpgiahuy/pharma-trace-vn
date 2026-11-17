@@ -249,8 +249,9 @@ export class AdminOrderService {
       policies: await tx.$queryRaw`SELECT p.*, f.facility_name, s.facility_name AS selling_facility_name
         FROM public.facility_fulfillment_policy p JOIN public.facilities f ON f.id=p.facility_id
         JOIN public.facilities s ON s.id=p.selling_facility_id ORDER BY p.facility_id`,
-      requirements: await tx.$queryRaw`SELECT r.*, m.medicine_name FROM public.medicine_transport_requirements r
+      requirements: await tx.$queryRaw`SELECT r.*, m.medicine_name, m.min_remaining_shelf_life_days FROM public.medicine_transport_requirements r
         JOIN public.medicines m ON m.id=r.medicine_id ORDER BY r.medicine_id`,
+      defaultMinShelfLifeDays: (await tx.$queryRaw<{ days: number }[]>`SELECT public.default_min_shelf_life_days() AS days`)[0]?.days ?? 0,
       warehouseLinks: await tx.$queryRaw`SELECT warehouse_id,pharmacy_id FROM public.warehouse_selling_pharmacies ORDER BY warehouse_id,pharmacy_id`,
     }));
   }
@@ -261,8 +262,16 @@ export class AdminOrderService {
       ${dto.radiusKm}::numeric, ${dto.transportConditions.map(value => value.trim())}::text[])`);
   }
 
-  async saveTransportRequirement(id: number, condition: string, user: CurrentUserPayload) {
-    return this.executeWithStaffContext(user, tx => tx.$executeRaw`SELECT public.save_transport_requirement(${id}, ${condition.trim()}::text)`);
+  async saveTransportRequirement(id: number, condition: string, user: CurrentUserPayload, minRemainingShelfLifeDays: number | null = null) {
+    return this.executeWithStaffContext(user, async tx => {
+      // save_transport_requirement checks SUPER_ADMIN and that the medicine exists.
+      await tx.$executeRaw`SELECT public.save_transport_requirement(${id}, ${condition.trim()}::text)`;
+      await tx.medicines.update({ where: { id }, data: { min_remaining_shelf_life_days: minRemainingShelfLifeDays } });
+    });
+  }
+
+  async setDefaultShelfLife(days: number, user: CurrentUserPayload) {
+    return this.executeWithStaffContext(user, tx => tx.$executeRaw`SELECT public.set_default_min_shelf_life_days(${days}::integer)`);
   }
 
   async setWarehouseSellingPharmacies(id: number, pharmacyIds: number[], user: CurrentUserPayload) {

@@ -390,6 +390,43 @@ describe("AdminOrderService facility access", () => {
 
 });
 
+describe("AdminOrderService minimum shelf life", () => {
+  const admin = { id: 1, role: 'SUPER_ADMIN', type: 'employee' };
+
+  function setup() {
+    const tx = { $executeRaw: jest.fn().mockResolvedValue(1), medicines: { update: jest.fn().mockResolvedValue({}) } };
+    return { tx, service: new AdminOrderService(scopedPrisma({ $transaction: jest.fn(run => run(tx)) })) };
+  }
+
+  it("saves the medicine minimum together with its transport classification", async () => {
+    const { tx, service } = setup();
+    await service.saveTransportRequirement(5, ' Cold chain ', admin, 90);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.medicines.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { min_remaining_shelf_life_days: 90 } });
+  });
+
+  it("falls back to the system default when no minimum is given", async () => {
+    const { tx, service } = setup();
+    await service.saveTransportRequirement(5, 'Ambient', admin);
+    expect(tx.medicines.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { min_remaining_shelf_life_days: null } });
+  });
+
+  it("does not touch the medicine when the classification is rejected", async () => {
+    const { tx, service } = setup();
+    tx.$executeRaw.mockRejectedValueOnce(new Error('Super administrator approval is required'));
+    await expect(service.saveTransportRequirement(5, 'Ambient', { ...admin, role: 'STORE_MANAGER', facilityId: 3 }, 30)).rejects.toThrow();
+    expect(tx.medicines.update).not.toHaveBeenCalled();
+  });
+
+  it("sets the system default through the guarded database function", async () => {
+    const { tx, service } = setup();
+    await service.setDefaultShelfLife(60, admin);
+    const [sql, days] = tx.$executeRaw.mock.calls[0] as [TemplateStringsArray, number];
+    expect(sql.join('?')).toContain('public.set_default_min_shelf_life_days');
+    expect(days).toBe(60);
+  });
+});
+
 // Transaction mocks expose the same delegates as the production scoped transaction.
 function scopedPrisma(prisma: any): any {
   return { ...prisma, withOrder: jest.fn((_operation, run) => {

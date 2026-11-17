@@ -1,12 +1,13 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { WH_READ } from '../../../common/warehouse-roles';
+import { WH_MANAGER, WH_READ } from '../../../common/warehouse-roles';
+import { BatchStatusService } from './batch-status.service';
 import {
-  WarehouseBatchQueryDto, WarehouseFacilityQueryDto, WarehouseInventoryLogQueryDto, WarehouseInventoryQueryDto,
+  BatchStatusReasonDto, WarehouseBatchQueryDto, WarehouseFacilityQueryDto, WarehouseInventoryLogQueryDto, WarehouseInventoryQueryDto,
 } from './dto/warehouse-inventory-query.dto';
 import { WarehouseInventoryService } from './warehouse-inventory.service';
 
@@ -16,7 +17,7 @@ import { WarehouseInventoryService } from './warehouse-inventory.service';
 @Roles(...WH_READ)
 @Controller('warehouse')
 export class WarehouseInventoryController {
-  constructor(private readonly inventory: WarehouseInventoryService) {}
+  constructor(private readonly inventory: WarehouseInventoryService, private readonly batchStatus: BatchStatusService) {}
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Stock, quarantine, expiring batch, transfer and packing counts for your warehouse' })
@@ -66,5 +67,19 @@ export class WarehouseInventoryController {
   @ApiOperation({ summary: 'One batch with its box counts by status at your warehouse' })
   async batch(@Param('id', ParseIntPipe) id: number, @Query() query: WarehouseFacilityQueryDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.inventory.batch(user, id, query) };
+  }
+
+  @Patch('batches/:id/hold')
+  @Roles(...WH_MANAGER)
+  @ApiOperation({ summary: 'Put an active batch on hold so none of its boxes can be reserved, packed or dispatched' })
+  async hold(@Param('id', ParseIntPipe) id: number, @Body() dto: BatchStatusReasonDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.batchStatus.hold(user, id, dto.reason) };
+  }
+
+  @Patch('batches/:id/release')
+  @Roles(...WH_MANAGER)
+  @ApiOperation({ summary: 'Release a batch on hold back to active' })
+  async release(@Param('id', ParseIntPipe) id: number, @Body() dto: BatchStatusReasonDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.batchStatus.release(user, id, dto.reason) };
   }
 }

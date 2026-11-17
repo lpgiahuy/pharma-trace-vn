@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsString, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class FulfillmentPolicyDto {
   @IsInt() @Min(1) sellingFacilityId: number;
@@ -13,6 +13,12 @@ export class FulfillmentPolicyDto {
 
 export class TransportRequirementDto {
   @IsString() @MaxLength(100) condition: string;
+  /** Minimum days a box must have left before expiry to be sold. Null or omitted uses the system default. */
+  @IsOptional() @IsInt() @Min(0) @Max(3650) minRemainingShelfLifeDays?: number | null;
+}
+
+export class DefaultShelfLifeDto {
+  @IsInt() @Min(0) @Max(3650) days: number;
 }
 
 export class WarehouseSellingPharmaciesDto {
