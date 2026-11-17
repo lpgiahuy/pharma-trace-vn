@@ -44,6 +44,8 @@ export interface BatchDetail extends BatchItem {
   initialQuantity: number;
   remainingQuantity: number;
   certificate: string | null;
+  holdReason: string | null;
+  heldAt: string | null;
   boxes: { status: string | null; count: number }[];
 }
 
@@ -74,4 +76,8 @@ export const warehouseService = {
     return apiClient.get<unknown, Page<BatchItem>>(expiring ? '/warehouse/batches/expiring' : '/warehouse/batches', { params: query });
   },
   batch: (id: number) => apiClient.get<unknown, Envelope<BatchDetail>>(`/warehouse/batches/${id}`),
+  holdBatch: (id: number, reason: string) =>
+    apiClient.patch<unknown, Envelope<{ id: number; status: string }>>(`/warehouse/batches/${id}/hold`, { reason }),
+  releaseBatch: (id: number, reason: string) =>
+    apiClient.patch<unknown, Envelope<{ id: number; status: string }>>(`/warehouse/batches/${id}/release`, { reason }),
 };
