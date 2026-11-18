@@ -898,3 +898,28 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 Both scripts can be re-applied.
+
+## Goods receipts
+
+`security/procurement/goods_receipts.sql` receives approved purchase orders in one or more receipts.
+
+- New tables: `goods_receipts` (unique `receipt_code`, order, receiving warehouse, employee, time, note), `goods_receipt_lines` (order line, batch, accepted and rejected quantities, reject reason, scanned `box_uids` and `rejected_box_uids`) and `goods_receipt_attachments` (photos, delivery notes and CO/CQ, stored as private images).
+- `inventory_logs` gains `batch_id`. Receipts log `PURCHASE_IN` (stock bucket `ON_HAND`) per line, and rejected boxes log `QUARANTINE_IN` with a `PO_RECEIPT` quarantine movement.
+- `accounts_payable` gains a unique `goods_receipt_id`. Each receipt with accepted goods creates one payable worth accepted quantity × unit price; rejected boxes are not payable.
+- `purchase_orders.closed_reason` must be 1–500 characters when set.
+- `record_goods_receipt(po, code, note, lines)` is a security-definer function that does the whole receipt in one transaction: it locks the order and its lines, returns the existing receipt for a repeated code, creates or matches the batch (same medicine and dates), checks that every scanned box or SSCC carton belongs to the batch and is not held by any facility yet, refuses quantities above the order, moves boxes and cartons to the warehouse, adds stock or quarantine, updates `received_quantity`, moves the order to `PARTIALLY_RECEIVED` or `RECEIVED` with an event, and records the payable. Unknown box UIDs are registered as new, unsigned boxes of the declared batch.
+- RLS is forced on the three new tables and on `accounts_payable`. Warehouse roles read the receipts of their own warehouse; only the function writes receipts and payables. `SUPER_ADMIN`, `ACCOUNTANT` and `FINANCE_MANAGER` read every payable, and a warehouse manager reads the payables of the warehouse's orders.
+- `employees` gains `employee_procurement_actor_read`: inside purchase order requests (`app.employee_operation = 'procurement_read'`), a caller reads the employees who acted on the order events, receipts and attachments it can already read, so warehouse staff see who created, approved and received an order.
+
+### Applying to an existing database
+
+Back up the database first. `security/procurement/purchase_orders.sql` and `security/returns/return_requests.sql` must already be installed. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/procurement/goods_receipts.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/goods_receipt_test.sql
+```
+
+The backend suite `src/modules/procurement/goods-receipt.integration.spec.ts` (partial receipts, concurrent receipts, repeated codes and every rejection) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_goods_receipt_20261118`.
+
+Both scripts can be re-applied. Re-running `security/inventory/quarantine_balances.sql` or `security/returns/return_requests.sql` afterwards narrows the quarantine origin check again, so re-apply this script after them.

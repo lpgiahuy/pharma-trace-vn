@@ -45,6 +45,7 @@ model facilities {
   transfers_to             internal_transfers[] @relation("transfers_to")
   order_items_sourced      order_items[]        @relation("order_items_source_facility")
   prescription_reviews     order_prescription_reviews[]
+  goods_receipts           goods_receipts[]   @relation("gr_facility")
 }
 
 model customers {
@@ -90,6 +91,8 @@ model employees {
   purchase_orders purchase_orders[]
   purchase_orders_approved purchase_orders[] @relation("po_approver")
   purchase_order_events purchase_order_events[] @relation("po_event_actor")
+  goods_receipts        goods_receipts[]        @relation("gr_receiver")
+  goods_receipt_attachments goods_receipt_attachments[] @relation("gr_attachment_uploader")
   reported_moderations  moderation_reports[]    @relation("report_reporter_employee")
   resolved_moderations  moderation_reports[]    @relation("report_resolver_employee")
   moderation_audit_logs moderation_audit_logs[] @relation("audit_employee")
@@ -379,6 +382,7 @@ model purchase_orders {
   cashbook_logs            cashbook_logs[]
   purchase_order_items     purchase_order_items[]
   purchase_order_events    purchase_order_events[]
+  goods_receipts           goods_receipts[]
   employees                employees?              @relation(fields: [created_by_employee_id], references: [id], onUpdate: NoAction)
   approved_by              employees?              @relation("po_approver", fields: [approved_by_id], references: [id], onUpdate: NoAction)
   supplier                 facilities?             @relation("po_supplier", fields: [supplier_id], references: [id], onUpdate: NoAction)
@@ -405,6 +409,60 @@ model purchase_order_events {
   @@index([po_id], map: "idx_po_events_po")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model goods_receipts {
+  id                        Int                         @id @default(autoincrement())
+  receipt_code              String                      @unique @db.VarChar(50)
+  po_id                     Int
+  facility_id               Int
+  received_by_id            Int
+  received_at               DateTime                    @default(now()) @db.Timestamptz(6)
+  note                      String?
+  purchase_orders           purchase_orders             @relation(fields: [po_id], references: [id], onUpdate: NoAction)
+  facility                  facilities                  @relation("gr_facility", fields: [facility_id], references: [id], onUpdate: NoAction)
+  received_by               employees                   @relation("gr_receiver", fields: [received_by_id], references: [id], onUpdate: NoAction)
+  goods_receipt_lines       goods_receipt_lines[]
+  goods_receipt_attachments goods_receipt_attachments[]
+  accounts_payable          accounts_payable?
+
+  @@index([po_id], map: "idx_goods_receipts_po")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model goods_receipt_lines {
+  id                   Int                  @id @default(autoincrement())
+  receipt_id           Int
+  po_item_id           Int
+  batch_id             Int
+  quantity_accepted    Int
+  quantity_rejected    Int
+  reject_reason        String?
+  box_uids             String[]             @default([]) @db.Uuid
+  rejected_box_uids    String[]             @default([]) @db.Uuid
+  goods_receipts       goods_receipts       @relation(fields: [receipt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchase_order_items purchase_order_items @relation(fields: [po_item_id], references: [id], onUpdate: NoAction)
+  batches              batches              @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+
+  @@unique([receipt_id, po_item_id, batch_id])
+  @@index([receipt_id], map: "idx_goods_receipt_lines_receipt")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model goods_receipt_attachments {
+  id              Int            @id @default(autoincrement())
+  receipt_id      Int
+  kind            String
+  batch_id        Int?
+  image_reference String
+  uploaded_by_id  Int
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  goods_receipts  goods_receipts @relation(fields: [receipt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  batches         batches?       @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+  uploaded_by     employees      @relation("gr_attachment_uploader", fields: [uploaded_by_id], references: [id], onUpdate: NoAction)
+
+  @@index([receipt_id], map: "idx_goods_receipt_attachments_receipt")
+}
+
 model purchase_order_items {
   id                 Int                 @id @default(autoincrement())
   po_id              Int
@@ -415,6 +473,7 @@ model purchase_order_items {
   received_quantity  Int                 @default(0)
   unit_price         Decimal             @db.Decimal(12, 2)
   total_price        Decimal?            @default(dbgenerated("((quantity)::numeric * unit_price)")) @db.Decimal(15, 2)
+  goods_receipt_lines goods_receipt_lines[]
   packaging_variants packaging_variants? @relation(fields: [variant_id], references: [id], onUpdate: NoAction, map: "fk_po_items_variant")
   medicine_batches   batches?            @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
   medicines          medicines           @relation(fields: [medicine_id], references: [id], onUpdate: NoAction)
@@ -500,6 +559,7 @@ model accounts_payable {
   supplier_name     String           @db.VarChar(255)
   supplier_id       Int?
   po_id             Int?
+  goods_receipt_id  Int?             @unique
   total_due_amount  Decimal          @db.Decimal(15, 2)
   paid_amount       Decimal?         @default(0) @db.Decimal(15, 2)
   remaining_balance Decimal?         @default(dbgenerated("(total_due_amount - paid_amount)")) @db.Decimal(15, 2)
@@ -509,6 +569,7 @@ model accounts_payable {
   updated_at        DateTime?        @default(now()) @db.Timestamptz(6)
   purchase_orders   purchase_orders? @relation(fields: [po_id], references: [id], onUpdate: NoAction)
   supplier          facilities?      @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
+  goods_receipt     goods_receipts?  @relation(fields: [goods_receipt_id], references: [id], onUpdate: NoAction)
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -552,6 +613,9 @@ model batches {
   medicine_boxes       medicine_boxes[]
   purchase_order_items purchase_order_items[]
   sscc_cartons         sscc_cartons[]
+  inventory_logs       inventory_logs[]
+  goods_receipt_lines  goods_receipt_lines[]
+  goods_receipt_attachments goods_receipt_attachments[]
 
   @@index([medicine_id], map: "idx_batches_medicine_id")
   @@index([expiry_date], map: "idx_batches_expiry_date")
@@ -599,6 +663,7 @@ model inventory_logs {
   facility_id       Int?
   medicine_id       Int?
   variant_id        Int?
+  batch_id          Int?
   stock_bucket      String?
   transaction_type  String      @db.VarChar(50)
   quantity_changed  Int
@@ -611,6 +676,7 @@ model inventory_logs {
   facilities        facilities? @relation(fields: [facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicines         medicines?  @relation(fields: [medicine_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users             employees?  @relation(fields: [performed_by_id], references: [id], onUpdate: NoAction)
+  batches           batches?    @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
 
   @@index([facility_id], map: "idx_inventory_logs_facility_id")
   @@index([medicine_id], map: "idx_inventory_logs_medicine_id")

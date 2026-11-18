@@ -4,6 +4,7 @@ import { InternalTransferController } from '../modules/logistics/internal-transf
 import { LogisticsController } from '../modules/logistics/shipment/logistics.controller';
 import { AdminOrderController } from '../modules/order/admin-order.controller';
 import { AdminReturnsController } from '../modules/returns/admin-returns.controller';
+import { GoodsReceiptController } from '../modules/procurement/goods-receipt.controller';
 import { PurchaseOrderController } from '../modules/procurement/purchase-order.controller';
 import { WarehouseController } from '../modules/warehouse/warehouse.controller';
 
@@ -50,11 +51,17 @@ describe('Warehouse route access', () => {
     const readers = Reflect.getMetadata(ROLES_KEY, PurchaseOrderController) as string[];
     expect(readers).toContain('WAREHOUSE_STAFF');
     expect(readers).not.toContain('FACTORY_WAREHOUSE_STAFF');
-    for (const method of ['create', 'update', 'approve', 'cancel']) {
+    for (const method of ['create', 'update', 'approve', 'cancel', 'close']) {
       const roles = rolesOf(PurchaseOrderController, method);
       expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
       expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
     }
+  });
+
+  it('lets every warehouse role receive goods but not factory staff', () => {
+    const roles = new Set(Reflect.getMetadata(ROLES_KEY, GoodsReceiptController) as string[]);
+    expect(['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SUPER_ADMIN'].every(role => roles.has(role))).toBe(true);
+    expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
   });
 
   it('opens the staff roster to managers only', () => {

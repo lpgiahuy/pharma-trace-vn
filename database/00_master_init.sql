@@ -114,5 +114,6 @@
 \i /docker-entrypoint-initdb.d/security/inventory/warehouse_inventory_read.sql
 \i /docker-entrypoint-initdb.d/security/inventory/batch_sellability.sql
 \i /docker-entrypoint-initdb.d/security/procurement/purchase_orders.sql
+\i /docker-entrypoint-initdb.d/security/procurement/goods_receipts.sql
 
 \unset bootstrap_current_functions

@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Alert, App, Button, Descriptions, Input, Modal, Spin, Table, Timeline } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { GoodsReceiptForm } from '@/components/procurement/GoodsReceiptForm';
 import { PurchaseOrderStatusTag, supplierName } from '@/components/procurement/PurchaseOrderStatusTag';
 import { useHydrated } from '@/hooks/useHydrated';
 import { purchaseOrderService, type PurchaseOrderDetail } from '@/services/purchaseOrder.service';
@@ -31,8 +33,9 @@ export default function PurchaseOrderDetailPage() {
   const [order, setOrder] = useState<PurchaseOrderDetail>();
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [ending, setEnding] = useState<'cancel' | 'close'>();
   const [reason, setReason] = useState('');
+  const [receiving, setReceiving] = useState(false);
   const getUser = useAuthStore(state => state.getUser);
   const role = useHydrated() ? String(getUser()?.role ?? '') : '';
   const manager = role === 'WAREHOUSE_MANAGER' || role === 'SUPER_ADMIN';
@@ -45,7 +48,7 @@ export default function PurchaseOrderDetailPage() {
     try {
       await action();
       message.success(done);
-      setCancelling(false);
+      setEnding(undefined);
       await load();
     } catch (err) {
       message.error(workflowErrorMessage(err, 'We could not update the purchase order.'));
@@ -69,7 +72,10 @@ export default function PurchaseOrderDetailPage() {
               <Button type="primary" loading={busy} onClick={() => run(() => purchaseOrderService.approve(id), 'Purchase order approved')}>Approve</Button>
             )}
             {(order.status === 'PENDING' || order.status === 'APPROVED') && (
-              <Button danger onClick={() => { setReason(''); setCancelling(true); }}>Cancel order</Button>
+              <Button danger onClick={() => { setReason(''); setEnding('cancel'); }}>Cancel order</Button>
+            )}
+            {order.status === 'PARTIALLY_RECEIVED' && (
+              <Button danger onClick={() => { setReason(''); setEnding('close'); }}>Close short order</Button>
             )}
           </div>
         )}
@@ -84,9 +90,28 @@ export default function PurchaseOrderDetailPage() {
         <Descriptions.Item label="Approved by">{order.approved_by ? `${order.approved_by.full_name}, ${formatTime(order.approved_at ?? '')}` : '-'}</Descriptions.Item>
         {order.note && <Descriptions.Item label="Note" span="filled">{order.note}</Descriptions.Item>}
         {order.cancel_reason && <Descriptions.Item label="Cancel reason" span="filled">{order.cancel_reason}</Descriptions.Item>}
+        {order.closed_reason && <Descriptions.Item label="Closed reason" span="filled">{order.closed_reason}</Descriptions.Item>}
       </Descriptions>
 
       <Table rowKey="id" dataSource={order.purchase_order_items} columns={COLUMNS} pagination={false} scroll={{ x: 640 }} />
+
+      {(order.status === 'APPROVED' || order.status === 'PARTIALLY_RECEIVED') && (receiving
+        ? <GoodsReceiptForm order={order} />
+        : <Button type="primary" onClick={() => setReceiving(true)}>Receive goods</Button>)}
+
+      {order.goods_receipts.length > 0 && (
+        <>
+          <h2 className="text-base font-semibold text-slate-900">Goods receipts</h2>
+          <ul className="m-0 list-none space-y-1 p-0 text-sm">
+            {order.goods_receipts.map(receipt => (
+              <li key={receipt.id}>
+                <Link href={`/warehouse/purchase-orders/${id}/receipts/${receipt.id}`}>{receipt.receipt_code}</Link>
+                {` · ${formatTime(receipt.received_at)} · ${receipt.received_by.full_name} · ${receipt._count.goods_receipt_lines} line(s)`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <h2 className="text-base font-semibold text-slate-900">History</h2>
       <Timeline
@@ -97,13 +122,15 @@ export default function PurchaseOrderDetailPage() {
       />
 
       <Modal
-        open={cancelling}
-        title={`Cancel ${order.po_code}`}
-        okText="Cancel order"
+        open={!!ending}
+        title={`${ending === 'close' ? 'Close' : 'Cancel'} ${order.po_code}`}
+        okText={ending === 'close' ? 'Close order' : 'Cancel order'}
         cancelText="Keep order"
         okButtonProps={{ danger: true, disabled: !reason.trim(), loading: busy }}
-        onOk={() => run(() => purchaseOrderService.cancel(id, reason.trim()), 'Purchase order cancelled')}
-        onCancel={() => setCancelling(false)}
+        onOk={() => ending === 'close'
+          ? run(() => purchaseOrderService.close(id, reason.trim()), 'Purchase order closed')
+          : run(() => purchaseOrderService.cancel(id, reason.trim()), 'Purchase order cancelled')}
+        onCancel={() => setEnding(undefined)}
       >
         <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={reason} onChange={event => setReason(event.target.value)} />
       </Modal>

@@ -40,6 +40,13 @@ const detailSelect = {
     select: { action: true, from_status: true, to_status: true, note: true, created_at: true, actor: { select: { id: true, full_name: true } } },
     orderBy: { id: 'asc' },
   },
+  goods_receipts: {
+    select: {
+      id: true, receipt_code: true, received_at: true, received_by: { select: { id: true, full_name: true } },
+      _count: { select: { goods_receipt_lines: true } },
+    },
+    orderBy: { id: 'asc' },
+  },
 } satisfies Prisma.purchase_ordersSelect;
 
 export type PurchaseOrderListItem = Prisma.purchase_ordersGetPayload<{ select: typeof listSelect }>;
@@ -152,6 +159,18 @@ export class PurchaseOrderService {
       const po = await this.lock(tx, id, ['PENDING', 'APPROVED']);
       await tx.purchase_orders.update({ where: { id }, data: { status: 'CANCELLED', cancel_reason: note } });
       await this.record(tx, id, 'CANCELLED', po.status, 'CANCELLED', actor.id, note);
+      return this.load(tx, id);
+    });
+  }
+
+  /** Ends a partially received order; the quantity still open on its lines will not be delivered. */
+  close(user: CurrentUserPayload, id: number, reason: string): Promise<PurchaseOrderDetail> {
+    const actor = authActor(user);
+    const note = reason.trim();
+    return this.prisma.withPurchaseOrder(actor, async tx => {
+      await this.lock(tx, id, ['PARTIALLY_RECEIVED']);
+      await tx.purchase_orders.update({ where: { id }, data: { status: 'CLOSED', closed_reason: note } });
+      await this.record(tx, id, 'CLOSED', 'PARTIALLY_RECEIVED', 'CLOSED', actor.id, note);
       return this.load(tx, id);
     });
   }
