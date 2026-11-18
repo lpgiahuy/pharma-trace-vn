@@ -5,6 +5,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { WH_ALL, WH_MANAGER } from '../../common/warehouse-roles';
+import { ClosePurchaseOrderDto } from './dto/goods-receipt.dto';
 import { CancelPurchaseOrderDto, PurchaseOrderDto, PurchaseOrderOptionsQueryDto, PurchaseOrderQueryDto } from './dto/purchase-order.dto';
 import { PurchaseOrderService } from './purchase-order.service';
 
@@ -60,5 +61,12 @@ export class PurchaseOrderController {
   @ApiOperation({ summary: 'Cancel a purchase order that has not received any goods yet' })
   async cancel(@Param('id', ParseIntPipe) id: number, @Body() dto: CancelPurchaseOrderDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.purchaseOrders.cancel(user, id, dto.reason) };
+  }
+
+  @Post(':id/close')
+  @Roles(...WH_MANAGER)
+  @ApiOperation({ summary: 'Close a partially received purchase order; the open quantity will not be delivered' })
+  async close(@Param('id', ParseIntPipe) id: number, @Body() dto: ClosePurchaseOrderDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.purchaseOrders.close(user, id, dto.reason) };
   }
 }
