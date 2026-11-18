@@ -48,6 +48,8 @@ describe("OrderService inventory reservation", () => {
       rawMock.mockResolvedValue(reservedInventoryRows);
     }
 
+    const sellableBoxes = jest.fn().mockResolvedValue([{ uid: "box-uid-1" }]);
+    const unsellableBoxCounts = jest.fn().mockResolvedValue([]);
     const tx = {
       orders: { create: jest.fn().mockResolvedValue({ id: 101 }) },
       order_items: { createMany: jest.fn() },
@@ -56,12 +58,12 @@ describe("OrderService inventory reservation", () => {
       loyalty_point_logs: { create: jest.fn() },
       cart_items: { deleteMany: jest.fn() },
       medicine_boxes: {
-        findMany: jest.fn().mockResolvedValue([{ uid: "box-uid-1" }]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      sellableBoxes,
       internal_transfers: { create: jest.fn() },
       $executeRaw: jest.fn((sql, ...args) => sql.join('').includes('accept_fulfillment_terms') ? Promise.resolve(1) : rawMock(sql, ...args)),
-      $queryRaw: jest.fn().mockResolvedValue([{ id: 1 }]),
+      $queryRaw: jest.fn((sql: TemplateStringsArray) => sql.join('').includes('box_sellable') ? sellableBoxes() : Promise.resolve([{ id: 1 }])),
     };
     const prisma = {
       customers: { findUnique: jest.fn().mockResolvedValue(customer) },
@@ -91,7 +93,8 @@ describe("OrderService inventory reservation", () => {
           prescriptions: null,
         }),
       },
-      $queryRaw: jest.fn(async () => (await prisma.facilities.findMany()).map(f => ({ facility_id: f.id, selling_facility_id: f.id, selling_facility_name: 'Selling pharmacy', radius_km: 3000, revision: 'policy-v1', requirements_revision: 'requirements-v1' }))),
+      unsellableBoxCounts,
+      $queryRaw: jest.fn(async (sql: TemplateStringsArray) => sql.join('').includes('unsellable_box_counts') ? unsellableBoxCounts() : (await prisma.facilities.findMany()).map(f => ({ facility_id: f.id, selling_facility_id: f.id, selling_facility_name: 'Selling pharmacy', radius_km: 3000, revision: 'policy-v1', requirements_revision: 'requirements-v1' }))),
       withAuth: jest.fn(run => run(prisma)),
       prepareVoucher: jest.fn().mockResolvedValue(undefined),
       withVoucher: jest.fn((_scope, run) => run(prisma)),
@@ -248,13 +251,13 @@ describe("OrderService inventory reservation", () => {
     await expect(service.createOrder(customer.id, dto)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(tx.medicine_boxes.findMany).not.toHaveBeenCalled();
+    expect(tx.sellableBoxes).not.toHaveBeenCalled();
     expect(tx.order_items.createMany).not.toHaveBeenCalled();
   });
 
   it("accepts an order with aggregate stock before physical UIDs are available", async () => {
     const { prisma, tx } = createMocks(1);
-    tx.medicine_boxes.findMany.mockResolvedValue([]);
+    tx.sellableBoxes.mockResolvedValue([]);
     const service = new OrderService(prisma);
 
     await expect(service.createOrder(customer.id, dto)).resolves.toMatchObject({ id: 101 });
@@ -271,7 +274,7 @@ describe("OrderService inventory reservation", () => {
       { ...facility, id: 20, latitude: 21.0, longitude: 105.8 },
       { ...facility, id: 10, latitude: 10.77, longitude: 106.70, inventories: [] },
     ]);
-    tx.medicine_boxes.findMany.mockResolvedValue([]);
+    tx.sellableBoxes.mockResolvedValue([]);
     const service = new OrderService(prisma);
 
     await service.createOrder(customer.id, { ...dto, latitude: 10.775, longitude: 106.705 });
@@ -292,7 +295,7 @@ describe("OrderService inventory reservation", () => {
       { ...facility, id: 20, latitude: 10.78, longitude: 106.70 },
       { ...facility, id: 10, latitude: 10.775, longitude: 106.705, inventories: [] },
     ]);
-    tx.medicine_boxes.findMany.mockResolvedValue([]);
+    tx.sellableBoxes.mockResolvedValue([]);
     await new OrderService(prisma).createOrder(customer.id, { ...dto, latitude: 10.775, longitude: 106.705 });
     expect(tx.orders.create).toHaveBeenCalledWith({ data: expect.objectContaining({ export_facility_id: 20, order_status: 'PENDING' }) });
     expect(tx.internal_transfers.create).not.toHaveBeenCalled();
@@ -480,6 +483,29 @@ describe("OrderService inventory reservation", () => {
         expect.objectContaining({ variant_id: variant2.id, source_facility_id: facilityB.id }),
       ]),
     });
+  });
+
+  it("does not count boxes of a held batch as stock in the quote or at checkout", async () => {
+    const { prisma, tx } = createMocks(1);
+    prisma.unsellableBoxCounts.mockResolvedValue([{ facility_id: facility.id, medicine_id: variant.medicine_id, boxes: 5 }]);
+    const service = new OrderService(prisma);
+
+    await expect(service.createOrder(customer.id, dto, true)).rejects.toThrow("is out of stock across the entire fulfillment network");
+    await expect(service.createOrder(customer.id, dto)).rejects.toThrow("is out of stock across the entire fulfillment network");
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.medicine_boxes.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reserves only boxes that box_sellable allows", async () => {
+    const { prisma, tx } = createMocks(1);
+    prisma.unsellableBoxCounts.mockResolvedValue([{ facility_id: facility.id, medicine_id: variant.medicine_id, boxes: 4 }]);
+    const service = new OrderService(prisma);
+
+    await service.createOrder(customer.id, dto);
+
+    const boxQuery = tx.$queryRaw.mock.calls.map(([sql]) => sql.join('')).find((sql) => sql.includes('box_sellable'));
+    expect(boxQuery).toContain('public.box_sellable(b.uid, current_date)');
+    expect(tx.medicine_boxes.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: "RESERVED" } }));
   });
 
   it("rejects when any item is out of stock across the entire network", async () => {

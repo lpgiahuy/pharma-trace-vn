@@ -852,3 +852,27 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 Both scripts can be re-applied.
+
+## Batch sellability
+
+`security/inventory/batch_sellability.sql` decides whether a box may be reserved, packed or dispatched.
+
+- `batches.status` is limited to `ACTIVE`, `ON_HOLD`, `RECALLED` and `EXPIRED`. The legacy seed labels `HopLe` and `ThuHoi` are mapped to `ACTIVE` and `RECALLED`. Hold details go in `hold_reason`, `held_by_id` and `held_at`.
+- `medicines.min_remaining_shelf_life_days` sets the minimum remaining shelf life of a medicine. `NULL` means the medicine uses `system_settings.default_min_shelf_life_days`, which starts at `0`. `system_settings` is one row and is not readable by `app_user`.
+- `box_sellable(uid, as_of)` is true only when the box is not `QUARANTINED`, its batch is `ACTIVE`, the batch has not expired on `as_of`, and the remaining days meet the minimum.
+- `unsellable_box_counts(medicine_ids)` returns per facility and medicine the number of unreserved boxes that may not be sold. Checkout subtracts them from aggregate stock.
+- `security/logistics/source_manifest_assignment.sql` now uses `box_sellable` when a transfer is dispatched, including packages reserved earlier.
+- `default_min_shelf_life_days()` returns the system default to `app_user`; `set_min_shelf_life_days(medicine, days)` changes one medicine's minimum (or, with a `NULL` medicine, the default) and requires `SUPER_ADMIN`.
+- `batch_status_events` records every batch hold and release with the reason and the employee. `app_user` may only read and insert: warehouse roles read, warehouse managers insert rows for themselves. A daily backend job sets `EXPIRED` on `ACTIVE` and `ON_HOLD` batches past their expiry date.
+
+### Applying to an existing database
+
+Back up the database first. If any batch has a status other than the four above, `HopLe` or `ThuHoi`, the script stops; fix those rows first. Then run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/inventory/batch_sellability.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/source_manifest_assignment.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/batch_sellability_test.sql
+```
+
+Both scripts can be re-applied.

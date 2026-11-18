@@ -20,14 +20,16 @@ export interface FulfillmentPolicyInput {
 }
 
 export interface TransportRequirement {
-  medicine_id: number; medicine_name: string; condition: string;
+  medicine_id: number; medicine_name: string; condition: string; min_remaining_shelf_life_days: number | null;
 }
 
 export interface WarehousePharmacyLink { warehouse_id: number; pharmacy_id: number }
 
 export const fulfillmentService = {
-  getPolicies: (): Promise<{ success: boolean; data: { policies: FulfillmentPolicy[]; requirements: TransportRequirement[]; warehouseLinks: WarehousePharmacyLink[] } }> => apiClient.get('/admin/orders/fulfillment/policies'),
+  getPolicies: (): Promise<{ success: boolean; data: { policies: FulfillmentPolicy[]; requirements: TransportRequirement[]; warehouseLinks: WarehousePharmacyLink[]; defaultMinShelfLifeDays: number } }> => apiClient.get('/admin/orders/fulfillment/policies'),
   setWarehouseSellingPharmacies: (id: number, pharmacyIds: number[]) => apiClient.post(`/admin/orders/fulfillment/warehouses/${id}/selling-pharmacies`, { pharmacyIds }),
   savePolicy: (id: number, values: FulfillmentPolicyInput) => apiClient.post(`/admin/orders/fulfillment/facilities/${id}`, values),
-  saveRequirement: (id: number, condition: string) => apiClient.post(`/admin/orders/fulfillment/medicines/${id}`, { condition }),
+  saveRequirement: (id: number, condition: string, minRemainingShelfLifeDays: number | null) =>
+    apiClient.post(`/admin/orders/fulfillment/medicines/${id}`, { condition, minRemainingShelfLifeDays }),
+  setDefaultShelfLife: (days: number) => apiClient.put('/admin/orders/fulfillment/shelf-life-default', { days }),
 };

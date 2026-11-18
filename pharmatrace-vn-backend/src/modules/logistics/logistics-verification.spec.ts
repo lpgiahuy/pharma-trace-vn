@@ -557,7 +557,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
       };
 
       const tx = {
-        $queryRaw: jest.fn().mockResolvedValue([{ id: 903 }]),
+        $queryRaw: jest.fn((sql: TemplateStringsArray) => Promise.resolve(sql.join('').includes('box_sellable') ? [] : [{ id: 903 }])),
         orders: {
           findFirst: jest.fn().mockImplementation(() =>
             Promise.resolve({

@@ -2,18 +2,23 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Alert, Descriptions, Drawer, Input, Table, Tabs } from 'antd';
+import { Alert, App, Button, Descriptions, Drawer, Input, Modal, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useHydrated } from '@/hooks/useHydrated';
 import { warehouseService, type BatchDetail, type BatchItem } from '@/services/warehouse.service';
+import { useAuthStore } from '@/store/useAuthStore';
+import { workflowErrorMessage } from '@/utils/workflow-error';
 
 const PAGE_SIZE = 20;
 const formatDate = (value: string) => new Date(value).toLocaleDateString();
+const STATUS_COLORS: Record<string, string> = { ACTIVE: 'green', ON_HOLD: 'orange', RECALLED: 'red', EXPIRED: 'default' };
+const statusTag = (status: string | null) => <Tag color={STATUS_COLORS[status ?? ''] ?? 'default'}>{status ?? 'UNKNOWN'}</Tag>;
 
 const COLUMNS: ColumnsType<BatchItem> = [
   { title: 'Batch', dataIndex: 'batchNumber' },
   { title: 'Medicine', dataIndex: 'medicineName' },
   { title: 'Expiry', dataIndex: 'expiryDate', render: formatDate },
-  { title: 'Status', dataIndex: 'status' },
+  { title: 'Status', dataIndex: 'status', render: statusTag },
   { title: 'Boxes in stock', dataIndex: 'boxesInStock', align: 'right' },
 ];
 
@@ -33,7 +38,8 @@ function BatchDrawer({ id, onClose }: { id?: number; onClose: () => void }) {
           <Descriptions.Item label="Medicine">{shown.medicineName}</Descriptions.Item>
           <Descriptions.Item label="Production date">{formatDate(shown.productionDate)}</Descriptions.Item>
           <Descriptions.Item label="Expiry date">{formatDate(shown.expiryDate)}</Descriptions.Item>
-          <Descriptions.Item label="Status">{shown.status}</Descriptions.Item>
+          <Descriptions.Item label="Status">{statusTag(shown.status)}</Descriptions.Item>
+          {shown.holdReason && <Descriptions.Item label="Hold reason">{shown.holdReason}</Descriptions.Item>}
           <Descriptions.Item label="Initial / remaining">{shown.initialQuantity} / {shown.remainingQuantity}</Descriptions.Item>
           {shown.boxes.map(box => (
             <Descriptions.Item key={box.status ?? 'none'} label={`Boxes ${box.status ?? 'without status'}`}>{box.count}</Descriptions.Item>
@@ -53,13 +59,51 @@ function BatchesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [selected, setSelected] = useState<number>();
+  const [reload, setReload] = useState(0);
+  const [action, setAction] = useState<{ batch: BatchItem; release: boolean }>();
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const { message } = App.useApp();
+  const getUser = useAuthStore(state => state.getUser);
+  const role = useHydrated() ? String(getUser()?.role ?? '') : '';
+  const manager = role === 'WAREHOUSE_MANAGER' || role === 'SUPER_ADMIN';
+
+  const columns: ColumnsType<BatchItem> = manager ? [...COLUMNS, {
+    title: 'Action',
+    render: (_, batch) => (batch.status === 'ACTIVE' || batch.status === 'ON_HOLD') && (
+      <Button size="small" danger={batch.status === 'ACTIVE'} onClick={event => {
+        event.stopPropagation();
+        setReason('');
+        setAction({ batch, release: batch.status === 'ON_HOLD' });
+      }}>
+        {batch.status === 'ACTIVE' ? 'Hold' : 'Release'}
+      </Button>
+    ),
+  }] : COLUMNS;
+
+  const submit = async () => {
+    if (!action) return;
+    setSaving(true);
+    try {
+      const change = action.release ? warehouseService.releaseBatch : warehouseService.holdBatch;
+      await change(action.batch.id, reason.trim());
+      message.success(action.release ? 'Batch released' : 'Batch put on hold');
+      setAction(undefined);
+      setLoading(true);
+      setReload(value => value + 1);
+    } catch (err) {
+      message.error(workflowErrorMessage(err, 'We could not change the batch status.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     warehouseService.batches({ page, limit: PAGE_SIZE, search: search || undefined, expiring: tab === 'expiring' })
       .then(res => { setRows(res.items); setTotal(res.pagination.total); setError(false); })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, [page, search, tab]);
+  }, [page, search, tab, reload]);
 
   return (
     <div className="space-y-4">
@@ -80,13 +124,36 @@ function BatchesPage() {
       <Table
         rowKey="id"
         dataSource={rows}
-        columns={COLUMNS}
+        columns={columns}
         loading={loading}
         scroll={{ x: 720 }}
         onRow={row => ({ onClick: () => setSelected(row.id), className: 'cursor-pointer' })}
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: value => { setLoading(true); setPage(value); } }}
       />
       <BatchDrawer id={selected} onClose={() => setSelected(undefined)} />
+      <Modal
+        open={!!action}
+        title={action && `${action.release ? 'Release' : 'Hold'} batch ${action.batch.batchNumber}`}
+        okText={action?.release ? 'Release' : 'Hold'}
+        okButtonProps={{ danger: !action?.release, disabled: !reason.trim(), loading: saving }}
+        onOk={submit}
+        onCancel={() => setAction(undefined)}
+      >
+        <p>
+          {action?.release
+            ? 'Boxes of this batch can be reserved, packed and dispatched again.'
+            : 'No box of this batch can be reserved, packed or dispatched until it is released.'}
+        </p>
+        <Input.TextArea
+          aria-label="Reason"
+          placeholder="Reason (required)"
+          maxLength={500}
+          showCount
+          rows={3}
+          value={reason}
+          onChange={event => setReason(event.target.value)}
+        />
+      </Modal>
     </div>
   );
 }

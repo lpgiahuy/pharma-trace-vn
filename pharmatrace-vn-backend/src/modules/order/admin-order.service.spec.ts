@@ -144,7 +144,7 @@ describe("AdminOrderService packing", () => {
     ],
   };
 
-  function setup(otherStatus = "RESERVED", reviewStatus?: string) {
+  function setup(otherStatus = "RESERVED", reviewStatus?: string, unsellable: string[] = []) {
     const boxes = [ownUid, otherUid].map((uid) => ({
       uid,
       status: uid === ownUid ? "RESERVED" : otherStatus,
@@ -165,7 +165,12 @@ describe("AdminOrderService packing", () => {
         findUnique: jest.fn().mockResolvedValue({ stock_quantity: 2 }),
       },
       $executeRaw: jest.fn().mockResolvedValue(1),
-      $queryRaw: jest.fn().mockImplementation((sql: TemplateStringsArray) => Promise.resolve(sql.join('').includes('RETURNING "stock_quantity"') ? [{ stock_quantity: 1 }] : [])),
+      $queryRaw: jest.fn().mockImplementation((sql: TemplateStringsArray) => {
+        const text = sql.join('');
+        if (text.includes('NOT public.box_sellable(uid')) return Promise.resolve(unsellable.map((uid) => ({ uid })));
+        if (text.includes('public.box_sellable(b.uid')) return Promise.resolve([{ uid: otherUid }]);
+        return Promise.resolve(text.includes('RETURNING "stock_quantity"') ? [{ stock_quantity: 1 }] : []);
+      }),
       order_items: { update: jest.fn() },
       inventory_logs: { create: jest.fn() },
       batches: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -267,6 +272,28 @@ describe("AdminOrderService packing", () => {
     });
   });
 
+  it("refuses to pack a reserved box whose batch was held after reservation and suggests a replacement", async () => {
+    const { service, tx, prisma } = setup("IN_STOCK", undefined, [ownUid]);
+
+    await expect(service.adminPackOrder(1, { boxUids: [ownUid] }, facilityStaff)).rejects.toMatchObject({
+      code: "BOX_NOT_SELLABLE",
+      details: { uids: [ownUid], replacementUids: [otherUid] },
+    });
+    expect(tx.medicine_boxes.updateMany).not.toHaveBeenCalled();
+    expect(tx.order_items.update).not.toHaveBeenCalled();
+    expect(tx.shipments.create).not.toHaveBeenCalled();
+    expect(tx.orders.update).not.toHaveBeenCalled();
+    expect(prisma.orders.findFirst).toHaveBeenCalled();
+  });
+
+  it("lists replacements instead of a reserved box from a blocked batch", async () => {
+    const { service } = setup("IN_STOCK", undefined, [ownUid]);
+
+    const boxes = await service.adminGetAvailableBoxesForOrder(1, facilityStaff);
+
+    expect(boxes.map((box) => box.uid)).toEqual([otherUid]);
+  });
+
   it("stops packing if another worker claims the replacement first", async () => {
     const { service, tx } = setup("IN_STOCK");
     tx.medicine_boxes.updateMany.mockResolvedValueOnce({ count: 0 });
@@ -361,6 +388,46 @@ describe("AdminOrderService facility access", () => {
   });
 
 
+});
+
+describe("AdminOrderService minimum shelf life", () => {
+  const admin = { id: 1, role: 'SUPER_ADMIN', type: 'employee' };
+
+  function setup() {
+    const tx = { $executeRaw: jest.fn().mockResolvedValue(1) };
+    const calls = () => tx.$executeRaw.mock.calls.map(([sql, ...args]) => ({ sql: (sql as TemplateStringsArray).join('?'), args }));
+    return { tx, calls, service: new AdminOrderService(scopedPrisma({ $transaction: jest.fn(run => run(tx)) })) };
+  }
+
+  it("saves the medicine minimum together with its transport classification", async () => {
+    const { calls, service } = setup();
+    await service.saveTransportRequirement(5, ' Cold chain ', admin, 90);
+    const [classification, shelfLife] = calls();
+    expect(classification.sql).toContain('public.save_transport_requirement');
+    expect(classification.args).toEqual([5, 'Cold chain']);
+    expect(shelfLife.sql).toContain('public.set_min_shelf_life_days');
+    expect(shelfLife.args).toEqual([5, 90]);
+  });
+
+  it("falls back to the system default when no minimum is given", async () => {
+    const { calls, service } = setup();
+    await service.saveTransportRequirement(5, 'Ambient', admin);
+    expect(calls()[1].args).toEqual([5, null]);
+  });
+
+  it("does not change the shelf life when the classification is rejected", async () => {
+    const { tx, service } = setup();
+    tx.$executeRaw.mockRejectedValueOnce(new Error('Super administrator approval is required'));
+    await expect(service.saveTransportRequirement(5, 'Ambient', { ...admin, role: 'STORE_MANAGER', facilityId: 3 }, 30)).rejects.toThrow();
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("sets the system default through the guarded database function", async () => {
+    const { calls, service } = setup();
+    await service.setDefaultShelfLife(60, admin);
+    expect(calls()[0].sql).toContain('public.set_min_shelf_life_days(NULL,');
+    expect(calls()[0].args).toEqual([60]);
+  });
 });
 
 // Transaction mocks expose the same delegates as the production scoped transaction.

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { BatchStatusService } from './inventory/batch-status.service';
 import { WarehouseInventoryController } from './inventory/warehouse-inventory.controller';
 import { WarehouseInventoryService } from './inventory/warehouse-inventory.service';
 import { WarehouseController } from './warehouse.controller';
@@ -9,6 +10,6 @@ import { WarehouseService } from './warehouse.service';
 @Module({
   imports: [PrismaModule],
   controllers: [WarehouseController, WarehouseInventoryController],
-  providers: [WarehouseService, WarehouseInventoryService],
+  providers: [WarehouseService, WarehouseInventoryService, BatchStatusService],
 })
 export class WarehouseModule {}

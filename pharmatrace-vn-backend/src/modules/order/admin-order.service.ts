@@ -3,7 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
 } from "@nestjs/common";
+import { AppException } from "../../common/errors/app-exception";
 import { workflowDatabase } from "../../common/workflow-database";
 import { authActor, normalizeRole } from "../../common/auth-identity";
 import { randomBytes } from "crypto";
@@ -24,6 +26,8 @@ import {
   normalizeOrderStatus,
   releaseOrderReservations,
   AVAILABLE_BOX_STATUSES,
+  findSellableBoxUids,
+  findUnsellableUids,
 } from "./helpers/order.helper";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
@@ -245,8 +249,9 @@ export class AdminOrderService {
       policies: await tx.$queryRaw`SELECT p.*, f.facility_name, s.facility_name AS selling_facility_name
         FROM public.facility_fulfillment_policy p JOIN public.facilities f ON f.id=p.facility_id
         JOIN public.facilities s ON s.id=p.selling_facility_id ORDER BY p.facility_id`,
-      requirements: await tx.$queryRaw`SELECT r.*, m.medicine_name FROM public.medicine_transport_requirements r
+      requirements: await tx.$queryRaw`SELECT r.*, m.medicine_name, m.min_remaining_shelf_life_days FROM public.medicine_transport_requirements r
         JOIN public.medicines m ON m.id=r.medicine_id ORDER BY r.medicine_id`,
+      defaultMinShelfLifeDays: (await tx.$queryRaw<{ days: number }[]>`SELECT public.default_min_shelf_life_days() AS days`)[0]?.days ?? 0,
       warehouseLinks: await tx.$queryRaw`SELECT warehouse_id,pharmacy_id FROM public.warehouse_selling_pharmacies ORDER BY warehouse_id,pharmacy_id`,
     }));
   }
@@ -257,8 +262,16 @@ export class AdminOrderService {
       ${dto.radiusKm}::numeric, ${dto.transportConditions.map(value => value.trim())}::text[])`);
   }
 
-  async saveTransportRequirement(id: number, condition: string, user: CurrentUserPayload) {
-    return this.executeWithStaffContext(user, tx => tx.$executeRaw`SELECT public.save_transport_requirement(${id}, ${condition.trim()}::text)`);
+  async saveTransportRequirement(id: number, condition: string, user: CurrentUserPayload, minRemainingShelfLifeDays: number | null = null) {
+    return this.executeWithStaffContext(user, async tx => {
+      // save_transport_requirement checks SUPER_ADMIN and that the medicine exists.
+      await tx.$executeRaw`SELECT public.save_transport_requirement(${id}, ${condition.trim()}::text)`;
+      await tx.$executeRaw`SELECT public.set_min_shelf_life_days(${id}::integer, ${minRemainingShelfLifeDays}::integer)`;
+    });
+  }
+
+  async setDefaultShelfLife(days: number, user: CurrentUserPayload) {
+    return this.executeWithStaffContext(user, tx => tx.$executeRaw`SELECT public.set_min_shelf_life_days(NULL, ${days}::integer)`);
   }
 
   async setWarehouseSellingPharmacies(id: number, pharmacyIds: number[], user: CurrentUserPayload) {
@@ -621,11 +634,13 @@ export class AdminOrderService {
 
       const reservedUids = boxItems.flatMap((item) => item.assigned_uids);
 
+      // Reserved boxes whose batch was blocked after reservation are dropped so replacements are offered.
+      const blockedUids = new Set(await findUnsellableUids(tx, reservedUids));
       const reservedBoxes =
         reservedUids.length > 0
           ? await tx.medicine_boxes.findMany({
             where: {
-              uid: { in: reservedUids },
+              uid: { in: reservedUids.filter((uid) => !blockedUids.has(uid)) },
               current_facility_id: order.export_facility_id,
               status: "RESERVED",
             },
@@ -654,16 +669,14 @@ export class AdminOrderService {
 
       for (const item of boxItems) {
         if (!item.medicine_id) continue;
-        const countNeeded = item.quantity - item.assigned_uids.length;
+        const countNeeded = item.quantity - item.assigned_uids.filter((uid) => existingUids.has(uid)).length;
         if (countNeeded <= 0) continue;
 
+        const sellableUids = await findSellableBoxUids(
+          tx, order.export_facility_id, item.medicine_id, Math.max(countNeeded * 3, 10), Array.from(existingUids),
+        );
         const available = await tx.medicine_boxes.findMany({
-          where: {
-            current_facility_id: order.export_facility_id,
-            status: { in: AVAILABLE_BOX_STATUSES },
-            medicine_batches: { medicine_id: item.medicine_id },
-            uid: { notIn: Array.from(existingUids) },
-          },
+          where: { uid: { in: sellableUids } },
           include: {
             medicine_batches: {
               include: {
@@ -681,7 +694,6 @@ export class AdminOrderService {
             { medicine_batches: { expiry_date: "asc" } },
             { created_at: "asc" },
           ],
-          take: Math.max(countNeeded * 3, 10),
         });
 
         for (const box of available) {
@@ -802,6 +814,23 @@ export class AdminOrderService {
       ) {
         throw new BadRequestException(
           "A scanned package is reserved for another order.",
+        );
+      }
+
+      const unsellableUids = await findUnsellableUids(tx, uidsToPack);
+      if (unsellableUids.length > 0) {
+        const replacementUids: string[] = [];
+        for (const box of boxesToPack.filter((b) => unsellableUids.includes(b.uid))) {
+          const medicineId = box.medicine_batches?.medicine_id;
+          if (!medicineId) continue;
+          const [uid] = await findSellableBoxUids(tx, order.export_facility_id, medicineId, 1, [...uidsToPack, ...replacementUids]);
+          if (uid) replacementUids.push(uid);
+        }
+        throw new AppException(
+          "BOX_NOT_SELLABLE",
+          `These packages are from a held, recalled or expired batch, or do not meet the minimum shelf life: ${unsellableUids.join(", ")}. Scan replacement packages instead.`,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          { uids: unsellableUids, replacementUids },
         );
       }
 

@@ -28,6 +28,7 @@ import {
   normalizeOrderStatus,
   releaseOrderReservations,
   AVAILABLE_BOX_STATUSES,
+  findSellableBoxUids,
 } from "./helpers/order.helper";
 
 @Injectable()
@@ -223,14 +224,18 @@ export class OrderService {
       throw new BadRequestException('Confirm an accurate delivery location before requesting a delivery quote.');
     }
 
-    const getAvailableStock = (facility: (typeof allFacilities)[0], variantId: number) => {
-      const inv = facility.inventories.find((entry) => entry.variant_id === variantId);
-      return inv ? availableStock(inv) : 0;
+    // Boxes of held, recalled or expired batches, or without the minimum shelf life, are not sellable stock.
+    const unsellable = await this.prisma.$queryRaw<Array<{ facility_id: number; medicine_id: number; boxes: number }>>`
+      SELECT * FROM public.unsellable_box_counts(${medicineIds}::integer[])`;
+    const getAvailableStock = (facility: (typeof allFacilities)[0], item: ItemToOrder) => {
+      const inv = facility.inventories.find((entry) => entry.variant_id === item.variantId);
+      const blocked = unsellable.find((row) => row.facility_id === facility.id && row.medicine_id === item.medicineId)?.boxes ?? 0;
+      return inv ? Math.max(0, availableStock(inv) - blocked) : 0;
     };
 
     const scoredFacilities = allFacilities.map((facility) => ({
       facility,
-      coveredCount: itemsToOrder.filter((item) => getAvailableStock(facility, item.variantId) >= item.quantity).length,
+      coveredCount: itemsToOrder.filter((item) => getAvailableStock(facility, item) >= item.quantity).length,
       distanceToCustomer:
         hasRouteableCustomerCoords && customerCoords && facility.latitude !== null && facility.longitude !== null
           && isValidCoordinates(Number(facility.latitude), Number(facility.longitude))
@@ -249,7 +254,7 @@ export class OrderService {
     }
     const exportFacilityId = primaryFacilityObj.id;
     const policy = policies.find(policy => policy.facility_id === exportFacilityId)!;
-    const missingItems = itemsToOrder.filter((item) => getAvailableStock(primaryFacilityObj, item.variantId) < item.quantity);
+    const missingItems = itemsToOrder.filter((item) => getAvailableStock(primaryFacilityObj, item) < item.quantity);
 
     let orderInitialStatus = "PENDING";
     const itemSourceFacilityMap = new Map<number, number>();
@@ -268,12 +273,12 @@ export class OrderService {
     }[] = [];
 
     itemsToOrder
-      .filter((item) => getAvailableStock(primaryFacilityObj, item.variantId) >= item.quantity)
+      .filter((item) => getAvailableStock(primaryFacilityObj, item) >= item.quantity)
       .forEach((item) => itemSourceFacilityMap.set(item.variantId, exportFacilityId));
 
     if (missingItems.length > 0) {
       for (const item of itemsToOrder) {
-        const totalNetworkStock = allFacilities.reduce((sum, f) => sum + getAvailableStock(f, item.variantId), 0);
+        const totalNetworkStock = allFacilities.reduce((sum, f) => sum + getAvailableStock(f, item), 0);
         if (totalNetworkStock < item.quantity) {
           throw new BadRequestException(`Medicine "${item.medicineName}" (${item.unitName}) is out of stock across the entire fulfillment network.`);
         }
@@ -286,7 +291,7 @@ export class OrderService {
       }>();
 
       for (const item of missingItems) {
-        const eligibleSources = allFacilities.filter((f) => f.id !== exportFacilityId && policies.some(policy => policy.facility_id === f.id) && getAvailableStock(f, item.variantId) >= item.quantity);
+        const eligibleSources = allFacilities.filter((f) => f.id !== exportFacilityId && policies.some(policy => policy.facility_id === f.id) && getAvailableStock(f, item) >= item.quantity);
 
         if (eligibleSources.length === 0) {
           throw new BadRequestException(`Medicine "${item.medicineName}" (${item.unitName}) does not have sufficient inventory at any single source warehouse to transfer.`);
@@ -466,26 +471,13 @@ export class OrderService {
           continue;
         }
 
-        const boxes = await tx.medicine_boxes.findMany({
-          where: {
-            current_facility_id: sourceFacilityId,
-            status: { in: AVAILABLE_BOX_STATUSES },
-            medicine_batches: { medicine_id: item.medicineId },
-          },
-          select: { uid: true },
-          orderBy: [
-            { medicine_batches: { expiry_date: "asc" } },
-            { created_at: "asc" },
-          ],
-          take: item.quantity,
-        });
+        const boxUids = await findSellableBoxUids(tx, sourceFacilityId, item.medicineId, item.quantity);
 
-        if (boxes.length !== item.quantity) {
+        if (boxUids.length !== item.quantity) {
           // Physical packages can be assigned during transfer receipt or packing.
           continue;
         }
 
-        const boxUids = boxes.map((box) => box.uid);
         const claimedBoxes = await tx.medicine_boxes.updateMany({
           where: {
             uid: { in: boxUids },

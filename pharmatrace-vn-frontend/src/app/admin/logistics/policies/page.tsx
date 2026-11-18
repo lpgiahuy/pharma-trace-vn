@@ -9,6 +9,7 @@ import { Facility } from '@/types/facility.types';
 import { useAuthStore } from '@/store/useAuthStore';
 
 interface PolicyForm extends FulfillmentPolicyInput { facilityId: number; opens: string; closes: string }
+interface RequirementForm { medicineId: number; condition: string; minRemainingShelfLifeDays?: number | null }
 const clock = (minutes: number) => minutes === 1440 ? '24:00' : `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`;
 const minute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
 const isPharmacy = (f: Facility) => (f.rawType || f.type).toUpperCase() === 'PHARMACY';
@@ -28,6 +29,7 @@ export default function FulfillmentPoliciesPage() {
   const { message } = App.useApp();
   const [policies, setPolicies] = useState<FulfillmentPolicy[]>([]);
   const [requirements, setRequirements] = useState<TransportRequirement[]>([]);
+  const [defaultShelfLife, setDefaultShelfLife] = useState(0);
   const [reqSearch, setReqSearch] = useState('');
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [warehouseLinks, setWarehouseLinks] = useState<WarehousePharmacyLink[]>([]);
@@ -49,11 +51,11 @@ export default function FulfillmentPoliciesPage() {
       : !warehouseLinks.some(l => l.warehouse_id === source.id && l.pharmacy_id === p.selling_facility_id));
   });
   const [linkForm] = Form.useForm<{ warehouseId: number; pharmacyIds: number[] }>();
-  const [requirementForm] = Form.useForm<{ medicineId: number; condition: string }>();
+  const [requirementForm] = Form.useForm<RequirementForm>();
   const reload = useCallback(async () => {
     const [response, options] = await Promise.all([fulfillmentService.getPolicies(), facilityService.getDropdownList()]);
     setPolicies(response.data.policies); setRequirements(response.data.requirements); setFacilities(options.data);
-    setWarehouseLinks(response.data.warehouseLinks);
+    setWarehouseLinks(response.data.warehouseLinks); setDefaultShelfLife(response.data.defaultMinShelfLifeDays);
   }, []);
   useEffect(() => {
     let active = true;
@@ -64,6 +66,7 @@ export default function FulfillmentPoliciesPage() {
             setPolicies(response.data.policies);
             setRequirements(response.data.requirements);
             setWarehouseLinks(response.data.warehouseLinks);
+            setDefaultShelfLife(response.data.defaultMinShelfLifeDays);
             setFacilities(options.data);
           }
         })
@@ -86,10 +89,19 @@ export default function FulfillmentPoliciesPage() {
     } catch (error) { message.error(workflowErrorMessage(error, 'Unable to save policy')); }
     finally { setBusy(false); }
   };
-  const saveRequirement = async (values: { medicineId: number; condition: string }) => {
+  const saveRequirement = async (values: RequirementForm) => {
     setBusy(true);
-    try { await fulfillmentService.saveRequirement(values.medicineId, values.condition.trim()); await reload(); requirementForm.resetFields(); message.success('Transport requirement saved'); }
+    try {
+      await fulfillmentService.saveRequirement(values.medicineId, values.condition.trim(), values.minRemainingShelfLifeDays ?? null);
+      await reload(); requirementForm.resetFields(); message.success('Transport requirement saved');
+    }
     catch (error) { message.error(workflowErrorMessage(error, 'Unable to save requirement')); }
+    finally { setBusy(false); }
+  };
+  const saveDefaultShelfLife = async (values: { days: number }) => {
+    setBusy(true);
+    try { await fulfillmentService.setDefaultShelfLife(values.days); await reload(); message.success('Default minimum shelf life saved'); }
+    catch (error) { message.error(workflowErrorMessage(error, 'Unable to save default shelf life')); }
     finally { setBusy(false); }
   };
   const saveLinks = async (values: { warehouseId: number; pharmacyIds: number[] }) => {
@@ -251,6 +263,20 @@ export default function FulfillmentPoliciesPage() {
       >
         {superAdmin && (
           <Form
+            layout="inline"
+            onFinish={saveDefaultShelfLife}
+            key={defaultShelfLife}
+            initialValues={{ days: defaultShelfLife }}
+            style={{ marginBottom: 24 }}
+          >
+            <Form.Item name="days" label="Default minimum shelf life (days)" rules={[{ required: true }]}>
+              <InputNumber min={0} max={3650} precision={0} />
+            </Form.Item>
+            <Button htmlType="submit" loading={busy}>Save default</Button>
+          </Form>
+        )}
+        {superAdmin && (
+          <Form
             form={requirementForm}
             layout="vertical"
             onFinish={saveRequirement}
@@ -262,6 +288,10 @@ export default function FulfillmentPoliciesPage() {
             </Form.Item>
             <Form.Item name="condition" label="Approved transport condition" rules={[{ required: true, whitespace: true }]}>
               <Input maxLength={100} />
+            </Form.Item>
+            <Form.Item name="minRemainingShelfLifeDays" label="Minimum remaining shelf life (days)"
+              extra={`Boxes with fewer days left are not sold. Leave empty to use the default (${defaultShelfLife} days).`}>
+              <InputNumber min={0} max={3650} precision={0} />
             </Form.Item>
             <Button htmlType="submit" loading={busy}>
               Save classification
@@ -286,6 +316,11 @@ export default function FulfillmentPoliciesPage() {
             { title: 'Medicine ID', dataIndex: 'medicine_id', width: 120 },
             { title: 'Medicine', dataIndex: 'medicine_name' },
             { title: 'Transport condition', dataIndex: 'condition' },
+            {
+              title: 'Min. shelf life (days)',
+              dataIndex: 'min_remaining_shelf_life_days',
+              render: (days: number | null) => days ?? `Default (${defaultShelfLife})`,
+            },
           ]}
           pagination={{
             pageSize: 10,
