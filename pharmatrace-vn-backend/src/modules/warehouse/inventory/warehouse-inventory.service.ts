@@ -53,7 +53,7 @@ export interface BatchItem {
 export interface Pagination { total: number; page: number; limit: number; totalPages: number }
 export interface Page<T> { items: T[]; pagination: Pagination }
 
-function pagination(total: number, page: number, limit: number): Pagination {
+export function pagination(total: number, page: number, limit: number): Pagination {
   return { total, page, limit, totalPages: Math.ceil(total / limit) || 1 };
 }
 
