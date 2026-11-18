@@ -57,7 +57,7 @@ export default function GoodsReceiptDetailPage() {
         <Descriptions.Item label="Purchase order">
           <Link href={`/warehouse/purchase-orders/${poId}`}>{receipt.purchase_orders.po_code}</Link>
         </Descriptions.Item>
-        <Descriptions.Item label="Received">{`${receipt.received_by.full_name}, ${formatDateTime(receipt.received_at)}`}</Descriptions.Item>
+        <Descriptions.Item label="Received">{`${receipt.received_by?.full_name ?? '-'}, ${formatDateTime(receipt.received_at)}`}</Descriptions.Item>
         <Descriptions.Item label="Payable">
           {receipt.accounts_payable ? `${formatCurrency(receipt.accounts_payable.total_due_amount)} (${receipt.accounts_payable.status ?? '-'})` : '-'}
         </Descriptions.Item>
@@ -89,7 +89,7 @@ export default function GoodsReceiptDetailPage() {
                 <Button size="small" onClick={() => view(attachment.id)}>View</Button>
                 {attachment.kind === 'CO_CQ' ? 'CO/CQ' : attachment.kind.replace(/_/g, ' ')}
                 {attachment.batch_id && ` · batch ${batchName(attachment.batch_id) ?? attachment.batch_id}`}
-                {` · ${attachment.uploaded_by.full_name}, ${formatDateTime(attachment.created_at)}`}
+                {` · ${attachment.uploaded_by?.full_name ?? '-'}, ${formatDateTime(attachment.created_at)}`}
               </li>
             ))}
           </ul>

@@ -111,15 +111,15 @@ export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
               <BoxCodesInput id={`accepted-${item.id}`} autoFocus={index === 0} value={draft.accepted} onChange={value => patch(item, { accepted: value })} />
             </div>
 
-            <div className="grid gap-2 md:grid-cols-4">
+            <div className="grid gap-2 md:grid-cols-3">
               <Input aria-label="Batch number" placeholder="Batch number" maxLength={100} value={draft.batchNumber} onChange={event => patch(item, { batchNumber: event.target.value })} />
-              <Input aria-label="MFG date" type="date" addonBefore="MFG" value={draft.productionDate} onChange={event => patch(item, { productionDate: event.target.value })} />
-              <Input aria-label="EXP date" type="date" addonBefore="EXP" value={draft.expiryDate} onChange={event => patch(item, { expiryDate: event.target.value })} />
-              <label className="flex items-center gap-2 text-xs text-slate-700">
-                CO/CQ
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="min-w-0 text-xs" onChange={event => patch(item, { certificate: event.target.files?.[0] })} />
-              </label>
+              <Input aria-label="MFG date" type="date" prefix="MFG" value={draft.productionDate} onChange={event => patch(item, { productionDate: event.target.value })} />
+              <Input aria-label="EXP date" type="date" prefix="EXP" value={draft.expiryDate} onChange={event => patch(item, { expiryDate: event.target.value })} />
             </div>
+            <label className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+              CO/CQ image
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="min-w-0 text-xs" onChange={event => patch(item, { certificate: event.target.files?.[0] })} />
+            </label>
 
             <div>
               <label htmlFor={`rejected-${item.id}`} className="mb-1 block text-xs font-medium text-slate-700">Rejected boxes (go to quarantine)</label>
