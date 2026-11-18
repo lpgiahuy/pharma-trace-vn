@@ -876,3 +876,25 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 Both scripts can be re-applied.
+
+## Purchase orders
+
+`security/procurement/purchase_orders.sql` adds the purchase order lifecycle (create, edit while `PENDING`, approve, cancel). Receiving goods and payables come later.
+
+- `purchase_orders` gains `facility_id` (the receiving warehouse), `supplier_manufacturer_id`, `approved_by_id`, `approved_at`, `cancel_reason`, `closed_reason` and `expected_at`. A check requires exactly one of `supplier_id` (a `FACTORY` facility) and `supplier_manufacturer_id`.
+- Statuses are `PENDING`, `APPROVED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED` and `CANCELLED`.
+- `received_at` no longer defaults to the creation time. It stays empty until goods are received, and the script clears it on existing orders that are not `RECEIVED`.
+- `purchase_order_items.received_quantity` starts at 0 and may not exceed `quantity`.
+- `purchase_order_events` is an append-only history of status changes with the employee and the reason.
+- All three tables use forced RLS. Warehouse roles read only the orders addressed to their own warehouse, `SUPER_ADMIN` reads all, only warehouse managers write, and items change only while the order is `PENDING`. `po_parties_valid()` checks that the receiving facility is a warehouse and the supplier is a manufacturer or a factory.
+
+### Applying to an existing database
+
+Back up the database first. `security/access/app_role_groups.sql` must already be installed. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/procurement/purchase_orders.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/purchase_order_rls_test.sql
+```
+
+Both scripts can be re-applied.
