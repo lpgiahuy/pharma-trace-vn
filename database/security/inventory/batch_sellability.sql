@@ -62,7 +62,10 @@ $$;
 REVOKE ALL ON FUNCTION public.default_min_shelf_life_days() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.default_min_shelf_life_days() TO app_user;
 
-CREATE OR REPLACE FUNCTION public.set_default_min_shelf_life_days(days integer) RETURNS void
+DROP FUNCTION IF EXISTS public.set_default_min_shelf_life_days(integer);
+-- Shelf-life settings are changed only by SUPER_ADMIN. A NULL medicine changes the system default;
+-- otherwise a NULL days value makes that medicine use the default.
+CREATE OR REPLACE FUNCTION public.set_min_shelf_life_days(medicine integer, days integer) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
 BEGIN
   IF current_setting('app.current_user_type', true) IS DISTINCT FROM 'employee'
@@ -70,10 +73,15 @@ BEGIN
     OR nullif(current_setting('app.current_user_id', true), '') IS NULL THEN
     RAISE EXCEPTION 'Super administrator approval is required' USING ERRCODE = '42501';
   END IF;
-  UPDATE public.system_settings SET default_min_shelf_life_days = days, updated_at = now();
+  IF medicine IS NULL THEN
+    UPDATE public.system_settings SET default_min_shelf_life_days = days, updated_at = now();
+  ELSE
+    UPDATE public.medicines SET min_remaining_shelf_life_days = days WHERE id = medicine;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Medicine not found' USING ERRCODE = 'P0002'; END IF;
+  END IF;
 END $$;
-REVOKE ALL ON FUNCTION public.set_default_min_shelf_life_days(integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.set_default_min_shelf_life_days(integer) TO app_user;
+REVOKE ALL ON FUNCTION public.set_min_shelf_life_days(integer, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_min_shelf_life_days(integer, integer) TO app_user;
 
 -- Append-only record of who held or released a batch and why.
 CREATE TABLE IF NOT EXISTS public.batch_status_events (

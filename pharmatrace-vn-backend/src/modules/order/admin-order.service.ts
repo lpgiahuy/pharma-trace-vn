@@ -266,12 +266,12 @@ export class AdminOrderService {
     return this.executeWithStaffContext(user, async tx => {
       // save_transport_requirement checks SUPER_ADMIN and that the medicine exists.
       await tx.$executeRaw`SELECT public.save_transport_requirement(${id}, ${condition.trim()}::text)`;
-      await tx.medicines.update({ where: { id }, data: { min_remaining_shelf_life_days: minRemainingShelfLifeDays } });
+      await tx.$executeRaw`SELECT public.set_min_shelf_life_days(${id}::integer, ${minRemainingShelfLifeDays}::integer)`;
     });
   }
 
   async setDefaultShelfLife(days: number, user: CurrentUserPayload) {
-    return this.executeWithStaffContext(user, tx => tx.$executeRaw`SELECT public.set_default_min_shelf_life_days(${days}::integer)`);
+    return this.executeWithStaffContext(user, tx => tx.$executeRaw`SELECT public.set_min_shelf_life_days(NULL, ${days}::integer)`);
   }
 
   async setWarehouseSellingPharmacies(id: number, pharmacyIds: number[], user: CurrentUserPayload) {

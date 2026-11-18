@@ -71,13 +71,22 @@ DO $$ BEGIN
   PERFORM set_config('app.current_user_role','WAREHOUSE_MANAGER',true);
   IF public.default_min_shelf_life_days() IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'Default shelf life not readable'; END IF;
   BEGIN
-    PERFORM public.set_default_min_shelf_life_days(30);
+    PERFORM public.set_min_shelf_life_days(NULL, 30);
     RAISE EXCEPTION 'Warehouse manager changed the default shelf life';
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
+  BEGIN
+    PERFORM public.set_min_shelf_life_days(current_setting('test.medicine')::int, 30);
+    RAISE EXCEPTION 'Warehouse manager changed a medicine shelf life';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
   PERFORM set_config('app.current_user_role','SUPER_ADMIN',true);
-  PERFORM public.set_default_min_shelf_life_days(30);
+  PERFORM public.set_min_shelf_life_days(NULL, 30);
   IF public.default_min_shelf_life_days() IS DISTINCT FROM 30 THEN RAISE EXCEPTION 'Default shelf life not saved'; END IF;
+  PERFORM public.set_min_shelf_life_days(current_setting('test.medicine')::int, 45);
+  IF (SELECT min_remaining_shelf_life_days FROM public.medicines WHERE id = current_setting('test.medicine')::int) IS DISTINCT FROM 45 THEN
+    RAISE EXCEPTION 'Medicine shelf life not saved';
+  END IF;
 END $$;
 
 -- Batch status events: managers record their own actions; staff cannot write; nobody may edit or delete.

@@ -394,36 +394,39 @@ describe("AdminOrderService minimum shelf life", () => {
   const admin = { id: 1, role: 'SUPER_ADMIN', type: 'employee' };
 
   function setup() {
-    const tx = { $executeRaw: jest.fn().mockResolvedValue(1), medicines: { update: jest.fn().mockResolvedValue({}) } };
-    return { tx, service: new AdminOrderService(scopedPrisma({ $transaction: jest.fn(run => run(tx)) })) };
+    const tx = { $executeRaw: jest.fn().mockResolvedValue(1) };
+    const calls = () => tx.$executeRaw.mock.calls.map(([sql, ...args]) => ({ sql: (sql as TemplateStringsArray).join('?'), args }));
+    return { tx, calls, service: new AdminOrderService(scopedPrisma({ $transaction: jest.fn(run => run(tx)) })) };
   }
 
   it("saves the medicine minimum together with its transport classification", async () => {
-    const { tx, service } = setup();
+    const { calls, service } = setup();
     await service.saveTransportRequirement(5, ' Cold chain ', admin, 90);
-    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
-    expect(tx.medicines.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { min_remaining_shelf_life_days: 90 } });
+    const [classification, shelfLife] = calls();
+    expect(classification.sql).toContain('public.save_transport_requirement');
+    expect(classification.args).toEqual([5, 'Cold chain']);
+    expect(shelfLife.sql).toContain('public.set_min_shelf_life_days');
+    expect(shelfLife.args).toEqual([5, 90]);
   });
 
   it("falls back to the system default when no minimum is given", async () => {
-    const { tx, service } = setup();
+    const { calls, service } = setup();
     await service.saveTransportRequirement(5, 'Ambient', admin);
-    expect(tx.medicines.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { min_remaining_shelf_life_days: null } });
+    expect(calls()[1].args).toEqual([5, null]);
   });
 
-  it("does not touch the medicine when the classification is rejected", async () => {
+  it("does not change the shelf life when the classification is rejected", async () => {
     const { tx, service } = setup();
     tx.$executeRaw.mockRejectedValueOnce(new Error('Super administrator approval is required'));
     await expect(service.saveTransportRequirement(5, 'Ambient', { ...admin, role: 'STORE_MANAGER', facilityId: 3 }, 30)).rejects.toThrow();
-    expect(tx.medicines.update).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it("sets the system default through the guarded database function", async () => {
-    const { tx, service } = setup();
+    const { calls, service } = setup();
     await service.setDefaultShelfLife(60, admin);
-    const [sql, days] = tx.$executeRaw.mock.calls[0] as [TemplateStringsArray, number];
-    expect(sql.join('?')).toContain('public.set_default_min_shelf_life_days');
-    expect(days).toBe(60);
+    expect(calls()[0].sql).toContain('public.set_min_shelf_life_days(NULL,');
+    expect(calls()[0].args).toEqual([60]);
   });
 });
 
