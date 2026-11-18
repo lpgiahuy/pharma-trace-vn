@@ -4,6 +4,7 @@ import { InternalTransferController } from '../modules/logistics/internal-transf
 import { LogisticsController } from '../modules/logistics/shipment/logistics.controller';
 import { AdminOrderController } from '../modules/order/admin-order.controller';
 import { AdminReturnsController } from '../modules/returns/admin-returns.controller';
+import { PurchaseOrderController } from '../modules/procurement/purchase-order.controller';
 import { WarehouseController } from '../modules/warehouse/warehouse.controller';
 
 type Handler = (...args: never[]) => unknown;
@@ -41,6 +42,18 @@ describe('Warehouse route access', () => {
     expect(rolesOf(AdminOrderController, 'updateOrderStatus').has('WAREHOUSE_MANAGER')).toBe(false);
     for (const method of ['approve', 'inspect', 'approveRefund', 'close']) {
       expect(rolesOf(AdminReturnsController, method).has('WAREHOUSE_MANAGER')).toBe(false);
+    }
+  });
+
+  it('lets warehouse staff read purchase orders but only managers change them', () => {
+    // Read routes inherit the class-level roles.
+    const readers = Reflect.getMetadata(ROLES_KEY, PurchaseOrderController) as string[];
+    expect(readers).toContain('WAREHOUSE_STAFF');
+    expect(readers).not.toContain('FACTORY_WAREHOUSE_STAFF');
+    for (const method of ['create', 'update', 'approve', 'cancel']) {
+      const roles = rolesOf(PurchaseOrderController, method);
+      expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
+      expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
     }
   });
 

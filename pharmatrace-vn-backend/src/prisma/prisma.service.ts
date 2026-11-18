@@ -236,6 +236,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
   }
 
+  /** Purchase orders of one warehouse: reads for WH_ALL, writes for WH_MANAGER (purchase_order_* policies). */
+  async withPurchaseOrder<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const actor = authActor(identity);
+    if (actor.type !== 'employee' || !(WH_ALL as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid purchase order scope');
+    if (actor.role !== 'SUPER_ADMIN' && (!Number.isInteger(actor.facilityId) || Number(actor.facilityId) <= 0)) throw new ForbiddenException('Staff account is not assigned to a facility');
+    return this.$transaction(async tx => {
+      const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
+        SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relforcerowsecurity AND c.relowner <> r.oid
+          AND EXISTS (SELECT FROM pg_policy p WHERE p.polrelid=c.oid AND p.polname='purchase_order_read') AS ready
+        FROM pg_roles r JOIN pg_class c ON c.relname = 'purchase_orders'
+        JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public' WHERE r.rolname = current_user
+      `;
+      if (!state?.ready) throw new ServiceUnavailableException('Purchase order RLS setup is not ready');
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
+      return run(tx);
+    });
+  }
+
   async withFacilityManagement<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
     if (actor.type !== 'employee' || actor.role !== 'SUPER_ADMIN') throw new ForbiddenException('Invalid facility management scope');
