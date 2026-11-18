@@ -919,4 +919,6 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/goods_receipt_test.sql
 ```
 
+The backend suite `src/modules/procurement/goods-receipt.integration.spec.ts` (partial receipts, concurrent receipts, repeated codes and every rejection) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_goods_receipt_20261118`.
+
 Both scripts can be re-applied. Re-running `security/inventory/quarantine_balances.sql` or `security/returns/return_requests.sql` afterwards narrows the quarantine origin check again, so re-apply this script after them.

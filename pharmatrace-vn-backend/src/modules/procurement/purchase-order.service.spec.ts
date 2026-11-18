@@ -177,6 +177,23 @@ describe('PurchaseOrderService.cancel', () => {
   });
 });
 
+describe('PurchaseOrderService.close', () => {
+  it('closes a partially received order with a trimmed reason and records it', async () => {
+    const { tx, service } = setup({ status: 'PARTIALLY_RECEIVED' });
+    await service.close(manager, 5, '  Supplier ran out ');
+    expect(tx.purchase_orders.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { status: 'CLOSED', closed_reason: 'Supplier ran out' } });
+    expect(tx.purchase_order_events.create).toHaveBeenCalledWith({
+      data: { po_id: 5, action: 'CLOSED', from_status: 'PARTIALLY_RECEIVED', to_status: 'CLOSED', actor_id: 4, note: 'Supplier ran out' },
+    });
+  });
+
+  it.each(['PENDING', 'APPROVED', 'RECEIVED', 'CLOSED', 'CANCELLED'])('refuses to close a %s order', async status => {
+    const { tx, service } = setup({ status });
+    expect(await errorCode(service.close(manager, 5, 'Short delivery'))).toBe('PO_INVALID_TRANSITION');
+    expect(tx.purchase_orders.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('PurchaseOrderService reads', () => {
   it('lists the own warehouse for staff and filters by status', async () => {
     const { tx, service } = setup();
