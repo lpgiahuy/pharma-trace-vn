@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, Form } from 'antd';
+import { Button } from 'antd';
 import { CameraOutlined, StopOutlined } from '@ant-design/icons';
 import { X } from 'lucide-react';
 import { PackageQrCamera } from '@/components/shared/PackageQrCamera';
@@ -14,14 +14,14 @@ const split = (text?: string) => (text ?? '').split(/[\s,]+/).filter(Boolean);
  * and presses Enter) or the keyboard, in any mix. Used as an antd Form control: the value stays a newline-separated
  * string of UIDs so the submit code does not change.
  */
-export function BoxCodesInput({ id, value, onChange, quantityField }: {
+export function BoxCodesInput({ id, value, onChange, expected, autoFocus }: {
   id?: string;
   value?: string;
   onChange?: (value: string) => void;
-  /** Form path of the received quantity on the same line, shown as "N of M boxes". */
-  quantityField: (string | number)[];
+  /** Expected box count, shown as "N of M boxes"; omitted hides the count. */
+  expected?: number;
+  autoFocus?: boolean;
 }) {
-  const expected = Number(Form.useWatch(quantityField, Form.useFormInstance()) ?? 0);
   const [draft, setDraft] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string }>();
@@ -89,6 +89,7 @@ export function BoxCodesInput({ id, value, onChange, quantityField }: {
         <input
           ref={inputRef}
           id={id}
+          autoFocus={autoFocus}
           value={draft}
           onChange={event => { setDraft(event.target.value); setFeedback(undefined); }}
           onKeyDown={event => {
@@ -118,9 +119,11 @@ export function BoxCodesInput({ id, value, onChange, quantityField }: {
         >
           {cameraOpen ? 'Stop camera' : 'Scan with camera'}
         </Button>
-        <span className={`text-xs tabular-nums ${countTone}`} aria-live="polite">
-          {uids.length} of {expected} box{expected === 1 ? '' : 'es'}
-        </span>
+        {expected !== undefined && (
+          <span className={`text-xs tabular-nums ${countTone}`} aria-live="polite">
+            {uids.length} of {expected} box{expected === 1 ? '' : 'es'}
+          </span>
+        )}
       </div>
       {cameraOpen && <div className="mt-2"><PackageQrCamera onRead={add} /></div>}
       {feedback && (

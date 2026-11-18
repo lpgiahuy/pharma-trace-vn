@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Alert, App, Button, Descriptions, Input, Modal, Spin, Table, Timeline } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { GoodsReceiptForm } from '@/components/procurement/GoodsReceiptForm';
 import { PurchaseOrderStatusTag, supplierName } from '@/components/procurement/PurchaseOrderStatusTag';
 import { useHydrated } from '@/hooks/useHydrated';
 import { purchaseOrderService, type PurchaseOrderDetail } from '@/services/purchaseOrder.service';
@@ -33,6 +35,7 @@ export default function PurchaseOrderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
+  const [receiving, setReceiving] = useState(false);
   const getUser = useAuthStore(state => state.getUser);
   const role = useHydrated() ? String(getUser()?.role ?? '') : '';
   const manager = role === 'WAREHOUSE_MANAGER' || role === 'SUPER_ADMIN';
@@ -87,6 +90,24 @@ export default function PurchaseOrderDetailPage() {
       </Descriptions>
 
       <Table rowKey="id" dataSource={order.purchase_order_items} columns={COLUMNS} pagination={false} scroll={{ x: 640 }} />
+
+      {(order.status === 'APPROVED' || order.status === 'PARTIALLY_RECEIVED') && (receiving
+        ? <GoodsReceiptForm order={order} />
+        : <Button type="primary" onClick={() => setReceiving(true)}>Receive goods</Button>)}
+
+      {order.goods_receipts.length > 0 && (
+        <>
+          <h2 className="text-base font-semibold text-slate-900">Goods receipts</h2>
+          <ul className="m-0 list-none space-y-1 p-0 text-sm">
+            {order.goods_receipts.map(receipt => (
+              <li key={receipt.id}>
+                <Link href={`/warehouse/purchase-orders/${id}/receipts/${receipt.id}`}>{receipt.receipt_code}</Link>
+                {` · ${formatTime(receipt.received_at)} · ${receipt.received_by.full_name} · ${receipt._count.goods_receipt_lines} line(s)`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <h2 className="text-base font-semibold text-slate-900">History</h2>
       <Timeline

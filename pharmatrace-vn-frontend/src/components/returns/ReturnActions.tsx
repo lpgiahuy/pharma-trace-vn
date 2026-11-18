@@ -43,6 +43,7 @@ const codes = (text?: string) => (text ?? '').split(/[\s,]+/).filter(Boolean).ma
 const lineName = (line: ReturnLine) => `${line.medicine_name} (${line.unit_name})`;
 
 function LineFields({ kind, lines }: { kind: Kind; lines: ReturnLine[] }) {
+  const values = Form.useWatch<Values['lines']>('lines');
   return (
     <ul className="m-0 mb-4 list-none space-y-3 p-0">
       {lines.map((line, index) => (
@@ -66,7 +67,7 @@ function LineFields({ kind, lines }: { kind: Kind; lines: ReturnLine[] }) {
               </Form.Item>
               {line.tracked ? (
                 <Form.Item name={['lines', index, 'boxCodes']} label="Box codes" className="mb-0" extra="Scan one box per received unit with the camera or a USB scanner, or type the UID and press Enter.">
-                  <BoxCodesInput quantityField={['lines', index, 'quantity']} />
+                  <BoxCodesInput expected={Number(values?.[index]?.quantity ?? 0)} />
                 </Form.Item>
               ) : (
                 <p className="m-0 text-xs text-slate-500">This item was sold without tracked boxes, so there is nothing to scan. Check the product by eye.</p>
