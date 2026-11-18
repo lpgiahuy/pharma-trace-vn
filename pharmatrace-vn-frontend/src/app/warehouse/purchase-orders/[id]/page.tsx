@@ -33,7 +33,7 @@ export default function PurchaseOrderDetailPage() {
   const [order, setOrder] = useState<PurchaseOrderDetail>();
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [ending, setEnding] = useState<'cancel' | 'close'>();
   const [reason, setReason] = useState('');
   const [receiving, setReceiving] = useState(false);
   const getUser = useAuthStore(state => state.getUser);
@@ -48,7 +48,7 @@ export default function PurchaseOrderDetailPage() {
     try {
       await action();
       message.success(done);
-      setCancelling(false);
+      setEnding(undefined);
       await load();
     } catch (err) {
       message.error(workflowErrorMessage(err, 'We could not update the purchase order.'));
@@ -72,7 +72,10 @@ export default function PurchaseOrderDetailPage() {
               <Button type="primary" loading={busy} onClick={() => run(() => purchaseOrderService.approve(id), 'Purchase order approved')}>Approve</Button>
             )}
             {(order.status === 'PENDING' || order.status === 'APPROVED') && (
-              <Button danger onClick={() => { setReason(''); setCancelling(true); }}>Cancel order</Button>
+              <Button danger onClick={() => { setReason(''); setEnding('cancel'); }}>Cancel order</Button>
+            )}
+            {order.status === 'PARTIALLY_RECEIVED' && (
+              <Button danger onClick={() => { setReason(''); setEnding('close'); }}>Close short order</Button>
             )}
           </div>
         )}
@@ -87,6 +90,7 @@ export default function PurchaseOrderDetailPage() {
         <Descriptions.Item label="Approved by">{order.approved_by ? `${order.approved_by.full_name}, ${formatTime(order.approved_at ?? '')}` : '-'}</Descriptions.Item>
         {order.note && <Descriptions.Item label="Note" span="filled">{order.note}</Descriptions.Item>}
         {order.cancel_reason && <Descriptions.Item label="Cancel reason" span="filled">{order.cancel_reason}</Descriptions.Item>}
+        {order.closed_reason && <Descriptions.Item label="Closed reason" span="filled">{order.closed_reason}</Descriptions.Item>}
       </Descriptions>
 
       <Table rowKey="id" dataSource={order.purchase_order_items} columns={COLUMNS} pagination={false} scroll={{ x: 640 }} />
@@ -118,13 +122,15 @@ export default function PurchaseOrderDetailPage() {
       />
 
       <Modal
-        open={cancelling}
-        title={`Cancel ${order.po_code}`}
-        okText="Cancel order"
+        open={!!ending}
+        title={`${ending === 'close' ? 'Close' : 'Cancel'} ${order.po_code}`}
+        okText={ending === 'close' ? 'Close order' : 'Cancel order'}
         cancelText="Keep order"
         okButtonProps={{ danger: true, disabled: !reason.trim(), loading: busy }}
-        onOk={() => run(() => purchaseOrderService.cancel(id, reason.trim()), 'Purchase order cancelled')}
-        onCancel={() => setCancelling(false)}
+        onOk={() => ending === 'close'
+          ? run(() => purchaseOrderService.close(id, reason.trim()), 'Purchase order closed')
+          : run(() => purchaseOrderService.cancel(id, reason.trim()), 'Purchase order cancelled')}
+        onCancel={() => setEnding(undefined)}
       >
         <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={reason} onChange={event => setReason(event.target.value)} />
       </Modal>

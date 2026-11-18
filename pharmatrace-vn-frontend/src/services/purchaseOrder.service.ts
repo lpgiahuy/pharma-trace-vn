@@ -120,6 +120,7 @@ export const purchaseOrderService = {
   update: (id: number, input: PurchaseOrderInput) => apiClient.patch<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}`, input),
   approve: (id: number) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/approve`),
   cancel: (id: number, reason: string) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/cancel`, { reason }),
+  close: (id: number, reason: string) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/close`, { reason }),
   receive: (id: number, input: { receiptCode: string; note?: string; lines: GoodsReceiptLineInput[] }) =>
     apiClient.post<unknown, Envelope<GoodsReceiptDetail>>(`${BASE}/${id}/receipts`, input),
   receipt: (id: number, receiptId: number) => apiClient.get<unknown, Envelope<GoodsReceiptDetail>>(`${BASE}/${id}/receipts/${receiptId}`),
