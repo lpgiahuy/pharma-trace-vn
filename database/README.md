@@ -909,6 +909,7 @@ Both scripts can be re-applied.
 - `purchase_orders.closed_reason` must be 1–500 characters when set.
 - `record_goods_receipt(po, code, note, lines)` is a security-definer function that does the whole receipt in one transaction: it locks the order and its lines, returns the existing receipt for a repeated code, creates or matches the batch (same medicine and dates), checks that every scanned box or SSCC carton belongs to the batch and is not held by any facility yet, refuses quantities above the order, moves boxes and cartons to the warehouse, adds stock or quarantine, updates `received_quantity`, moves the order to `PARTIALLY_RECEIVED` or `RECEIVED` with an event, and records the payable. Unknown box UIDs are registered as new, unsigned boxes of the declared batch.
 - RLS is forced on the three new tables and on `accounts_payable`. Warehouse roles read the receipts of their own warehouse; only the function writes receipts and payables. `SUPER_ADMIN`, `ACCOUNTANT` and `FINANCE_MANAGER` read every payable, and a warehouse manager reads the payables of the warehouse's orders.
+- `employees` gains `employee_procurement_actor_read`: inside purchase order requests (`app.employee_operation = 'procurement_read'`), a caller reads the employees who acted on the order events, receipts and attachments it can already read, so warehouse staff see who created, approved and received an order.
 
 ### Applying to an existing database
 

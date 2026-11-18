@@ -106,7 +106,7 @@ export default function PurchaseOrderDetailPage() {
             {order.goods_receipts.map(receipt => (
               <li key={receipt.id}>
                 <Link href={`/warehouse/purchase-orders/${id}/receipts/${receipt.id}`}>{receipt.receipt_code}</Link>
-                {` · ${formatTime(receipt.received_at)} · ${receipt.received_by?.full_name ?? '-'} · ${receipt._count.goods_receipt_lines} line(s)`}
+                {` · ${formatTime(receipt.received_at)} · ${receipt.received_by.full_name} · ${receipt._count.goods_receipt_lines} line(s)`}
               </li>
             ))}
           </ul>
@@ -117,7 +117,7 @@ export default function PurchaseOrderDetailPage() {
       <Timeline
         items={order.purchase_order_events.map(event => ({
           title: formatTime(event.created_at),
-          content: `${event.action.replace(/_/g, ' ')} by ${event.actor?.full_name ?? 'another employee'}${event.note ? `: ${event.note}` : ''}`,
+          content: `${event.action.replace(/_/g, ' ')} by ${event.actor.full_name}${event.note ? `: ${event.note}` : ''}`,
         }))}
       />
 

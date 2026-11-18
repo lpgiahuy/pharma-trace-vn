@@ -39,13 +39,13 @@ export interface PurchaseOrderDetail extends Omit<PurchaseOrderListItem, '_count
     to_status: string;
     note: string | null;
     created_at: string;
-    actor: { id: number; full_name: string } | null;
+    actor: { id: number; full_name: string };
   }[];
   goods_receipts: {
     id: number;
     receipt_code: string;
     received_at: string;
-    received_by: { id: number; full_name: string } | null;
+    received_by: { id: number; full_name: string };
     _count: { goods_receipt_lines: number };
   }[];
 }
@@ -82,7 +82,7 @@ export interface GoodsReceiptDetail {
   po_id: number;
   received_at: string;
   note: string | null;
-  received_by: { id: number; full_name: string } | null;
+  received_by: { id: number; full_name: string };
   purchase_orders: { po_code: string; status: string | null };
   goods_receipt_lines: {
     id: number;
@@ -101,7 +101,7 @@ export interface GoodsReceiptDetail {
       packaging_variants: { unit_name: string } | null;
     };
   }[];
-  goods_receipt_attachments: { id: number; kind: string; batch_id: number | null; created_at: string; uploaded_by: { id: number; full_name: string } | null }[];
+  goods_receipt_attachments: { id: number; kind: string; batch_id: number | null; created_at: string; uploaded_by: { id: number; full_name: string } }[];
   accounts_payable: { id: number; total_due_amount: string; paid_amount: string | null; status: string | null } | null;
 }
 

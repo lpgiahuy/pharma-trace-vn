@@ -14,6 +14,7 @@ INSERT INTO public.packaging_variants(medicine_id,unit_name) VALUES (:med_id,'bo
 INSERT INTO public.purchase_orders(po_code,supplier_manufacturer_id,facility_id,created_by_employee_id,status)
   VALUES ('PO-GR-A',:m_id,:f_a,:e_manager_a,'APPROVED') RETURNING id AS a \gset p_
 INSERT INTO public.purchase_order_items(po_id,medicine_id,variant_id,quantity,unit_price) VALUES (:p_a,:med_id,:v_id,100,10) RETURNING id AS a \gset i_
+INSERT INTO public.purchase_order_events(po_id,action,to_status,actor_id) VALUES (:p_a,'APPROVED','APPROVED',:e_manager_a);
 SELECT set_config('test.a',:'f_a',true), set_config('test.po',:'p_a',true), set_config('test.item',:'i_a',true),
   set_config('test.variant',:'v_id',true);
 
@@ -116,6 +117,29 @@ DO $$ BEGIN
     RAISE EXCEPTION 'Warehouse staff read payables';
   END IF;
 END $$;
+-- Staff read the names of the employees who acted on their orders, only inside purchase order requests
+SELECT set_config('test.manager',:'e_manager_a',true), set_config('test.staff_b',:'e_staff_b',true),
+  set_config('test.accountant',:'e_accountant',true);
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM public.employees WHERE id = current_setting('test.manager')::int) THEN
+    RAISE EXCEPTION 'Staff read another employee outside purchase order requests';
+  END IF;
+  PERFORM set_config('app.employee_operation', 'procurement_read', true);
+  IF (SELECT count(*) FROM public.employees WHERE id IN (current_setting('test.manager')::int, current_setting('app.current_user_id')::int)) <> 2 THEN
+    RAISE EXCEPTION 'Staff cannot read the employees who acted on their orders';
+  END IF;
+  IF EXISTS (SELECT FROM public.employees WHERE id IN (current_setting('test.staff_b')::int, current_setting('test.accountant')::int)) THEN
+    RAISE EXCEPTION 'Staff read employees unrelated to their orders';
+  END IF;
+END $$;
+SELECT set_config('app.current_user_id',:'e_staff_b',true), set_config('app.current_unit_id',:'f_b',true);
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM public.employees WHERE id = current_setting('test.manager')::int) THEN
+    RAISE EXCEPTION 'Warehouse B read an employee who acted only on warehouse A orders';
+  END IF;
+  PERFORM set_config('app.employee_operation', '', true);
+END $$;
+SELECT set_config('app.current_user_id',:'e_staff_a',true), set_config('app.current_unit_id',:'f_a',true);
 SELECT set_config('app.current_user_role','WAREHOUSE_MANAGER',true), set_config('app.current_user_id',:'e_manager_a',true);
 DO $$ BEGIN
   IF (SELECT count(*) FROM public.accounts_payable WHERE po_id = current_setting('test.po')::int) <> 2 THEN

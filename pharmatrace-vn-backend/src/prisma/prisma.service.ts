@@ -253,6 +253,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.employee_operation', 'procurement_read', true)`;
       return run(tx);
     });
   }

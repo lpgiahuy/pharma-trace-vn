@@ -88,6 +88,14 @@ CREATE POLICY goods_receipt_attachment_insert ON public.goods_receipt_attachment
   WITH CHECK (uploaded_by_id = nullif(current_setting('app.current_user_id', true), '')::integer
     AND EXISTS (SELECT FROM public.goods_receipts r WHERE r.id = receipt_id));
 
+-- Inside purchase order requests, a caller reads the employees who acted on the orders and receipts it can read.
+DROP POLICY IF EXISTS employee_procurement_actor_read ON public.employees;
+CREATE POLICY employee_procurement_actor_read ON public.employees FOR SELECT TO app_user
+  USING (current_setting('app.employee_operation', true) = 'procurement_read'
+    AND (EXISTS (SELECT FROM public.purchase_order_events e WHERE e.actor_id = employees.id)
+      OR EXISTS (SELECT FROM public.goods_receipts r WHERE r.received_by_id = employees.id)
+      OR EXISTS (SELECT FROM public.goods_receipt_attachments a WHERE a.uploaded_by_id = employees.id)));
+
 -- Finance reads every payable; a warehouse manager reads the payables of the orders addressed to the warehouse.
 -- Payables are written only by record_goods_receipt().
 DROP POLICY IF EXISTS accounts_payable_read ON public.accounts_payable;
