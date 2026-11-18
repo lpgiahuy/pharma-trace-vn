@@ -25,6 +25,8 @@ function setup({ status = 'PENDING', partiesValid = true, variants = [{ id: 1, m
     purchase_order_items: { deleteMany: jest.fn().mockResolvedValue({}) },
     purchase_order_events: { create: jest.fn().mockResolvedValue({}) },
     packaging_variants: { findMany: jest.fn().mockResolvedValue(variants) },
+    facilities: { findMany: jest.fn().mockResolvedValue([]) },
+    manufacturers: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const prisma = { withPurchaseOrder: jest.fn((_actor: unknown, run: Run) => run(tx)) };
   return { tx, prisma, service: new PurchaseOrderService(prisma as unknown as PrismaService) };
@@ -194,6 +196,19 @@ describe('PurchaseOrderService reads', () => {
     const { service } = setup();
     expect(await errorCode(service.list(staff, { facilityId: 8 }))).toBe('WAREHOUSE_FACILITY_FORBIDDEN');
     expect(await errorCode(service.list(pharmacist, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
+  });
+
+  it('offers warehouses, factories, manufacturers and products to staff', async () => {
+    const { tx, service } = setup();
+    tx.facilities.findMany.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([{ id: 9 }]);
+    tx.manufacturers.findMany.mockResolvedValue([{ id: 3 }]);
+    tx.packaging_variants.findMany.mockResolvedValue([{ id: 1 }]);
+    await expect(service.options(staff, 'para')).resolves.toEqual({
+      warehouses: [{ id: 7 }], manufacturers: [{ id: 3 }], factories: [{ id: 9 }], variants: [{ id: 1 }],
+    });
+    expect(tx.packaging_variants.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { medicine: { medicine_name: { contains: 'para', mode: 'insensitive' } } }, take: 20,
+    }));
   });
 
   it('reports a missing order', async () => {

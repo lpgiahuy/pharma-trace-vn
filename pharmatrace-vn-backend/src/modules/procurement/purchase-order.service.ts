@@ -46,6 +46,7 @@ export type PurchaseOrderListItem = Prisma.purchase_ordersGetPayload<{ select: t
 export type PurchaseOrderDetail = Prisma.purchase_ordersGetPayload<{ select: typeof detailSelect }>;
 
 export interface PurchaseOrderOptions {
+  warehouses: { id: number; facility_name: string }[];
   manufacturers: { id: number; name: string }[];
   factories: { id: number; facility_name: string }[];
   variants: { id: number; unit_name: string; medicine: { medicine_name: string } }[];
@@ -55,6 +56,9 @@ interface PreparedOrder {
   data: Pick<Prisma.purchase_ordersUncheckedCreateInput, 'supplier_id' | 'supplier_manufacturer_id' | 'expected_at' | 'note' | 'total_amount'>;
   items: Prisma.purchase_order_itemsUncheckedCreateWithoutPurchase_ordersInput[];
 }
+
+/** Facility types that can receive goods; po_parties_valid() applies the same rule in the database. */
+const WAREHOUSE_TYPES = ['CENTRAL_WAREHOUSE', 'BRANCH_WAREHOUSE'];
 
 function newPoCode(): string {
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -88,7 +92,8 @@ export class PurchaseOrderService {
 
   options(user: CurrentUserPayload, search?: string): Promise<PurchaseOrderOptions> {
     return this.prisma.withPurchaseOrder(authActor(user), async tx => {
-      const [manufacturers, factories, variants] = await Promise.all([
+      const [warehouses, manufacturers, factories, variants] = await Promise.all([
+        tx.facilities.findMany({ where: { facility_type: { in: WAREHOUSE_TYPES } }, select: { id: true, facility_name: true }, orderBy: { facility_name: 'asc' } }),
         tx.manufacturers.findMany({ where: { status: 'ACTIVE' }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
         tx.facilities.findMany({ where: { facility_type: 'FACTORY' }, select: { id: true, facility_name: true }, orderBy: { facility_name: 'asc' } }),
         tx.packaging_variants.findMany({
@@ -97,7 +102,7 @@ export class PurchaseOrderService {
           orderBy: { id: 'asc' }, take: 20,
         }),
       ]);
-      return { manufacturers, factories, variants };
+      return { warehouses, manufacturers, factories, variants };
     });
   }
 
