@@ -6,6 +6,7 @@ import { AdminOrderController } from '../modules/order/admin-order.controller';
 import { AdminReturnsController } from '../modules/returns/admin-returns.controller';
 import { GoodsReceiptController } from '../modules/procurement/goods-receipt.controller';
 import { PurchaseOrderController } from '../modules/procurement/purchase-order.controller';
+import { FactoryBatchController } from '../modules/warehouse/factory/factory-batch.controller';
 import { WarehouseController } from '../modules/warehouse/warehouse.controller';
 
 type Handler = (...args: never[]) => unknown;
@@ -69,5 +70,10 @@ describe('Warehouse route access', () => {
     expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
     expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
     expect(rolesOf(WarehouseController, 'me').has('WAREHOUSE_STAFF')).toBe(true);
+  });
+
+  it('opens factory batch intake to factory staff and SUPER_ADMIN only', () => {
+    const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryBatchController) as string[]);
+    expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
   });
 });
