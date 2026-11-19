@@ -154,7 +154,8 @@ export interface InternalTransfer {
   resolution?: { action: string; reason: string; customer_agreement: string | null; resolved_by: number; replacement_transfer_id: number | null } | null;
   id: number;
   transfer_code: string;
-  order_id: number;
+  order_id: number | null;
+  transfer_type?: TransferType;
   from_facility_id: number;
   to_facility_id: number;
   status:
@@ -190,6 +191,36 @@ export interface InternalTransfer {
   to_facility?: InternalTransferFacility;
   history?: LogisticsEvent[];
 }
+
+export type TransferType = 'ORDER_FULFILLMENT' | 'REPLENISHMENT' | 'RETURN_TO_WAREHOUSE' | 'RECALL_COLLECTION';
+
+export interface StockTransferFacility {
+  id: number;
+  facility_name: string;
+  facility_type: string;
+}
+
+export interface StockTransferRequest {
+  id: number;
+  request_code: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  lines: Array<{ variantId: number; medicineId: number; quantity: number; unitName: string }>;
+  reason: string | null;
+  decision_note: string | null;
+  created_at: string;
+  from_facility: StockTransferFacility;
+  to_facility: StockTransferFacility;
+  transfer: { id: number; transfer_code: string; status: InternalTransfer['status'] } | null;
+}
+
+export interface CreateStockTransferPayload {
+  requestCode: string;
+  fromFacilityId: number;
+  lines: Array<{ variantId: number; quantity: number }>;
+  reason?: string;
+}
+
+export type StockTransferAction = 'approve' | 'reject' | 'cancel';
 
 export interface DeliveryProofPayload {
   proofType: 'CUSTOMER_SIGNATURE' | 'DELIVERY_PHOTO' | 'OTP' | 'DISPATCH_NOTE' | 'STAFF_CONFIRMATION';
@@ -474,6 +505,15 @@ export const logisticsService = {
     return apiClient.patch(`/admin/logistics/transfers/${transferId}/receive-return`, payload || {});
   },
 
+
+  getStockTransferRequests: (): Promise<SingleResponse<StockTransferRequest[]>> =>
+    apiClient.get('/logistics/stock-transfers'),
+
+  createStockTransferRequest: (payload: CreateStockTransferPayload): Promise<SingleResponse<StockTransferRequest>> =>
+    apiClient.post('/logistics/stock-transfers', payload),
+
+  decideStockTransferRequest: (id: number, action: StockTransferAction, note?: string): Promise<SingleResponse<StockTransferRequest>> =>
+    apiClient.post(`/logistics/stock-transfers/${id}/${action}`, { note }),
 
   getAllInternalTransfers: async (orderId?: number) => {
     const url = orderId ? `/admin/logistics/transfers?orderId=${orderId}` : '/admin/logistics/transfers';

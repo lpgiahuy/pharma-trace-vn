@@ -34,6 +34,7 @@ import {
   logisticsService,
   InternalTransfer,
   CARRIER_OPTIONS,
+  TransferType,
 } from '@/services/logistics.service';
 import {
   TransferStatusBadge,
@@ -44,6 +45,9 @@ import { formatDateTime } from '@/utils';
 import { useAuthStore } from '@/store/useAuthStore';
 import { workflowErrorMessage } from '@/utils/workflow-error';
 
+const TRANSFER_TYPE_LABELS: Record<TransferType, string> = {
+  ORDER_FULFILLMENT: 'Order', REPLENISHMENT: 'Replenishment', RETURN_TO_WAREHOUSE: 'Return to warehouse', RECALL_COLLECTION: 'Recall collection',
+};
 
 export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
   const { message, modal } = App.useApp();
@@ -196,6 +200,13 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
 
 
 
+  const typeAndOrder = (row: InternalTransfer) => (
+    <div className="flex flex-wrap items-center gap-1">
+      <Tag className="m-0 text-xs">{TRANSFER_TYPE_LABELS[row.transfer_type || 'ORDER_FULFILLMENT']}</Tag>
+      {row.order_id && <Link href={`/${portal}/orders/${row.order_id}`} className="font-mono text-xs sm:text-sm font-semibold text-[#004996] hover:underline">#{row.order_id}</Link>}
+    </div>
+  );
+
   const columns = [
     {
       title: 'Transfer Code',
@@ -219,17 +230,10 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
       ),
     },
     {
-      title: 'Order',
+      title: 'Type / Order',
       key: 'order',
-      width: 110,
-      render: (_: unknown, row: InternalTransfer) => (
-        <Link
-          href={`/${portal}/orders/${row.order_id}`}
-          className="font-mono text-xs sm:text-sm font-semibold text-[#004996] hover:underline"
-        >
-          #{row.order_id}
-        </Link>
-      ),
+      width: 150,
+      render: (_: unknown, row: InternalTransfer) => typeAndOrder(row),
     },
     {
       title: 'Transfer Route',
@@ -360,7 +364,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
           subtitle: row.tracking_code ? `Tracking: ${row.tracking_code}` : formatDateTime(row.created_at),
           badge: <TransferStatusBadge status={row.status} />,
           fields: [
-            { label: 'Order', value: <Link href={`/${portal}/orders/${row.order_id}`} className="font-mono text-sm font-semibold text-[#004996] hover:underline">#{row.order_id}</Link> },
+            { label: 'Type / Order', value: typeAndOrder(row) },
             { label: 'Items', value: `${Array.isArray(row.items) ? row.items.length : 0} item(s)` },
             { label: 'Route', wide: true, value: <>
               <span className="font-medium text-amber-800">{row.from_facility?.facility_name || `Facility #${row.from_facility_id}`}</span>
@@ -503,7 +507,9 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>Inter-facility Route</span>
                 {/* The order belongs to the destination facility; other staff cannot open it. */}
-                {canReceive ? (
+                {!selectedTransfer.order_id ? (
+                  <span className="font-semibold text-slate-600">{TRANSFER_TYPE_LABELS[selectedTransfer.transfer_type || 'ORDER_FULFILLMENT']}</span>
+                ) : canReceive ? (
                   <Link
                     href={`/${portal}/orders/${selectedTransfer.order_id}`}
                     className="font-semibold text-[#004996] hover:underline"
@@ -572,7 +578,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
                 {selectedTransfer.items?.map((it, idx) => (
                   <div key={idx} className="p-2.5 sm:p-3 flex items-center justify-between text-xs sm:text-sm">
                     <div>
-                      <strong className="text-slate-800 block">{it.medicineName}</strong>
+                      <strong className="text-slate-800 block">{it.medicineName || `Medicine #${it.medicineId}`}</strong>
                       <span className="text-slate-400 text-xs">Variant #{it.variantId}</span>
                     </div>
                     <span className="font-semibold text-slate-900 tabular-nums">
@@ -589,13 +595,13 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
               <div className="bg-white p-3.5 rounded-md border border-slate-200 space-y-2.5">
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 m-0">Transfer Operations</h3>
                 <p className="text-xs text-slate-600 m-0">
-                  {canDispatch && 'Source facility staff can dispatch. To cancel or change the delivery plan, cancel the entire order. '}
+                  {canDispatch && `Source facility staff can dispatch. To cancel, ${selectedTransfer.order_id ? 'cancel the entire order' : 'cancel its request in the Requests tab'}. `}
                   {canReceive ? 'Inspect quantities and scan good/damaged UIDs before confirming receipt.' : 'Only destination facility staff can confirm receipt or report damage.'}
                 </p>
 
                 <div className="flex flex-wrap gap-2">
                   <TransferInspection key={selectedTransfer.id} transfer={selectedTransfer} atSource={canDispatch} atDestination={canReceive} onSaved={async () => { await loadTransferDetail(selectedTransfer.id); fetchTransfers(); }} />
-                  {canReceive && <Link href={`/${portal}/orders/${selectedTransfer.order_id}`}>View order and cancellation</Link>}
+                  {canReceive && selectedTransfer.order_id && <Link href={`/${portal}/orders/${selectedTransfer.order_id}`}>View order and cancellation</Link>}
                   {selectedTransfer.status === 'REQUESTED' && canDispatch && (
                     <>
                       <Button
