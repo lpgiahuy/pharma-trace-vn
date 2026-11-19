@@ -117,5 +117,6 @@
 \i /docker-entrypoint-initdb.d/security/procurement/goods_receipts.sql
 \i /docker-entrypoint-initdb.d/security/inventory/factory_batch_intake.sql
 \i /docker-entrypoint-initdb.d/security/order/order_packages.sql
+\i /docker-entrypoint-initdb.d/security/order/carrier_handovers.sql
 
 \unset bootstrap_current_functions
