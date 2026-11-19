@@ -231,7 +231,7 @@ export class InternalTransferService {
       }
 
       const items = (transfer.items as TransferItem[]) || [];
-      const custody = await this.custodyUids(tx, transferId);
+      const custody = transfer.orders ? new Map<number, string[]>() : await this.custodyUids(tx, transferId);
       const lineMap = new Map((dto?.lines || []).map(line => [line.variantId, line]));
       if (lineMap.size !== (dto?.lines || []).length || [...lineMap.keys()].some(id => !items.some(item => Number(item.variantId) === id))) throw new BadRequestException('Duplicate or unknown inspection variant.');
       if (!dto?.lines || lineMap.size !== items.length) throw new BadRequestException('Inspection must include every transfer variant.');
@@ -383,7 +383,7 @@ export class InternalTransferService {
       if (lineMap.size !== (dto?.lines || []).length || [...lineMap.keys()].some(id => !transferItems.some(item => Number(item.variantId) === id))) throw new BadRequestException('Duplicate or unknown inspection variant.');
       if (!dto?.lines || lineMap.size !== transferItems.length) throw new BadRequestException('Inspection must include every transfer variant.');
 
-      const custody = await this.custodyUids(tx, transferId);
+      const custody = order ? new Map<number, string[]>() : await this.custodyUids(tx, transferId);
       const reference = order ? `order #${order.order_code}` : `transfer #${transfer.transfer_code}`;
       let totalDamagedCount = 0;
       let totalMissingCount = 0;
