@@ -30,6 +30,13 @@ export class FulfillmentController {
     return { success: true, data: await this.fulfillment.pickList(user, id) };
   }
 
+  @Get('orders/:id/packages')
+  @Roles(...WH_ALL)
+  @ApiOperation({ summary: 'List the packed packages of an order' })
+  async packages(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.fulfillment.packages(user, id) };
+  }
+
   @Post('orders/:id/packages')
   @Roles(...WH_ALL)
   @ApiOperation({ summary: 'Pack scanned boxes of an order into a package' })

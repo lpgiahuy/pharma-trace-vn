@@ -153,6 +153,16 @@ export class FulfillmentService {
     }, authActor(user));
   }
 
+  async packages(user: CurrentUserPayload, orderId: number): Promise<PackageSummary[]> {
+    const facilityId = warehouseScope(user);
+    const rows = await this.prisma.withOrder('read', tx => tx.order_packages.findMany({
+      where: { order_id: orderId, status: 'PACKED', ...(facilityId === null ? {} : { facility_id: facilityId }) },
+      include: PACKAGE_INCLUDE,
+      orderBy: { id: 'asc' },
+    }), authActor(user));
+    return rows.map(toSummary);
+  }
+
   async addPackage(user: CurrentUserPayload, orderId: number, dto: CreatePackageDto): Promise<PackageSummary> {
     return this.prisma.withOrder('pack', async tx => {
       const order = await this.orders.lockPackableOrder(tx, orderId, user);

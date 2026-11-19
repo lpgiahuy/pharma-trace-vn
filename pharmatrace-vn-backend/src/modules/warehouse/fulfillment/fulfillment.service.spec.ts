@@ -20,6 +20,7 @@ function setup(boxes: Box[], options: { unsellable?: string[]; packed?: { order_
   const tx = {
     order_packages: {
       findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve({
         id: 7, package_code: data.package_code, order_id: data.order_id, status: 'PACKED',
         order_package_items: data.order_package_items.create.map((item: { box_uid: string }) => ({ box_uid: item.box_uid })),
@@ -132,5 +133,13 @@ describe('FulfillmentService completion and void', () => {
       where: expect.objectContaining({ export_facility_id: 3, order_status: { in: ['PENDING', 'PROCESSING'] } }),
     }));
     await expect(service.queue(staff, { facilityId: 4 })).rejects.toMatchObject({ code: 'WAREHOUSE_FACILITY_FORBIDDEN' });
+  });
+
+  it('lists the packed packages of an order at the staff warehouse only', async () => {
+    const { service, tx } = setup([]);
+    await service.packages(staff, 1);
+    expect(tx.order_packages.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { order_id: 1, status: 'PACKED', facility_id: 3 },
+    }));
   });
 });
