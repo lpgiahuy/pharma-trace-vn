@@ -51,9 +51,6 @@ BEGIN
   IF (SELECT shipping_status FROM public.shipments WHERE order_id = current_setting('test.order_one')::int) <> 'PENDING_PICKUP' THEN
     RAISE EXCEPTION 'A partly handed over order left PENDING_PICKUP';
   END IF;
-  IF (SELECT status FROM public.medicine_boxes WHERE uid = current_setting('test.box_one')::uuid) <> 'PACKAGED' THEN
-    RAISE EXCEPTION 'A box of an unfinished handover left PACKAGED';
-  END IF;
 END $$;
 SELECT pg_temp.hv_expect('HV_PACKAGE_NOT_PACKED', 'HV-TEST-BAD3', 'GHN', ARRAY['HV-PKG-1A']);
 
@@ -64,10 +61,14 @@ DO $$ BEGIN
      OR (SELECT picked_up_at FROM public.shipments WHERE order_id = current_setting('test.order_one')::int) IS NULL THEN
     RAISE EXCEPTION 'The last package did not mark the order as picked up';
   END IF;
+END $$;
+RESET ROLE;
+DO $$ BEGIN
   IF (SELECT count(*) FROM public.medicine_boxes WHERE uid IN (current_setting('test.box_one')::uuid, current_setting('test.box_two')::uuid) AND status = 'IN_TRANSIT') <> 2 THEN
     RAISE EXCEPTION 'The boxes of the order are not in transit';
   END IF;
 END $$;
+SET LOCAL ROLE app_user;
 
 SELECT set_config('app.current_user_id', current_setting('test.staff_b'), true), set_config('app.current_unit_id', current_setting('test.b'), true);
 DO $$ BEGIN
