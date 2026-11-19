@@ -6,7 +6,7 @@ INSERT INTO public.employees(full_name, role, facility_id) VALUES ('PK staff A',
 INSERT INTO public.employees(full_name, role, facility_id) VALUES ('PK manager A', 'WAREHOUSE_MANAGER', :f_a) RETURNING id AS manager_a \gset e_
 INSERT INTO public.employees(full_name, role, facility_id) VALUES ('PK staff B', 'WAREHOUSE_STAFF', :f_b) RETURNING id AS staff_b \gset e_
 INSERT INTO public.medicines(medicine_name) VALUES ('PK medicine') RETURNING id AS id \gset med_
-INSERT INTO public.batches(batch_number, medicine_id, expiry_date) VALUES (format('PK-%s', txid_current()), :med_id, current_date + 365) RETURNING id AS id \gset batch_
+INSERT INTO public.batches(batch_number, medicine_id, production_date, expiry_date) VALUES (format('PK-%s', txid_current()), :med_id, current_date - 1, current_date + 365) RETURNING id AS id \gset batch_
 INSERT INTO public.orders(order_code, export_facility_id, order_status) VALUES (format('PK-1-%s', txid_current()), :f_a, 'PROCESSING') RETURNING id AS one \gset o_
 INSERT INTO public.orders(order_code, export_facility_id, order_status) VALUES (format('PK-2-%s', txid_current()), :f_a, 'PROCESSING') RETURNING id AS two \gset o_
 INSERT INTO public.order_items(order_id, medicine_id, quantity) VALUES (:o_one, :med_id, 2) RETURNING id AS one \gset i_
