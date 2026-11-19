@@ -47,6 +47,15 @@ BEGIN
       OR jsonb_typeof(line->'boxUids') IS DISTINCT FROM 'array' THEN
       RAISE EXCEPTION 'Manifest does not match transfer quantities' USING ERRCODE = '22023';
     END IF;
+    SELECT coalesce(array_agg(uid ORDER BY uid), '{}'::uuid[]) INTO scanned
+      FROM (SELECT value::uuid AS uid FROM jsonb_array_elements_text(line->'boxUids')) s;
+    IF transfer.order_id IS NULL THEN
+      IF cardinality(scanned) <> expected_quantity OR cardinality(scanned) <> (SELECT count(DISTINCT uid) FROM unnest(scanned) uid)
+        OR (SELECT count(*) FROM public.medicine_boxes b WHERE b.uid = ANY(scanned) AND b.current_facility_id = transfer.from_facility_id AND b.status = 'RESERVED') <> expected_quantity THEN
+        RAISE EXCEPTION 'Scan one reserved source package for each transferred unit' USING ERRCODE = '22023';
+      END IF;
+      CONTINUE;
+    END IF;
     SELECT * INTO order_item FROM public.order_items WHERE order_id = transfer.order_id AND variant_id = variant
       AND source_facility_id = transfer.from_facility_id AND inventory_reserved = true FOR UPDATE;
     IF NOT FOUND OR order_item.quantity <> expected_quantity THEN
@@ -56,8 +65,6 @@ BEGIN
       AND cardinality(order_item.assigned_uids) <> expected_quantity THEN
       RAISE EXCEPTION 'Tracked transfer packages require reserved UIDs' USING ERRCODE = '22023';
     END IF;
-    SELECT coalesce(array_agg(uid ORDER BY uid), '{}'::uuid[]) INTO scanned
-      FROM (SELECT value::uuid AS uid FROM jsonb_array_elements_text(line->'boxUids')) s;
     IF cardinality(scanned) <> (SELECT count(DISTINCT uid) FROM unnest(scanned) uid)
       OR scanned IS DISTINCT FROM ARRAY(SELECT uid FROM unnest(order_item.assigned_uids) uid ORDER BY uid)
       OR (cardinality(scanned) > 0 AND (cardinality(scanned) <> expected_quantity OR

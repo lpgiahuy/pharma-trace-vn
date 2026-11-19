@@ -37,30 +37,41 @@ CREATE POLICY custody_read ON public.transfer_custody FOR SELECT TO app_user USI
 CREATE OR REPLACE FUNCTION public.handoff_transfer_custody() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 DECLARE line jsonb; item public.order_items%ROWTYPE; balance integer; changed integer;
+  variant integer; medicine integer; units integer; uids uuid[];
 BEGIN
   IF NEW.status <> 'DISPATCHED' OR OLD.status IS NOT DISTINCT FROM NEW.status THEN RETURN NEW; END IF;
   FOR line IN SELECT value FROM jsonb_array_elements(NEW.items) LOOP
-    SELECT * INTO STRICT item FROM public.order_items WHERE order_id=NEW.order_id
-      AND variant_id=(line->>'variantId')::integer AND source_facility_id=NEW.from_facility_id FOR UPDATE;
-    IF item.inventory_reserved IS NOT TRUE OR item.quantity <> (line->>'quantity')::integer THEN
-      RAISE EXCEPTION 'Transfer reservation changed' USING ERRCODE='22023';
+    variant := (line->>'variantId')::integer;
+    IF NEW.order_id IS NULL THEN
+      -- Stock transfers take quantities from the transfer and UIDs from the scanned manifest.
+      medicine := (line->>'medicineId')::integer; units := (line->>'quantity')::integer;
+      SELECT coalesce(array_agg(uid::uuid), '{}') INTO uids FROM public.transfer_manifests m
+        CROSS JOIN LATERAL jsonb_array_elements(m.lines) l CROSS JOIN LATERAL jsonb_array_elements_text(l->'boxUids') uid
+        WHERE m.transfer_id=NEW.id AND (l->>'variantId')::integer=variant;
+    ELSE
+      SELECT * INTO STRICT item FROM public.order_items WHERE order_id=NEW.order_id
+        AND variant_id=variant AND source_facility_id=NEW.from_facility_id FOR UPDATE;
+      IF item.inventory_reserved IS NOT TRUE OR item.quantity <> (line->>'quantity')::integer THEN
+        RAISE EXCEPTION 'Transfer reservation changed' USING ERRCODE='22023';
+      END IF;
+      medicine := item.medicine_id; units := item.quantity; uids := item.assigned_uids;
     END IF;
-    UPDATE public.inventories SET stock_quantity=stock_quantity-item.quantity,
-      reserved_quantity=reserved_quantity-item.quantity, updated_at=now()
-      WHERE facility_id=NEW.from_facility_id AND variant_id=item.variant_id
-        AND stock_quantity >= item.quantity AND reserved_quantity >= item.quantity
+    UPDATE public.inventories SET stock_quantity=stock_quantity-units,
+      reserved_quantity=reserved_quantity-units, updated_at=now()
+      WHERE facility_id=NEW.from_facility_id AND variant_id=variant
+        AND stock_quantity >= units AND reserved_quantity >= units
       RETURNING stock_quantity INTO balance;
     IF NOT FOUND THEN RAISE EXCEPTION 'Source reservation is insufficient' USING ERRCODE='22023'; END IF;
     UPDATE public.medicine_boxes SET status='IN_TRANSIT', current_facility_id=NULL
-      WHERE uid=ANY(item.assigned_uids) AND status='RESERVED' AND current_facility_id=NEW.from_facility_id;
+      WHERE uid=ANY(uids) AND status='RESERVED' AND current_facility_id=NEW.from_facility_id;
     GET DIAGNOSTICS changed=ROW_COUNT;
-    IF changed <> cardinality(item.assigned_uids) THEN RAISE EXCEPTION 'Source package custody changed' USING ERRCODE='22023'; END IF;
+    IF changed <> cardinality(uids) THEN RAISE EXCEPTION 'Source package custody changed' USING ERRCODE='22023'; END IF;
     INSERT INTO public.transfer_custody(transfer_id,variant_id,quantity,outstanding,box_uids)
-      VALUES(NEW.id,item.variant_id,item.quantity,item.quantity,item.assigned_uids);
+      VALUES(NEW.id,variant,units,units,uids);
     INSERT INTO public.inventory_logs(facility_id,medicine_id,variant_id,stock_bucket,transaction_type,
       quantity_changed,previous_quantity,new_quantity,reference_code,note,performed_by_id)
-      VALUES(NEW.from_facility_id,item.medicine_id,item.variant_id,'ON_HAND','TRANSFER_DISPATCH',
-        -item.quantity,balance+item.quantity,balance,NEW.transfer_code,'Handed over to transport custody',
+      VALUES(NEW.from_facility_id,medicine,variant,'ON_HAND','TRANSFER_DISPATCH',
+        -units,balance+units,balance,NEW.transfer_code,'Handed over to transport custody',
         nullif(current_setting('app.current_user_id',true),'')::integer);
   END LOOP;
   RETURN NEW;

@@ -982,3 +982,31 @@ Back up the database first. `security/order/order_packages.sql` must already be 
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/order/carrier_handovers.sql
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/carrier_handovers_test.sql
 ```
+
+## Stock transfers
+
+`security/logistics/stock_transfers.sql` lets internal transfers exist without an order.
+
+- `internal_transfers.order_id` is nullable. New columns: `transfer_type` (`ORDER_FULFILLMENT` by default, `REPLENISHMENT`, `RETURN_TO_WAREHOUSE`, `RECALL_COLLECTION`) and `request_id`. A check requires an order for `ORDER_FULFILLMENT` and no order for every other type.
+- The transfer functions read a stock transfer's lines from `internal_transfers.items` instead of `order_items`:
+  - `prepare_dispatch_manifest` reserves the scanned source boxes, and `record_transfer_manifest` requires one reserved box per unit.
+  - `handoff_transfer_custody` takes the dispatched UIDs from the manifest.
+  - `transit_box_receivable` finds in-transit boxes through `transfer_custody` (for both types).
+  - `record_quarantine_movement` takes the medicine from the transfer line (for both types).
+  - `resolve_transfer_discrepancy` rejects stock transfers: their receipt is final.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner, in this order (`return_requests.sql` holds the final `record_quarantine_movement`; do not re-run the older `quarantine_balances.sql` after it):
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/stock_transfers.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/returns/return_requests.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/transit_box_receipt.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/transfer_manifest.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/source_manifest_assignment.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/in_transit_custody.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/transfer_discrepancy_resolution.sql
+```
+
+`in_transit_custody.sql` keeps its check that refuses active transfers without custody records. All scripts can be re-applied.

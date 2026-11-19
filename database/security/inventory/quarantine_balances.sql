@@ -45,11 +45,10 @@ BEGIN
       WHERE s.id = target AND ((movement = 'IN' AND operation = 'receive' AND s.shipping_status IN ('RETURN_REQUESTED','RETURN_IN_TRANSIT'))
         OR (movement IN ('RESTOCK','FAILED_QA') AND operation = 'status' AND s.shipping_status = 'RETURNED_TO_WAREHOUSE' AND s.return_qa_status = 'PENDING_INSPECTION'));
   ELSE
-    SELECT CASE WHEN kind = 'TRANSFER_RETURN' THEN t.from_facility_id ELSE t.to_facility_id END, i.medicine_id, t.transfer_code, (line->>'quantity')::integer
+    SELECT CASE WHEN kind = 'TRANSFER_RETURN' THEN t.from_facility_id ELSE t.to_facility_id END, (line->>'medicineId')::integer, t.transfer_code, (line->>'quantity')::integer
       INTO facility, medicine, reference, available
-      FROM public.internal_transfers t JOIN public.order_items i ON i.order_id = t.order_id
-      CROSS JOIN LATERAL jsonb_array_elements(t.items) line
-      WHERE t.id = target AND i.variant_id = target_variant AND i.variant_id = (line->>'variantId')::integer
+      FROM public.internal_transfers t CROSS JOIN LATERAL jsonb_array_elements(t.items) line
+      WHERE t.id = target AND (line->>'variantId')::integer = target_variant
         AND ((kind = 'TRANSFER' AND t.status = 'DISPATCHED') OR (kind = 'TRANSFER_RETURN' AND t.status = 'RETURN_REQUESTED'))
         AND operation = 'receive' AND movement = 'IN';
   END IF;
