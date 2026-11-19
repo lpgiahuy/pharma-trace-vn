@@ -6,6 +6,7 @@ import { AdminOrderService } from '../order/admin-order.service';
 import { OrderService } from '../order/order.service';
 import { OrderCronService } from '../order/order-cron.service';
 import { LogisticsService } from './shipment/logistics.service';
+import { StockTransferService } from './stock-transfer/stock-transfer.service';
 
 const integration = process.env.WORKFLOW_TEST_DATABASE_URL ? describe : describe.skip;
 integration('Logistics workflow gaps using the restricted application role', () => {
@@ -406,5 +407,44 @@ integration('Logistics workflow gaps using the restricted application role', () 
     await finance.saveFulfillmentPolicy(depot, { ...policy, sellingFacilityId: alternate }, actor());
     expect((await db.query('SELECT * FROM order_fulfillment_terms WHERE order_id=$1', [accepted])).rows[0]).toEqual(snapshot);
     await expect(prisma.withOrder('read', tx => tx.$executeRaw`DELETE FROM public.warehouse_selling_pharmacies WHERE warehouse_id=${depot}`, actor())).rejects.toThrow(/permission denied/i);
+  });
+
+  it('moves a 20-box pharmacy request from the warehouse and quarantines 2 damaged boxes at receipt', async () => {
+    const stock = new StockTransferService(prisma);
+    const employee = async (role: string, facilityId: number) => ({
+      id: await id('INSERT INTO employees(full_name,role,facility_id) VALUES ($1,$2,$3) RETURNING id', [`Stock ${role}`, role, facilityId]),
+      role, type: 'employee' as const, facilityId,
+    });
+    const depot = await id("INSERT INTO facilities(facility_name,facility_type,latitude,longitude) VALUES ('Stock warehouse','CENTRAL_WAREHOUSE',10.77,106.7) RETURNING id");
+    const [depotManager, depotStaff, pharmacyManager, outsider] = await Promise.all([
+      employee('WAREHOUSE_MANAGER', depot), employee('WAREHOUSE_STAFF', depot), employee('STORE_MANAGER', destination), employee('STORE_MANAGER', alternate),
+    ]);
+    const medicine = await id("INSERT INTO medicines(medicine_name,status) VALUES ('Stock medicine','ACTIVE') RETURNING id");
+    const variant = await id("INSERT INTO packaging_variants(medicine_id,unit_name,price) VALUES ($1,'Box',100) RETURNING id", [medicine]);
+    const batch = await id("INSERT INTO batches(batch_number,medicine_id,production_date,expiry_date,status) VALUES ($1,$2,current_date-1,current_date+365,'ACTIVE') RETURNING id", [randomUUID(), medicine]);
+    const uids = Array.from({ length: 20 }, () => randomUUID());
+    await db.query("INSERT INTO medicine_boxes(uid,batch_id,current_facility_id,status) SELECT unnest($1::uuid[]),$2,$3,'IN_STOCK'", [uids, batch, depot]);
+    await db.query('INSERT INTO inventories(facility_id,variant_id,stock_quantity,reserved_quantity) VALUES ($1,$2,20,0)', [depot, variant]);
+
+    const request = await stock.create(pharmacyManager, { requestCode: `STQ-${randomUUID()}`, fromFacilityId: depot, lines: [{ variantId: variant, quantity: 20 }], reason: 'Weekly replenishment' });
+    await expect(stock.decide(pharmacyManager, request.id, 'APPROVE')).rejects.toThrow(/sending facility/i);
+    await expect(stock.decide(outsider, request.id, 'APPROVE')).rejects.toThrow(/not found/i);
+    expect((await stock.list(outsider)).some(row => row.id === request.id)).toBe(false);
+    const approved = await stock.decide(depotManager, request.id, 'APPROVE');
+    expect(approved).toMatchObject({ status: 'APPROVED', decided_by: depotManager.id, transfer: { status: 'REQUESTED' } });
+    expect(await inventory(depot, variant)).toEqual({ stock_quantity: 20, reserved_quantity: 20 });
+
+    const transfer = approved.transfer!.id;
+    expect((await stock.warehouseTransfers(depotStaff, {})).find(row => row.id === transfer)).toMatchObject({ transfer_type: 'REPLENISHMENT', order_id: null });
+    await transfers.adminDispatchInternalTransfer(transfer, { transportMode: 'INTERNAL', transportEmployeeId: depotStaff.id, manifest: [{ variantId: variant, quantity: 20, boxUids: uids }] }, depotStaff);
+    expect(await inventory(depot, variant)).toEqual({ stock_quantity: 0, reserved_quantity: 0 });
+
+    const received = await transfers.adminReceiveInternalTransfer(transfer, pharmacyManager, { lines: [{ variantId: variant, receivedQuantity: 18, damagedQuantity: 2, missingQuantity: 0, goodUids: uids.slice(0, 18), damagedUids: uids.slice(18) }] });
+    expect(received).toMatchObject({ status: 'RECEIVED_WITH_DISCREPANCY', discrepancy_status: 'DISCREPANCY' });
+    expect(await inventory(destination, variant)).toEqual({ stock_quantity: 18, reserved_quantity: 0 });
+    expect((await db.query('SELECT quantity FROM quarantine_balances WHERE facility_id=$1 AND variant_id=$2', [destination, variant])).rows[0].quantity).toBe(2);
+    expect((await db.query('SELECT status, count(*)::int AS n FROM medicine_boxes WHERE uid = ANY($1::uuid[]) AND current_facility_id=$2 GROUP BY status ORDER BY status', [uids, destination])).rows)
+      .toEqual([{ status: 'DAMAGED', n: 2 }, { status: 'IN_STOCK', n: 18 }]);
+    await expect(transfers.resolveDiscrepancy(transfer, { action: 'RESUPPLY', reason: 'Replace damaged boxes' }, pharmacyManager)).rejects.toThrow(/final/i);
   });
 });

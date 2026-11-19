@@ -10,8 +10,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
       AND NULLIF(current_setting('app.current_unit_id', true), '') IS NOT NULL
       AND EXISTS (
         SELECT 1 FROM public.internal_transfers t
-        JOIN public.order_items oi ON oi.order_id = t.order_id
-        WHERE box_uid = ANY (oi.assigned_uids)
+        JOIN public.transfer_custody c ON c.transfer_id = t.id
+        WHERE box_uid = ANY (c.box_uids)
           AND ((t.status = 'DISPATCHED' AND t.to_facility_id = NULLIF(current_setting('app.current_unit_id', true), '')::integer)
             OR (t.status = 'RETURN_REQUESTED' AND t.from_facility_id = NULLIF(current_setting('app.current_unit_id', true), '')::integer)))
 $$;

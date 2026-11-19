@@ -6,7 +6,7 @@ DECLARE t public.internal_transfers%ROWTYPE; ord public.orders%ROWTYPE; item pub
   line jsonb; scanned uuid[]; changed integer;
 BEGIN
   SELECT * INTO t FROM public.internal_transfers WHERE id=target;
-  SELECT * INTO ord FROM public.orders WHERE id=t.order_id FOR UPDATE;
+  IF t.order_id IS NOT NULL THEN SELECT * INTO ord FROM public.orders WHERE id=t.order_id FOR UPDATE; END IF;
   SELECT * INTO t FROM public.internal_transfers WHERE id=target FOR UPDATE;
   IF current_setting('app.order_operation',true) IS DISTINCT FROM 'dispatch'
     OR current_setting('app.current_user_type',true) IS DISTINCT FROM 'employee'
@@ -15,12 +15,23 @@ BEGIN
     OR public.order_staff(t.from_facility_id) IS NOT TRUE THEN
     RAISE EXCEPTION 'Source handoff is not authorized' USING ERRCODE='42501';
   END IF;
-  IF t.id IS NULL OR t.status<>'REQUESTED' OR ord.order_status<>'WAITING_INTERNAL_TRANSFER'
-    OR coalesce(ord.prescription_review_status,'APPROVED')<>'APPROVED'
-    OR jsonb_typeof(manifest) IS DISTINCT FROM 'array' THEN
+  IF t.id IS NULL OR t.status<>'REQUESTED' OR jsonb_typeof(manifest) IS DISTINCT FROM 'array'
+    OR (t.order_id IS NOT NULL AND (ord.order_status<>'WAITING_INTERNAL_TRANSFER'
+      OR coalesce(ord.prescription_review_status,'APPROVED')<>'APPROVED')) THEN
     RAISE EXCEPTION 'Transfer is not ready for source handoff' USING ERRCODE='22023';
   END IF;
-  FOR line IN SELECT value FROM jsonb_array_elements(manifest) LOOP
+  -- Stock transfers reserved quantities only; the scanned boxes are reserved here.
+  FOR line IN SELECT value FROM jsonb_array_elements(manifest) WHERE t.order_id IS NULL LOOP
+    SELECT array_agg(value::uuid) INTO scanned FROM jsonb_array_elements_text(line->'boxUids');
+    UPDATE public.medicine_boxes b SET status='RESERVED'
+      WHERE b.uid=ANY(scanned) AND b.current_facility_id=t.from_facility_id AND b.status='IN_STOCK'
+        AND EXISTS (SELECT FROM public.batches batch JOIN jsonb_array_elements(t.items) i ON (i->>'medicineId')::integer=batch.medicine_id
+          WHERE batch.id=b.batch_id AND i->>'variantId'=line->>'variantId')
+        AND public.box_sellable(b.uid, current_date);
+    GET DIAGNOSTICS changed=ROW_COUNT;
+    IF changed<>coalesce(cardinality(scanned),0) THEN RAISE EXCEPTION 'Scanned packages are unavailable, ineligible or belong to another medicine' USING ERRCODE='22023'; END IF;
+  END LOOP;
+  FOR line IN SELECT value FROM jsonb_array_elements(manifest) WHERE t.order_id IS NOT NULL LOOP
     SELECT * INTO item FROM public.order_items WHERE order_id=t.order_id
       AND variant_id=(line->>'variantId')::integer AND source_facility_id=t.from_facility_id FOR UPDATE;
     IF item.id IS NULL OR item.inventory_reserved IS NOT TRUE OR item.quantity IS DISTINCT FROM (line->>'quantity')::integer

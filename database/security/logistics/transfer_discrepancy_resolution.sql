@@ -36,6 +36,9 @@ BEGIN
   IF EXISTS (SELECT FROM public.transfer_resolutions WHERE transfer_id=target) THEN
     RETURN jsonb_build_object('id',target,'status','ALREADY_RESOLVED');
   END IF;
+  IF t.order_id IS NULL THEN
+    RAISE EXCEPTION 'Stock transfer receipts are final; discrepancies are recorded at receipt' USING ERRCODE='22023';
+  END IF;
   IF t.status <> 'RECEIVED_WITH_DISCREPANCY' OR ord.order_status <> 'WAITING_INTERNAL_TRANSFER'
     OR EXISTS (SELECT FROM public.shipments WHERE order_id=ord.id)
     OR decision IS NULL OR decision NOT IN ('RESUPPLY','ACCEPT_SHORTAGE')
