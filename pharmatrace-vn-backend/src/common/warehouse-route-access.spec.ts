@@ -7,6 +7,7 @@ import { AdminReturnsController } from '../modules/returns/admin-returns.control
 import { GoodsReceiptController } from '../modules/procurement/goods-receipt.controller';
 import { PurchaseOrderController } from '../modules/procurement/purchase-order.controller';
 import { FactoryBatchController } from '../modules/warehouse/factory/factory-batch.controller';
+import { FulfillmentController } from '../modules/warehouse/fulfillment/fulfillment.controller';
 import { WarehouseController } from '../modules/warehouse/warehouse.controller';
 
 type Handler = (...args: never[]) => unknown;
@@ -23,6 +24,7 @@ const managerRoutes: [string, { prototype: object }, string[]][] = [
   ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'receiveReturn']],
   ['orders', AdminOrderController, ['getAllOrders', 'getOrderById', 'resolution', 'getAvailableBoxes', 'packOrder']],
   ['returns', AdminReturnsController, ['list', 'detail', 'addAttachment', 'attachment', 'rejectReceipt', 'receive']],
+  ['fulfillment', FulfillmentController, ['queue', 'pickList', 'addPackage', 'completePacking', 'voidPackage', 'label']],
 ];
 
 describe('Warehouse route access', () => {
@@ -32,6 +34,11 @@ describe('Warehouse route access', () => {
       expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
       expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
     });
+  });
+
+  it('lets only managers void packages', () => {
+    expect(rolesOf(FulfillmentController, 'voidPackage').has('WAREHOUSE_STAFF')).toBe(false);
+    expect(rolesOf(FulfillmentController, 'addPackage').has('WAREHOUSE_STAFF')).toBe(true);
   });
 
   it('keeps discrepancy resolution away from warehouse staff', () => {
