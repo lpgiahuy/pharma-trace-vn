@@ -14,6 +14,8 @@ export const WH_ALL = [...WH_STAFF, ...WH_MANAGER] as const;
 /** Read-only inventory and batch views; factory staff read their own factory. */
 export const WH_READ = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
+export const FACTORY_INTAKE = ['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN'] as const;
+
 export type WarehouseRole = (typeof WH_ALL)[number];
 
 export function isWarehouseRole(role: string | undefined, group: readonly string[] = WH_ALL): boolean {

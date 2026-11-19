@@ -3,7 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AuthActor, authActor } from '../common/auth-identity';
-import { WH_ALL, WH_MANAGER, WH_READ } from '../common/warehouse-roles';
+import { FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_READ } from '../common/warehouse-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
 export type VoucherScope = 'validate' | 'read' | 'manage' | 'available';
@@ -254,6 +254,24 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
       await tx.$queryRaw`SELECT set_config('app.employee_operation', 'procurement_read', true)`;
+      return run(tx);
+    });
+  }
+
+  async withFactoryIntake<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const actor = authActor(identity);
+    if (actor.type !== 'employee' || !(FACTORY_INTAKE as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid factory intake scope');
+    return this.$transaction(async tx => {
+      const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
+        SELECT NOT r.rolsuper AND NOT r.rolbypassrls
+          AND to_regprocedure('public.record_factory_batch(integer,integer,text,date,date,text,jsonb)') IS NOT NULL AS ready
+        FROM pg_roles r WHERE r.rolname = current_user
+      `;
+      if (!state?.ready) throw new ServiceUnavailableException('Factory batch intake setup is not ready');
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
       return run(tx);
     });
   }

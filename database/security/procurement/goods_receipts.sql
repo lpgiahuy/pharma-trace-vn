@@ -125,6 +125,24 @@ EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
 END $$;
 REVOKE ALL ON FUNCTION public.goods_receipt_date(text) FROM PUBLIC;
 
+CREATE OR REPLACE FUNCTION public.stock_in_on_hand(target_facility integer, target_medicine integer, target_variant integer,
+  target_batch integer, units integer, movement_type text, reference text, movement_note text, actor integer)
+RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE balance integer;
+BEGIN
+  INSERT INTO public.inventories(facility_id, medicine_id, variant_id, stock_quantity, reserved_quantity)
+    VALUES (target_facility, target_medicine, target_variant, 0, 0)
+    ON CONFLICT ON CONSTRAINT uq_facility_inventory DO NOTHING;
+  UPDATE public.inventories SET stock_quantity = stock_quantity + units, updated_at = now()
+    WHERE facility_id = target_facility AND variant_id = target_variant
+    RETURNING stock_quantity INTO balance;
+  INSERT INTO public.inventory_logs(facility_id, medicine_id, variant_id, batch_id, stock_bucket, transaction_type,
+      quantity_changed, previous_quantity, new_quantity, reference_code, note, performed_by_id)
+    VALUES (target_facility, target_medicine, target_variant, target_batch, 'ON_HAND', movement_type,
+      units, balance - units, balance, reference, movement_note, actor);
+END $$;
+REVOKE ALL ON FUNCTION public.stock_in_on_hand(integer, integer, integer, integer, integer, text, text, text, integer) FROM PUBLIC;
+
 -- Receives goods for one purchase order in a single transaction. The order row lock serializes receipts of the
 -- same order; a repeated receipt code returns the receipt it already created.
 -- lines: [{ poItemId, batchNumber, productionDate, expiryDate, certificateCoCq?, boxUids[], ssccCodes[],
@@ -274,17 +292,8 @@ BEGIN
       VALUES (receipt, item.id, lot.id, cardinality(accepted), cardinality(rejected), reason, accepted, rejected);
 
     IF cardinality(accepted) > 0 THEN
-      INSERT INTO public.inventories(facility_id, medicine_id, variant_id, stock_quantity, reserved_quantity)
-        VALUES (po.facility_id, item.medicine_id, item.variant_id, 0, 0)
-        ON CONFLICT ON CONSTRAINT uq_facility_inventory DO NOTHING;
-      UPDATE public.inventories SET stock_quantity = stock_quantity + cardinality(accepted), updated_at = now()
-        WHERE facility_id = po.facility_id AND variant_id = item.variant_id
-        RETURNING stock_quantity INTO balance;
-      INSERT INTO public.inventory_logs(facility_id, medicine_id, variant_id, batch_id, stock_bucket, transaction_type,
-          quantity_changed, previous_quantity, new_quantity, reference_code, note, performed_by_id)
-        VALUES (po.facility_id, item.medicine_id, item.variant_id, lot.id, 'ON_HAND', 'PURCHASE_IN',
-          cardinality(accepted), balance - cardinality(accepted), balance, receipt_ref,
-          format('%s, batch %s', po.po_code, lot.batch_number), actor);
+      PERFORM public.stock_in_on_hand(po.facility_id, item.medicine_id, item.variant_id, lot.id, cardinality(accepted),
+        'PURCHASE_IN', receipt_ref, format('%s, batch %s', po.po_code, lot.batch_number), actor);
       amount := amount + cardinality(accepted) * item.unit_price;
     END IF;
   END LOOP;

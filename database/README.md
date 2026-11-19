@@ -923,3 +923,24 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 The backend suite `src/modules/procurement/goods-receipt.integration.spec.ts` (partial receipts, concurrent receipts, repeated codes and every rejection) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_goods_receipt_20261118`.
 
 Both scripts can be re-applied. Re-running `security/inventory/quarantine_balances.sql` or `security/returns/return_requests.sql` afterwards narrows the quarantine origin check again, so re-apply this script after them.
+
+## Factory batch intake
+
+`security/inventory/factory_batch_intake.sql` lets factory staff register finished-goods batches.
+
+- `stock_in_on_hand(...)` (defined in `security/procurement/goods_receipts.sql`) adds sellable stock and writes the `inventory_logs` row. Goods receipts call it with `PURCHASE_IN` and factory intake with `PRODUCTION_IN`; `inventory_logs.transaction_type` has no check constraint, so no schema change is needed.
+- `record_factory_batch(facility, variant, batch number, production date, expiry date, co/cq, cartons)` is a security-definer function. It requires the `FACTORY_INTAKE` role group (`FACTORY_WAREHOUSE_STAFF`, `SUPER_ADMIN`), a facility of type `FACTORY` inside the caller's scope, a unique batch number and production date before expiry. In one transaction it creates the batch, its SSCC cartons and its boxes (stored as `IN_STOCK` at the factory with the signature supplied by the API), then adds the stock. `batches`, `sscc_cartons` and `medicine_boxes` have no RLS (other flows write them directly), so this function is where the role and factory checks for batch intake live.
+- `app_role_group('FACTORY_INTAKE')` is added to `security/access/app_role_groups.sql`.
+
+### Applying to an existing database
+
+Back up the database first. `security/access/app_role_groups.sql` and `security/procurement/goods_receipts.sql` must be re-applied before the new script. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/procurement/goods_receipts.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/inventory/factory_batch_intake.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/factory_batch_intake_test.sql
+```
+
+The backend suite `src/modules/warehouse/factory/factory-batch.integration.spec.ts` runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_factory_batch_20261118`. Set `QR_SECRET_KEY` and optionally `FACTORY_BATCH_MAX_BOXES` (default 10000) in the backend `.env`.
