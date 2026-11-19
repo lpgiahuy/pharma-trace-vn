@@ -102,6 +102,43 @@ export interface PackageLabel {
   codAmount: number | null;
 }
 
+export interface PendingPackage {
+  packageCode: string;
+  orderCode: string;
+  recipientName: string | null;
+  boxCount: number;
+  carrierConfirmed: boolean;
+}
+
+export interface PendingCarrier {
+  courierName: string;
+  packages: PendingPackage[];
+}
+
+export interface Handover {
+  id: number;
+  handoverCode: string;
+  courierName: string;
+  driverName: string | null;
+  driverPhone: string | null;
+  vehiclePlate: string | null;
+  note: string | null;
+  handedOverAt: string;
+  handedOverBy: string | null;
+  facilityName: string | null;
+  packages: { packageCode: string; orderCode: string; recipientName: string | null; boxCount: number }[];
+}
+
+export interface HandoverInput {
+  handoverCode: string;
+  courierName: string;
+  packageCodes: string[];
+  driverName?: string;
+  driverPhone?: string;
+  vehiclePlate?: string;
+  note?: string;
+}
+
 interface PageQuery { page?: number; limit?: number }
 
 export const warehouseService = {
@@ -130,5 +167,8 @@ export const warehouseService = {
     apiClient.post<unknown, Envelope<{ orderId: number; trackingNumber: string }>>(`/warehouse/orders/${orderId}/packing/complete`, {}),
   voidPackage: (id: number, reason: string) =>
     apiClient.post<unknown, Envelope<PackageSummary>>(`/warehouse/packages/${id}/void`, { reason }),
+  pendingHandovers: () => apiClient.get<unknown, Envelope<PendingCarrier[]>>('/warehouse/handover/pending'),
+  handovers: () => apiClient.get<unknown, Envelope<Handover[]>>('/warehouse/handovers'),
+  createHandover: (input: HandoverInput) => apiClient.post<unknown, Envelope<Handover>>('/warehouse/handovers', input),
   packageLabel: (id: number) => apiClient.get<unknown, Envelope<PackageLabel>>(`/warehouse/packages/${id}/label`),
 };
