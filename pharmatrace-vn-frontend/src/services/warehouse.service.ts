@@ -61,6 +61,47 @@ export interface InventoryLog {
   createdAt: string | null;
 }
 
+export interface QueueOrder {
+  id: number;
+  orderCode: string;
+  orderStatus: string | null;
+  recipientName: string | null;
+  createdAt: string | null;
+  requiredBoxes: number;
+  packedBoxes: number;
+  packageCount: number;
+}
+
+export interface PickLine {
+  orderItemId: number;
+  medicineName: string | null;
+  quantity: number;
+  packedQuantity: number;
+  suggestions: { uid: string; batchNumber: string; expiryDate: string }[];
+}
+
+export interface PackageSummary {
+  id: number;
+  packageCode: string;
+  orderId: number;
+  status: string;
+  boxUids: string[];
+}
+
+export interface PackageLabel {
+  packageCode: string;
+  orderCode: string;
+  facilityName: string | null;
+  recipientName: string | null;
+  recipientPhone: string | null;
+  shippingAddress: string | null;
+  boxCount: number;
+  packedAt: string;
+  trackingNumber: string | null;
+  courierName: string | null;
+  codAmount: number | null;
+}
+
 interface PageQuery { page?: number; limit?: number }
 
 export const warehouseService = {
@@ -80,4 +121,14 @@ export const warehouseService = {
     apiClient.patch<unknown, Envelope<{ id: number; status: string }>>(`/warehouse/batches/${id}/hold`, { reason }),
   releaseBatch: (id: number, reason: string) =>
     apiClient.patch<unknown, Envelope<{ id: number; status: string }>>(`/warehouse/batches/${id}/release`, { reason }),
+  packingQueue: () => apiClient.get<unknown, Envelope<QueueOrder[]>>('/warehouse/fulfillment/queue'),
+  pickList: (orderId: number) => apiClient.get<unknown, Envelope<PickLine[]>>(`/warehouse/orders/${orderId}/pick-list`),
+  packages: (orderId: number) => apiClient.get<unknown, Envelope<PackageSummary[]>>(`/warehouse/orders/${orderId}/packages`),
+  addPackage: (orderId: number, packageCode: string, boxUids: string[]) =>
+    apiClient.post<unknown, Envelope<PackageSummary>>(`/warehouse/orders/${orderId}/packages`, { packageCode, boxUids }),
+  completePacking: (orderId: number) =>
+    apiClient.post<unknown, Envelope<{ orderId: number; trackingNumber: string }>>(`/warehouse/orders/${orderId}/packing/complete`, {}),
+  voidPackage: (id: number, reason: string) =>
+    apiClient.post<unknown, Envelope<PackageSummary>>(`/warehouse/packages/${id}/void`, { reason }),
+  packageLabel: (id: number) => apiClient.get<unknown, Envelope<PackageLabel>>(`/warehouse/packages/${id}/label`),
 };

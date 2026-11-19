@@ -46,6 +46,7 @@ model facilities {
   order_items_sourced      order_items[]        @relation("order_items_source_facility")
   prescription_reviews     order_prescription_reviews[]
   goods_receipts           goods_receipts[]   @relation("gr_facility")
+  order_packages           order_packages[]
 }
 
 model customers {
@@ -92,6 +93,8 @@ model employees {
   purchase_orders_approved purchase_orders[] @relation("po_approver")
   purchase_order_events purchase_order_events[] @relation("po_event_actor")
   goods_receipts        goods_receipts[]        @relation("gr_receiver")
+  packed_order_packages order_packages[]        @relation("package_packer")
+  voided_order_packages order_packages[]        @relation("package_voider")
   goods_receipt_attachments goods_receipt_attachments[] @relation("gr_attachment_uploader")
   reported_moderations  moderation_reports[]    @relation("report_reporter_employee")
   resolved_moderations  moderation_reports[]    @relation("report_resolver_employee")
@@ -180,6 +183,7 @@ model medicine_boxes {
   sscc_cartons        sscc_cartons?  @relation(fields: [carton_id], references: [id], onUpdate: NoAction)
   facilities          facilities?    @relation(fields: [current_facility_id], references: [id], onUpdate: NoAction)
   qr_scan_logs        qr_scan_logs[]
+  order_package_items order_package_items[]
 
   @@index([batch_id], map: "idx_medicine_boxes_batch_id")
   @@index([carton_id], map: "idx_medicine_boxes_carton_id")
@@ -255,6 +259,7 @@ model orders {
   prescription_review order_prescription_reviews?
   shipments           shipments?
   internal_transfers  internal_transfers[]
+  order_packages      order_packages[]
 
   @@index([customer_id], map: "idx_orders_customer_id")
   @@index([order_status], map: "idx_orders_status")
@@ -298,6 +303,7 @@ model order_items {
   medicines          medicines?          @relation(fields: [medicine_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   orders             orders?             @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   source_facility    facilities?         @relation("order_items_source_facility", fields: [source_facility_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  order_package_items order_package_items[]
 }
 
 model internal_transfers {
@@ -896,4 +902,41 @@ model return_request_refunds {
   executed_by       Int?
   executed_at       DateTime? @db.Timestamptz(6)
   cashbook_id       Int?      @unique
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model order_packages {
+  id                  Int                   @id @default(autoincrement())
+  package_code        String                @unique @db.VarChar(50)
+  order_id            Int
+  facility_id         Int
+  status              String                @default("PACKED") @db.VarChar(20)
+  weight_g            Int?
+  dimensions          String?               @db.VarChar(50)
+  packed_by_id        Int
+  packed_at           DateTime              @default(now()) @db.Timestamptz(6)
+  void_reason         String?
+  voided_by_id        Int?
+  voided_at           DateTime?             @db.Timestamptz(6)
+  orders              orders                @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+  facility            facilities            @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
+  packed_by           employees             @relation("package_packer", fields: [packed_by_id], references: [id], onUpdate: NoAction)
+  voided_by           employees?            @relation("package_voider", fields: [voided_by_id], references: [id], onUpdate: NoAction)
+  order_package_items order_package_items[]
+
+  @@index([order_id], map: "idx_order_packages_order")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model order_package_items {
+  id             Int            @id @default(autoincrement())
+  package_id     Int
+  order_item_id  Int
+  box_uid        String         @db.Uuid
+  voided_at      DateTime?      @db.Timestamptz(6)
+  order_packages order_packages @relation(fields: [package_id], references: [id], onUpdate: NoAction)
+  order_items    order_items    @relation(fields: [order_item_id], references: [id], onUpdate: NoAction)
+  medicine_boxes medicine_boxes @relation(fields: [box_uid], references: [uid], onUpdate: NoAction)
+
+  @@index([package_id], map: "idx_order_package_items_package")
 }

@@ -176,6 +176,7 @@ describe("AdminOrderService packing", () => {
       batches: { findUnique: jest.fn().mockResolvedValue(null) },
       shipments: { create: jest.fn() },
       orders: { update: jest.fn() },
+      order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
     };
     const prisma = {
       orders: { findFirst: jest.fn().mockResolvedValue({ ...order, prescription_review_status: reviewStatus }) },
@@ -229,6 +230,27 @@ describe("AdminOrderService packing", () => {
       },
       data: { status: "PACKAGED" },
     });
+  });
+
+  it("records the packed boxes as one package", async () => {
+    const { service, tx } = setup();
+    await service.adminPackOrder(1, { boxUids: [ownUid] }, facilityStaff);
+    expect(tx.order_packages.create).toHaveBeenCalledWith({
+      data: {
+        package_code: "ORD-1-PKG",
+        order_id: 1,
+        facility_id: 3,
+        packed_by_id: 12,
+        order_package_items: { create: [{ order_item_id: 10, box_uid: ownUid }] },
+      },
+    });
+  });
+
+  it("refuses the single-step pack while warehouse packages are open", async () => {
+    const { service, tx } = setup();
+    tx.order_packages.count.mockResolvedValue(1);
+    await expect(service.adminPackOrder(1, { boxUids: [ownUid] }, facilityStaff)).rejects.toThrow(/warehouse portal/i);
+    expect(tx.shipments.create).not.toHaveBeenCalled();
   });
 
   it("assigns a scanned package when checkout did not reserve physical UIDs", async () => {

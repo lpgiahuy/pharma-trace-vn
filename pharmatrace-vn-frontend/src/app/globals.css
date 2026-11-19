@@ -662,3 +662,9 @@ footer span.text-white\/70 {
 .animate-ripple-delayed {
   animation: ripple-wave 2.2s cubic-bezier(0, 0.2, 0.8, 1) 1.1s infinite;
 }
+/* Package labels: print only the label, not the page behind the dialog. */
+@media print {
+  body * { visibility: hidden; }
+  .print-label, .print-label * { visibility: visible; }
+  .print-label { position: fixed; inset: 0; padding: 16px; }
+}

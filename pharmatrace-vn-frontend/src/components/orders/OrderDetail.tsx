@@ -36,6 +36,7 @@ import {
 import { OrderStatusBadge } from '@/components/ui/Badge';
 import { formatCurrency, formatDateTime } from '@/utils';
 import { OrderPackingModal } from '@/components/shared/OrderPackingModal';
+import { PackingPanel } from './PackingPanel';
 import { PaymentExceptions } from '@/components/logistics/PaymentExceptions';
 import { OnlinePaymentEvidence } from '@/components/logistics/OnlinePaymentEvidence';
 import { OrderResolution } from '@/components/logistics/OrderResolution';
@@ -207,7 +208,7 @@ export function OrderDetail({ portal, orderId }: { portal: 'admin' | 'warehouse'
           <p className={styles.orderMeta}>{order.orderCode}<span>Placed {formatDateTime(order.createdAt)}</span></p>
         </div>
         <div className={styles.actions}>
-          {canPack && <AButton type="primary" icon={<ScanOutlined aria-hidden />} onClick={() => setFulfillOpen(true)}>Pack & scan QR</AButton>}
+          {canPack && portal === 'admin' && <AButton type="primary" icon={<ScanOutlined aria-hidden />} onClick={() => setFulfillOpen(true)}>Pack & scan QR</AButton>}
           {normStatus === 'SHIPPING' && <span className="text-sm text-slate-600">Waiting for customer receipt confirmation</span>}
         </div>
       </header>
@@ -284,6 +285,10 @@ export function OrderDetail({ portal, orderId }: { portal: 'admin' | 'warehouse'
           )}
         </aside>
       </div>
+
+      {portal === 'warehouse' && (canPack || normStatus === 'PENDING_PICKUP') && (
+        <PackingPanel orderId={order.id} editable={canPack} onCompleted={async () => setOrder(await orderService.getAdminById(order.id))} />
+      )}
 
       {/* Dedicated Prescription Review Section */}
       {hasPrescription && (

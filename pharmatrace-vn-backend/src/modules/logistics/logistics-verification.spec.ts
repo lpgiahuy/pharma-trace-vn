@@ -413,6 +413,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
       const tx = {
         $queryRaw: jest.fn().mockResolvedValue([]),
         orders: { findFirst: jest.fn().mockResolvedValue(baseOrder) },
+        order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
         medicine_boxes: {
           // Non-existent UID returns empty array
           findMany: jest.fn().mockResolvedValue([]),
@@ -431,6 +432,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
       const tx = {
         $queryRaw: jest.fn().mockResolvedValue([]),
         orders: { findFirst: jest.fn().mockResolvedValue(baseOrder) },
+        order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
         medicine_boxes: {
           findMany: jest.fn().mockResolvedValue([
             {
@@ -456,6 +458,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
       const tx = {
         $queryRaw: jest.fn().mockResolvedValue([]),
         orders: { findFirst: jest.fn().mockResolvedValue(baseOrder) },
+        order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
         medicine_boxes: {
           findMany: jest.fn().mockResolvedValue([
             {
@@ -501,6 +504,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
       const tx = {
         $queryRaw: jest.fn().mockResolvedValue([]),
         orders: { findFirst: jest.fn().mockResolvedValue(singleItemOrder) },
+        order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
       };
       const prisma = { withOrder: jest.fn((_op, cb) => cb(tx)) };
       const adminOrderService = new AdminOrderService(prisma as never);
@@ -515,7 +519,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
       [['UID-AAA'], /Received 1 of 2 required UID\(s\)/i],
       [['UID-AAA', 'UID-BBB', 'UID-CCC'], /Received 3 of 2 required UID\(s\)/i],
     ])('rejects packing with the wrong UID count: %j', async (boxUids, error) => {
-      const tx = { $queryRaw: jest.fn().mockResolvedValue([]), orders: { findFirst: jest.fn().mockResolvedValue(singleItemOrder) } };
+      const tx = { $queryRaw: jest.fn().mockResolvedValue([]), orders: { findFirst: jest.fn().mockResolvedValue(singleItemOrder) }, order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() } };
       const service = new AdminOrderService({ withOrder: (_op, run) => run(tx) } as never);
       await expect(service.adminPackOrder(902, { boxUids }, store1Staff)).rejects.toThrow(error);
     });
@@ -604,6 +608,7 @@ describe('Logistics & Order Management Verification Test Matrix', () => {
           }),
         },
         $executeRaw: jest.fn().mockResolvedValue(1),
+        order_packages: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
       };
 
       const prisma = { withOrder: jest.fn((_op, cb) => cb(tx)) };

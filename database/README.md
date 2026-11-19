@@ -944,3 +944,23 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 The backend suite `src/modules/warehouse/factory/factory-batch.integration.spec.ts` runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_factory_batch_20261118`. Set `QR_SECRET_KEY` and optionally `FACTORY_BATCH_MAX_BOXES` (default 10000) in the backend `.env`.
+
+## Order packages
+
+`security/order/order_packages.sql` splits packing an order into packages.
+
+- `order_packages` records each package of an order (`PACKED`, `HANDED_OVER` or `VOID`) at the order's export facility. `order_package_items` lists the scanned boxes and the order line each one fills.
+- A partial unique index keeps every box in at most one active package. Voiding a package sets `voided_at` on its items, which frees the boxes.
+- RLS: staff of the export facility read the packages. Inserts need the `pack` order operation and the actor as `packed_by_id`. Only `WH_MANAGER` can void, and only the void columns can be updated.
+- The trigger `void_cancelled_order_packages` voids the active packages of an order when it is cancelled, whichever path cancels it.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/order/order_packages.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/order_packages_test.sql
+```
+
+The backend suite `src/modules/warehouse/fulfillment/fulfillment.integration.spec.ts` (customer cancel racing packing) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_order_packing_20261119`.
