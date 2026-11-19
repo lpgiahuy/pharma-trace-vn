@@ -985,7 +985,7 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 
 ## Stock transfers
 
-`security/logistics/stock_transfers.sql` lets internal transfers exist without an order.
+`security/logistics/stock_transfers.sql` lets internal transfers exist without an order and adds stock transfer requests between facilities.
 
 - `internal_transfers.order_id` is nullable. New columns: `transfer_type` (`ORDER_FULFILLMENT` by default, `REPLENISHMENT`, `RETURN_TO_WAREHOUSE`, `RECALL_COLLECTION`) and `request_id`. A check requires an order for `ORDER_FULFILLMENT` and no order for every other type.
 - The transfer functions read a stock transfer's lines from `internal_transfers.items` instead of `order_items`:
@@ -994,6 +994,9 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
   - `transit_box_receivable` finds in-transit boxes through `transfer_custody` (for both types).
   - `record_quarantine_movement` takes the medicine from the transfer line (for both types).
   - `resolve_transfer_discrepancy` rejects stock transfers: their receipt is final.
+- `stock_transfer_requests` (unique `request_code`, source and destination facility, normalized `lines`, `status` `REQUESTED` / `APPROVED` / `REJECTED` / `CANCELLED`, requester, decider, reason and decision note) and `stock_transfer_request_events` (one row per change, with the employee and note). Both use forced RLS: staff of either facility read them, `SUPER_ADMIN` reads all, and there are no direct write grants.
+- `create_stock_transfer_request(code, source, destination, lines, reason)`: a `WAREHOUSE_MANAGER` or `STORE_MANAGER` of the destination creates a request. Resending a code returns the existing request.
+- `decide_stock_transfer_request(id, decision, note)`: `APPROVE` and `REJECT` require a manager of the source facility. Approval reserves source stock (`inventories.reserved_quantity`) and creates one `internal_transfers` row (`REPLENISHMENT`, or `RETURN_TO_WAREHOUSE` from a pharmacy to a warehouse) that then follows the normal dispatch and receipt workflow. `CANCEL` by a manager of either facility works until the transfer is dispatched and releases the reservation. Reject and cancel need a note.
 
 ### Applying to an existing database
 
@@ -1007,6 +1010,7 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/source_manifest_assignment.sql
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/in_transit_custody.sql
 docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/transfer_discrepancy_resolution.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/stock_transfers_test.sql
 ```
 
 `in_transit_custody.sql` keeps its check that refuses active transfers without custody records. All scripts can be re-applied.
