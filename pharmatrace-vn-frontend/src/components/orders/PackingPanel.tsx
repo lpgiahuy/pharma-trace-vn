@@ -130,9 +130,9 @@ export function PackingPanel({ orderId, editable, onCompleted }: { orderId: numb
           <Button className="mt-2" type="primary" disabled={uids.length === 0} loading={busy} onClick={pack}>
             Pack {uids.length} box(es) into package
           </Button>
-          {feedback && <Alert className="mt-2" showIcon type={feedback.ok ? 'success' : 'error'} title={feedback.text} />}
         </div>
       )}
+      {feedback && <Alert showIcon type={feedback.ok ? 'success' : 'error'} title={feedback.text} />}
 
       <div>
         <h3 className="text-sm font-semibold">Packages ({packages.length})</h3>
