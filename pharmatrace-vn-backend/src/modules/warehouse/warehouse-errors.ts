@@ -29,6 +29,16 @@ const CATALOG = {
   PK_BOX_WRONG_PRODUCT: [UNPROCESSABLE_ENTITY, 'This box is not a product of this order.'],
   PK_LINE_FULL: [UNPROCESSABLE_ENTITY, 'All boxes of this order line are already packed.'],
   PK_PACKAGE_NOT_FOUND: [NOT_FOUND, 'Package not found.'],
+  HV_FORBIDDEN: [FORBIDDEN, 'You cannot hand over packages of this warehouse.'],
+  HV_CODE_INVALID: [UNPROCESSABLE_ENTITY, 'The handover code must be 6-50 letters, digits, dashes or underscores.'],
+  HV_CODE_TAKEN: [CONFLICT, 'This handover code is already used by another warehouse.'],
+  HV_INPUT_INVALID: [UNPROCESSABLE_ENTITY, 'Enter the carrier and scan between 1 and 200 packages.'],
+  HV_PACKAGE_NOT_FOUND: [NOT_FOUND, 'One or more packages were not found at your warehouse.'],
+  HV_PACKAGE_NOT_PACKED: [CONFLICT, 'A package was already handed over, voided, or its order was cancelled.'],
+  HV_SHIPMENT_NOT_READY: [CONFLICT, 'The shipment of a package is not waiting for pickup.'],
+  HV_CARRIER_NOT_CONFIRMED: [CONFLICT, 'Confirm the carrier tracking number of the shipment before handing it over.'],
+  HV_CARRIER_MISMATCH: [UNPROCESSABLE_ENTITY, 'A package belongs to a shipment of another carrier.'],
+  HV_NOT_FOUND: [NOT_FOUND, 'Handover not found.'],
   PK_PACKAGE_NOT_VOIDABLE: [CONFLICT, 'Only packed packages of orders that are still being packed can be voided.'],
 } as const satisfies Record<string, readonly [HttpStatus, string]>;
 
@@ -51,7 +61,7 @@ export async function warehouseDatabase<T>(operation: Promise<T>): Promise<T> {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) throw error;
     const meta = error.meta as DatabaseErrorMeta | undefined;
     const message = meta?.message ?? meta?.driverAdapterError?.cause?.originalMessage ?? error.message;
-    const raised = /\b(FB_[A-Z_]+)\b/.exec(message)?.[1];
+    const raised = /\b((?:FB|HV)_[A-Z_]+)\b/.exec(message)?.[1];
     if (raised && raised in CATALOG) throw warehouseError(raised as WarehouseErrorCode);
     throw error;
   }
