@@ -144,12 +144,14 @@ export class InternalTransferService {
         throw new BadRequestException('Third-party transport requires the carrier and its actual tracking number');
       }
 
-      const [transferOrder] = await tx.$queryRaw<{ prescription_review_status: string | null; order_status: string }[]>`SELECT * FROM public.transfer_order_state(${transfer.order_id})`;
-      if (!transferOrder || transferOrder.order_status === 'CANCELLED') {
-        throw new BadRequestException('Cannot dispatch transfer for a cancelled order.');
-      }
-      if (transferOrder.prescription_review_status && transferOrder.prescription_review_status !== 'APPROVED') {
-        throw new BadRequestException('This transfer cannot be dispatched before pharmacist approval');
+      if (transfer.order_id !== null) {
+        const [transferOrder] = await tx.$queryRaw<{ prescription_review_status: string | null; order_status: string }[]>`SELECT * FROM public.transfer_order_state(${transfer.order_id})`;
+        if (!transferOrder || transferOrder.order_status === 'CANCELLED') {
+          throw new BadRequestException('Cannot dispatch transfer for a cancelled order.');
+        }
+        if (transferOrder.prescription_review_status && transferOrder.prescription_review_status !== 'APPROVED') {
+          throw new BadRequestException('This transfer cannot be dispatched before pharmacist approval');
+        }
       }
 
       if (!Array.isArray(dto.manifest) || dto.manifest.length === 0) {
@@ -229,6 +231,7 @@ export class InternalTransferService {
       }
 
       const items = (transfer.items as TransferItem[]) || [];
+      const custody = await this.custodyUids(tx, transferId);
       const lineMap = new Map((dto?.lines || []).map(line => [line.variantId, line]));
       if (lineMap.size !== (dto?.lines || []).length || [...lineMap.keys()].some(id => !items.some(item => Number(item.variantId) === id))) throw new BadRequestException('Duplicate or unknown inspection variant.');
       if (!dto?.lines || lineMap.size !== items.length) throw new BadRequestException('Inspection must include every transfer variant.');
@@ -238,9 +241,9 @@ export class InternalTransferService {
         const quantity = Number(item.quantity);
         const medicineId = Number(item.medicineId);
         const line = { damagedQuantity: 0, ...lineMap.get(variantId), goodQuantity: lineMap.get(variantId)?.goodQuantity ?? quantity };
-        const orderItem = transfer.orders.order_items.find(oi => oi.variant_id === variantId && oi.source_facility_id === transfer.from_facility_id);
-        if (!orderItem || !orderItem.inventory_reserved || orderItem.quantity !== quantity) throw new BadRequestException('Transfer return reservation does not match the order.');
-        const assigned = orderItem.assigned_uids;
+        const orderItem = transfer.orders?.order_items.find(oi => oi.variant_id === variantId && oi.source_facility_id === transfer.from_facility_id);
+        if (transfer.orders && (!orderItem || !orderItem.inventory_reserved || orderItem.quantity !== quantity)) throw new BadRequestException('Transfer return reservation does not match the order.');
+        const assigned = orderItem ? orderItem.assigned_uids : custody.get(variantId) ?? [];
         const goodUids = line.goodUids ?? (line.damagedQuantity === 0 ? assigned : []);
         const damagedUids = line.damagedUids ?? [];
         validateInspectionUids(assigned, [{ quantity: line.goodQuantity, uids: goodUids }, { quantity: line.damagedQuantity, uids: damagedUids }]);
@@ -294,10 +297,12 @@ export class InternalTransferService {
         }
       }
 
-      await tx.order_items.updateMany({
-        where: { order_id: transfer.order_id, source_facility_id: transfer.from_facility_id, variant_id: { in: items.map(item => Number(item.variantId)) } },
-        data: { inventory_reserved: false, assigned_uids: [] },
-      });
+      if (transfer.order_id !== null) {
+        await tx.order_items.updateMany({
+          where: { order_id: transfer.order_id, source_facility_id: transfer.from_facility_id, variant_id: { in: items.map(item => Number(item.variantId)) } },
+          data: { inventory_reserved: false, assigned_uids: [] },
+        });
+      }
 
       await tx.internal_transfers.update({
         where: { id: transferId },
@@ -351,8 +356,9 @@ export class InternalTransferService {
         throw new BadRequestException(`Transfer #${transferId} must be dispatched before it can be received.`);
       }
 
-      if (transfer.orders.order_status !== 'WAITING_INTERNAL_TRANSFER' ||
-        (transfer.orders.prescription_review_status && transfer.orders.prescription_review_status !== 'APPROVED')) {
+      const order = transfer.orders;
+      if (order && (order.order_status !== 'WAITING_INTERNAL_TRANSFER' ||
+        (order.prescription_review_status && order.prescription_review_status !== 'APPROVED'))) {
         throw new BadRequestException('The order must still be waiting for transfers with its prescription approved.');
       }
 
@@ -361,8 +367,8 @@ export class InternalTransferService {
         if (![item.variantId, item.medicineId, item.quantity].every(value => Number.isSafeInteger(Number(value)) && Number(value) > 0)) {
           throw new BadRequestException('Transfer contains invalid medicine, variant or quantity. Contact the source facility.');
         }
-        const orderItem = transfer.orders.order_items.find(oi => oi.variant_id === Number(item.variantId));
-        if (!orderItem || orderItem.quantity !== Number(item.quantity) || orderItem.source_facility_id !== transfer.from_facility_id || !orderItem.inventory_reserved) {
+        const orderItem = order?.order_items.find(oi => oi.variant_id === Number(item.variantId));
+        if (order && (!orderItem || orderItem.quantity !== Number(item.quantity) || orderItem.source_facility_id !== transfer.from_facility_id || !orderItem.inventory_reserved)) {
           throw new BadRequestException('Transferred items do not match this order reservation. Contact the source facility.');
         }
       }
@@ -377,6 +383,8 @@ export class InternalTransferService {
       if (lineMap.size !== (dto?.lines || []).length || [...lineMap.keys()].some(id => !transferItems.some(item => Number(item.variantId) === id))) throw new BadRequestException('Duplicate or unknown inspection variant.');
       if (!dto?.lines || lineMap.size !== transferItems.length) throw new BadRequestException('Inspection must include every transfer variant.');
 
+      const custody = await this.custodyUids(tx, transferId);
+      const reference = order ? `order #${order.order_code}` : `transfer #${transfer.transfer_code}`;
       let totalDamagedCount = 0;
       let totalMissingCount = 0;
       const varianceRecords: { variantId: number; medicineId: number; totalQuantity: number; goodQuantity: number; damagedQuantity: number; missingQuantity: number; goodUids: string[]; damagedUids: string[]; missingUids: string[]; notes: string | null }[] = [];
@@ -395,18 +403,20 @@ export class InternalTransferService {
           throw new BadRequestException(`Received quantities for variant #${variantId} (${goodQty} good, ${damagedQty} damaged, ${missingQty} missing) do not sum to transferred quantity ${totalQuantity}.`);
         }
 
-        const inspectedItem = transfer.orders.order_items.find(oi => oi.variant_id === variantId)!;
-        if ((damagedQty > 0 || missingQty > 0) && isBoxUnit(inspectedItem.unit_name) && inspectedItem.assigned_uids.length !== totalQuantity) {
+        const orderItem = order?.order_items.find((oi) => oi.variant_id === variantId);
+        const shippedUids = orderItem ? orderItem.assigned_uids : custody.get(variantId) ?? [];
+        if ((damagedQty > 0 || missingQty > 0) && isBoxUnit(orderItem?.unit_name) && shippedUids.length !== totalQuantity) {
           throw new BadRequestException('Assign dispatched package UIDs before discrepancy inspection.');
         }
-        const inspectedGoodUids = lineSpec?.goodUids ?? (damagedQty === 0 && missingQty === 0 ? inspectedItem.assigned_uids : []);
+        const inspectedGoodUids = lineSpec?.goodUids ?? (damagedQty === 0 && missingQty === 0 ? shippedUids : []);
         const inspectedDamagedUids = lineSpec?.damagedUids ?? [];
-        validateInspectionUids(inspectedItem.assigned_uids, [
+        validateInspectionUids(shippedUids, [
           { quantity: goodQty, uids: inspectedGoodUids }, { quantity: damagedQty, uids: inspectedDamagedUids },
         ], true);
-        const missingUids = inspectedItem.assigned_uids.filter(uid => ![...inspectedGoodUids, ...inspectedDamagedUids].includes(uid));
-        if (inspectedItem.assigned_uids.length > 0 && missingUids.length !== missingQty) throw new BadRequestException('Missing UID count does not match inspection.');
+        const missingUids = shippedUids.filter(uid => ![...inspectedGoodUids, ...inspectedDamagedUids].includes(uid));
+        if (shippedUids.length > 0 && missingUids.length !== missingQty) throw new BadRequestException('Missing UID count does not match inspection.');
         const hasLineDiscrepancy = damagedQty > 0 || missingQty > 0;
+        const reserveAtDestination = orderItem !== undefined && !hasLineDiscrepancy;
 
         totalDamagedCount += damagedQty;
         totalMissingCount += missingQty;
@@ -439,7 +449,7 @@ export class InternalTransferService {
               where: { id: destInv.id },
               data: {
                 stock_quantity: { increment: goodQty },
-                reserved_quantity: { increment: hasLineDiscrepancy ? 0 : goodQty },
+                reserved_quantity: { increment: reserveAtDestination ? goodQty : 0 },
                 updated_at: new Date(),
               },
             })
@@ -448,7 +458,7 @@ export class InternalTransferService {
                 facility_id: transfer.to_facility_id,
                 variant_id: variantId,
                 stock_quantity: goodQty,
-                reserved_quantity: hasLineDiscrepancy ? 0 : goodQty,
+                reserved_quantity: reserveAtDestination ? goodQty : 0,
                 updated_at: new Date(),
               },
             });
@@ -465,7 +475,7 @@ export class InternalTransferService {
               previous_quantity: updatedDestination.stock_quantity - goodQty,
               new_quantity: updatedDestination.stock_quantity,
               reference_code: transfer.transfer_code,
-              note: `Received from ${transfer.from_facility?.facility_name ?? "facility #" + transfer.from_facility_id} for order #${transfer.orders.order_code}`,
+              note: `Received from ${transfer.from_facility?.facility_name ?? "facility #" + transfer.from_facility_id} for ${reference}`,
             },
           });
         }
@@ -486,7 +496,7 @@ export class InternalTransferService {
             previous_quantity: deducted[0].stock_quantity + totalQuantity,
             new_quantity: deducted[0].stock_quantity + missingQty,
             reference_code: transfer.transfer_code,
-            note: `Transfer to ${transfer.to_facility?.facility_name ?? "facility #" + transfer.to_facility_id} for order #${transfer.orders.order_code}`,
+            note: `Transfer to ${transfer.to_facility?.facility_name ?? "facility #" + transfer.to_facility_id} for ${reference}`,
           },
         });
 
@@ -508,13 +518,10 @@ export class InternalTransferService {
           });
         }
 
-        const orderItem = transfer.orders.order_items.find((oi) => oi.variant_id === variantId);
-        const assignedUids = orderItem?.assigned_uids || [];
-        if (orderItem && (assignedUids.length > 0 || isBoxUnit(orderItem.unit_name))) {
-          const needsAssignment = assignedUids.length === 0;
-          if (needsAssignment) throw new BadRequestException('Dispatched UID manifest is missing; reconcile custody first.');
+        if (shippedUids.length > 0 || (orderItem && isBoxUnit(orderItem.unit_name))) {
+          if (shippedUids.length === 0) throw new BadRequestException('Dispatched UID manifest is missing; reconcile custody first.');
 
-          const goodUids = hasLineDiscrepancy ? inspectedGoodUids : assignedUids;
+          const goodUids = hasLineDiscrepancy ? inspectedGoodUids : shippedUids;
           const damagedUids = inspectedDamagedUids;
 
           if (goodUids.length > 0) {
@@ -526,7 +533,7 @@ export class InternalTransferService {
               },
               data: {
                 current_facility_id: transfer.to_facility_id,
-                status: hasLineDiscrepancy ? "IN_STOCK" : "RESERVED",
+                status: reserveAtDestination ? "RESERVED" : "IN_STOCK",
               },
             });
             if (movedBoxes.count !== goodUids.length) {
@@ -561,7 +568,7 @@ export class InternalTransferService {
             where: { id: orderItem.id },
             data: {
               source_facility_id: transfer.to_facility_id,
-              assigned_uids: hasLineDiscrepancy ? [] : assignedUids,
+              assigned_uids: hasLineDiscrepancy ? [] : shippedUids,
               ...(hasLineDiscrepancy ? { inventory_reserved: false } : {}),
             },
           });
@@ -585,19 +592,20 @@ export class InternalTransferService {
         },
       });
 
-      const remainingTransfers = await tx.internal_transfers.count({
-        where: {
-          order_id: transfer.order_id,
-          id: { not: transferId },
-          status: { notIn: ["RECEIVED", "REPLACED"] },
-        },
-      });
-
-      if (remainingTransfers === 0 && !hasDiscrepancy) {
-        await tx.orders.update({
-          where: { id: transfer.order_id },
-          data: { order_status: "PROCESSING" },
+      if (transfer.order_id !== null && !hasDiscrepancy) {
+        const remainingTransfers = await tx.internal_transfers.count({
+          where: {
+            order_id: transfer.order_id,
+            id: { not: transferId },
+            status: { notIn: ["RECEIVED", "REPLACED"] },
+          },
         });
+        if (remainingTransfers === 0) {
+          await tx.orders.update({
+            where: { id: transfer.order_id },
+            data: { order_status: "PROCESSING" },
+          });
+        }
       }
 
       return tx.internal_transfers.findUnique({
@@ -605,6 +613,12 @@ export class InternalTransferService {
         include: { from_facility: true, to_facility: true },
       });
     }, authActor(user)));
+  }
+
+  private async custodyUids(tx: Prisma.TransactionClient, transferId: number): Promise<Map<number, string[]>> {
+    const rows = await tx.$queryRaw<{ variant_id: number; box_uids: string[] }[]>`
+      SELECT variant_id, box_uids::text[] AS box_uids FROM public.transfer_custody WHERE transfer_id = ${transferId}`;
+    return new Map(rows.map(row => [row.variant_id, row.box_uids]));
   }
 
   adminRejectDamagedInternalTransfer(_transferId: number, _user: CurrentUserPayload): Promise<never> {
