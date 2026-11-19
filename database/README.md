@@ -964,3 +964,21 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 The backend suite `src/modules/warehouse/fulfillment/fulfillment.integration.spec.ts` (customer cancel racing packing) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_order_packing_20261119`.
+
+## Carrier handovers
+
+`security/order/carrier_handovers.sql` hands packed packages over to a carrier.
+
+- `carrier_handovers` records the courier, driver, vehicle, note, employee and time of one handover at a facility. `carrier_handover_packages` lists its packages; a package can be in one handover only.
+- `record_carrier_handover(...)` is the only writer. It runs in one transaction, is idempotent by `handover_code`, and rejects packages that are not `PACKED`, belong to another facility, have an unconfirmed carrier or a different carrier than the handover.
+- Handed-over packages become `HANDED_OVER`. When every active package of an order is handed over, the shipment and the order become `PICKED_UP` (logged by the existing logistics event trigger) and the boxes become `IN_TRANSIT`.
+- RLS: staff of the facility read handovers; there are no direct write grants.
+
+### Applying to an existing database
+
+Back up the database first. `security/order/order_packages.sql` must already be applied. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/order/carrier_handovers.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/carrier_handovers_test.sql
+```

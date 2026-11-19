@@ -47,6 +47,7 @@ model facilities {
   prescription_reviews     order_prescription_reviews[]
   goods_receipts           goods_receipts[]   @relation("gr_facility")
   order_packages           order_packages[]
+  carrier_handovers        carrier_handovers[]
 }
 
 model customers {
@@ -95,6 +96,7 @@ model employees {
   goods_receipts        goods_receipts[]        @relation("gr_receiver")
   packed_order_packages order_packages[]        @relation("package_packer")
   voided_order_packages order_packages[]        @relation("package_voider")
+  carrier_handovers     carrier_handovers[]
   goods_receipt_attachments goods_receipt_attachments[] @relation("gr_attachment_uploader")
   reported_moderations  moderation_reports[]    @relation("report_reporter_employee")
   resolved_moderations  moderation_reports[]    @relation("report_resolver_employee")
@@ -923,6 +925,7 @@ model order_packages {
   packed_by           employees             @relation("package_packer", fields: [packed_by_id], references: [id], onUpdate: NoAction)
   voided_by           employees?            @relation("package_voider", fields: [voided_by_id], references: [id], onUpdate: NoAction)
   order_package_items order_package_items[]
+  handover            carrier_handover_packages?
 
   @@index([order_id], map: "idx_order_packages_order")
 }
@@ -939,4 +942,33 @@ model order_package_items {
   medicine_boxes medicine_boxes @relation(fields: [box_uid], references: [uid], onUpdate: NoAction)
 
   @@index([package_id], map: "idx_order_package_items_package")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model carrier_handovers {
+  id                Int                         @id @default(autoincrement())
+  handover_code     String                      @unique @db.VarChar(50)
+  facility_id       Int
+  courier_name      String                      @db.VarChar(100)
+  driver_name       String?                     @db.VarChar(100)
+  driver_phone      String?                     @db.VarChar(30)
+  vehicle_plate     String?                     @db.VarChar(20)
+  note              String?
+  handed_over_by_id Int
+  handed_over_at    DateTime                    @default(now()) @db.Timestamptz(6)
+  facility          facilities                  @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
+  handed_over_by    employees                   @relation(fields: [handed_over_by_id], references: [id], onUpdate: NoAction)
+  packages          carrier_handover_packages[]
+
+  @@index([facility_id, handed_over_at(sort: Desc)], map: "idx_carrier_handovers_facility")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model carrier_handover_packages {
+  handover_id Int
+  package_id  Int               @unique
+  handover    carrier_handovers @relation(fields: [handover_id], references: [id], onUpdate: NoAction)
+  package     order_packages    @relation(fields: [package_id], references: [id], onUpdate: NoAction)
+
+  @@id([handover_id, package_id])
 }
