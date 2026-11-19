@@ -41,6 +41,13 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   PARTIALLY_RETURNED: [],
 };
 
+const PACKABLE_ORDER_INCLUDE = {
+  order_items: { include: { medicines: true } },
+  shipments: true,
+} satisfies Prisma.ordersInclude;
+
+export type PackableOrder = Prisma.ordersGetPayload<{ include: typeof PACKABLE_ORDER_INCLUDE }> & { export_facility_id: number };
+
 @Injectable()
 export class AdminOrderService {
   constructor(private readonly prisma: PrismaService) { }
@@ -720,319 +727,349 @@ export class AdminOrderService {
 
   async adminPackOrder(orderId: number, dto: PackOrderDto | undefined, user: CurrentUserPayload) {
     return this.prisma.withOrder('pack', async (tx) => {
-      await tx.$queryRaw`SELECT id FROM public.orders WHERE id = ${orderId} FOR UPDATE`;
-      const order = await tx.orders.findFirst({
-        where: this.orderAccessWhere(orderId, user),
-        include: {
-          order_items: {
-            include: { medicines: true },
-          },
-          shipments: true,
-        },
-      });
-
-      if (!order) {
-        throw new NotFoundException(`Order #${orderId} not found`);
+      const order = await this.lockPackableOrder(tx, orderId, user);
+      if (await tx.order_packages.count({ where: { order_id: orderId, status: 'PACKED' } }) > 0) {
+        throw new BadRequestException('This order is being packed into packages in the warehouse portal. Complete packing there.');
       }
+      const submittedUids = (dto?.boxUids || []).map((u) => u.trim()).filter(Boolean);
+      await this.packLockedOrder(tx, order, submittedUids, dto, user);
+      return formatOrder(await tx.orders.findFirst({ where: this.orderAccessWhere(orderId, user), include: ORDER_DETAILS_INCLUDE }));
+    }, authActor(user));
+  }
 
-      if (['BANK_TRANSFER', 'E_WALLET'].includes(order.payment_method || '') && order.payment_status !== 'PAID') {
-        throw new BadRequestException('Online payment must be completed before packing.');
-      }
+  async lockPackableOrder(tx: Prisma.TransactionClient, orderId: number, user: CurrentUserPayload): Promise<PackableOrder> {
+    await tx.$queryRaw`SELECT id FROM public.orders WHERE id = ${orderId} FOR UPDATE`;
+    const order = await tx.orders.findFirst({
+      where: this.orderAccessWhere(orderId, user),
+      include: PACKABLE_ORDER_INCLUDE,
+    });
 
-      if (order.prescription_review_status && order.prescription_review_status !== 'APPROVED') {
-        throw new BadRequestException('This order requires pharmacist approval before packing');
-      }
+    if (!order) {
+      throw new NotFoundException(`Order #${orderId} not found`);
+    }
 
-      const normStatus = normalizeOrderStatus(order.order_status);
-      if (!["PENDING", "PROCESSING"].includes(normStatus)) {
-        throw new BadRequestException(
-          `Only orders with status PENDING or PROCESSING can be packed. Current status is ${order.order_status}.`,
-        );
-      }
+    if (['BANK_TRANSFER', 'E_WALLET'].includes(order.payment_method || '') && order.payment_status !== 'PAID') {
+      throw new BadRequestException('Online payment must be completed before packing.');
+    }
 
-      if (order.shipments) {
-        throw new BadRequestException(
-          "A shipment is already created for this order.",
-        );
-      }
+    if (order.prescription_review_status && order.prescription_review_status !== 'APPROVED') {
+      throw new BadRequestException('This order requires pharmacist approval before packing');
+    }
 
-      const boxItems = order.order_items.filter((item) =>
-        isBoxUnit(item.unit_name),
+    const normStatus = normalizeOrderStatus(order.order_status);
+    if (!["PENDING", "PROCESSING"].includes(normStatus)) {
+      throw new BadRequestException(
+        `Only orders with status PENDING or PROCESSING can be packed. Current status is ${order.order_status}.`,
       );
+    }
 
-      const totalRequired = boxItems.reduce(
-        (sum, item) => sum + item.quantity,
-        0,
+    if (order.shipments) {
+      throw new BadRequestException(
+        "A shipment is already created for this order.",
       );
-      const reservedUids = boxItems.flatMap((item) => item.assigned_uids);
+    }
 
-      const submittedUids = (dto?.boxUids || [])
-        .map((u) => u.trim())
-        .filter(Boolean);
+    const facilityId = order.export_facility_id;
+    if (facilityId === null) {
+      throw new BadRequestException("This order has no export facility.");
+    }
+    return { ...order, export_facility_id: facilityId };
+  }
 
-      if (new Set(submittedUids).size !== submittedUids.length) {
-        throw new BadRequestException(
-          "Duplicate box UIDs detected in packing request.",
-        );
-      }
+  /** Takes the scanned boxes out of stock and creates the shipment. Records one package when none is active. */
+  async packLockedOrder(
+    tx: Prisma.TransactionClient,
+    order: PackableOrder,
+    uidsToPack: string[],
+    dto: Pick<PackOrderDto, 'courierName' | 'shippingNote'> | undefined,
+    user: CurrentUserPayload,
+  ): Promise<string> {
+    const orderId = order.id;
+    const boxItems = order.order_items.filter((item) =>
+      isBoxUnit(item.unit_name),
+    );
 
-      if (submittedUids.length !== totalRequired) {
-        throw new BadRequestException(
-          `Confirm the UID on each physical package. Received ${submittedUids.length} of ${totalRequired} required UID(s).`,
-        );
-      }
-      const uidsToPack = submittedUids;
-      const reservedUidSet = new Set(reservedUids);
-      if (reservedUidSet.size !== reservedUids.length) {
-        throw new BadRequestException(
-          "The order has duplicate reserved package UIDs.",
-        );
-      }
+    const totalRequired = boxItems.reduce(
+      (sum, item) => sum + item.quantity,
+      0,
+    );
+    const reservedUids = boxItems.flatMap((item) => item.assigned_uids);
 
-      const boxesToPack =
-        totalRequired > 0
-          ? await tx.medicine_boxes.findMany({
-            where: {
-              uid: { in: uidsToPack },
-              current_facility_id: order.export_facility_id,
-              status: { in: ["RESERVED", ...AVAILABLE_BOX_STATUSES] },
-            },
-            include: { medicine_batches: true },
-          })
-          : [];
-
-      if (boxesToPack.length !== totalRequired) {
-        throw new BadRequestException(
-          "One or more physical packages for this order are invalid, already dispatched, or not at the export facility.",
-        );
-      }
-
-      if (
-        boxesToPack.some(
-          (box) => box.status === "RESERVED" && !reservedUidSet.has(box.uid),
-        )
-      ) {
-        throw new BadRequestException(
-          "A scanned package is reserved for another order.",
-        );
-      }
-
-      const unsellableUids = await findUnsellableUids(tx, uidsToPack);
-      if (unsellableUids.length > 0) {
-        const replacementUids: string[] = [];
-        for (const box of boxesToPack.filter((b) => unsellableUids.includes(b.uid))) {
-          const medicineId = box.medicine_batches?.medicine_id;
-          if (!medicineId) continue;
-          const [uid] = await findSellableBoxUids(tx, order.export_facility_id, medicineId, 1, [...uidsToPack, ...replacementUids]);
-          if (uid) replacementUids.push(uid);
-        }
-        throw new AppException(
-          "BOX_NOT_SELLABLE",
-          `These packages are from a held, recalled or expired batch, or do not meet the minimum shelf life: ${unsellableUids.join(", ")}. Scan replacement packages instead.`,
-          HttpStatus.UNPROCESSABLE_ENTITY,
-          { uids: unsellableUids, replacementUids },
-        );
-      }
-
-      const boxesByMedicine = new Map<number, typeof boxesToPack>();
-      for (const box of boxesToPack) {
-        const medId = box.medicine_batches?.medicine_id;
-        if (medId) {
-          const list = boxesByMedicine.get(medId) || [];
-          list.push(box);
-          boxesByMedicine.set(medId, list);
-        }
-      }
-
-      for (const item of boxItems) {
-        if (!item.medicine_id) {
-          throw new BadRequestException(
-            `Order item "${item.medicine_name}" is missing medicine ID.`,
-          );
-        }
-        const availableForMed = boxesByMedicine.get(item.medicine_id) || [];
-        if (availableForMed.length < item.quantity) {
-          throw new BadRequestException(
-            `Verified packages do not match medicine "${item.medicine_name}". Required: ${item.quantity}, provided: ${availableForMed.length}.`,
-          );
-        }
-      }
-
-      const reservedBoxMap = new Map(boxesToPack.map((box) => [box.uid, box]));
-
-      const replacementUids = boxesToPack
-        .filter((box) => !reservedUidSet.has(box.uid))
-        .map((box) => box.uid);
-      const releasedUids = reservedUids.filter(
-        (uid) => !uidsToPack.includes(uid),
+    if (new Set(uidsToPack).size !== uidsToPack.length) {
+      throw new BadRequestException(
+        "Duplicate box UIDs detected in packing request.",
       );
+    }
 
-      if (replacementUids.length > 0) {
-        const claimed = await tx.medicine_boxes.updateMany({
-          where: {
-            uid: { in: replacementUids },
-            current_facility_id: order.export_facility_id,
-            status: { in: AVAILABLE_BOX_STATUSES },
-          },
-          data: { status: "RESERVED" },
-        });
-        if (claimed.count !== replacementUids.length) {
-          throw new BadRequestException(
-            "A replacement package is no longer available.",
-          );
-        }
-      }
+    if (uidsToPack.length !== totalRequired) {
+      throw new BadRequestException(
+        `Confirm the UID on each physical package. Received ${uidsToPack.length} of ${totalRequired} required UID(s).`,
+      );
+    }
+    const reservedUidSet = new Set(reservedUids);
+    if (reservedUidSet.size !== reservedUids.length) {
+      throw new BadRequestException(
+        "The order has duplicate reserved package UIDs.",
+      );
+    }
 
-      if (releasedUids.length > 0) {
-        const released = await tx.medicine_boxes.updateMany({
-          where: {
-            uid: { in: releasedUids },
-            current_facility_id: order.export_facility_id,
-            status: "RESERVED",
-          },
-          data: { status: "IN_STOCK" },
-        });
-        if (released.count !== releasedUids.length) {
-          throw new BadRequestException(
-            "The original package reservation changed. Reload the order before packing.",
-          );
-        }
-      }
-
-      const batchesToDecrement = new Map<number, number>();
-
-      for (const item of order.order_items) {
-        const countNeeded = item.quantity;
-        const itemBoxes = isBoxUnit(item.unit_name)
-          ? (boxesByMedicine.get(item.medicine_id || 0) || []).splice(
-            0,
-            item.quantity,
-          )
-          : [];
-        const itemUids = itemBoxes.map((b) => b.uid);
-
-        if (isBoxUnit(item.unit_name)) {
-          for (const uid of itemUids) {
-            const batchId = reservedBoxMap.get(uid)?.batch_id;
-            if (batchId) {
-              batchesToDecrement.set(
-                batchId,
-                (batchesToDecrement.get(batchId) || 0) + 1,
-              );
-            }
-          }
-        }
-
-        if (!order.export_facility_id || !item.variant_id) {
-          throw new BadRequestException(
-            `Order item "${item.medicine_name}" has no export facility or variant.`,
-          );
-        }
-
-        const inventory = await tx.inventories.findUnique({
-          where: {
-            facility_id_variant_id: {
-              facility_id: order.export_facility_id,
-              variant_id: item.variant_id,
-            },
-          },
-        });
-        if (!inventory || !item.inventory_reserved) {
-          throw new BadRequestException(
-            `Inventory for "${item.medicine_name}" is not reserved for this order.`,
-          );
-        }
-
-        const updatedInventoryRows = await tx.$queryRaw<{ stock_quantity: number }[]>`
-          UPDATE "inventories"
-          SET "stock_quantity" = "stock_quantity" - ${countNeeded},
-              "reserved_quantity" = COALESCE("reserved_quantity", 0) - ${countNeeded},
-              "updated_at" = NOW()
-          WHERE "facility_id" = ${order.export_facility_id}
-            AND "variant_id" = ${item.variant_id}
-            AND "stock_quantity" >= ${countNeeded}
-            AND COALESCE("reserved_quantity", 0) >= ${countNeeded}
-          RETURNING "stock_quantity"
-        `;
-        if (updatedInventoryRows.length !== 1) {
-          throw new BadRequestException(
-            `Reserved inventory for "${item.medicine_name}" is inconsistent.`,
-          );
-        }
-
-        await tx.order_items.update({
-          where: { id: item.id },
-          data: {
-            assigned_uids: itemUids.length > 0 ? itemUids : item.assigned_uids,
-            inventory_reserved: false,
-          },
-        });
-
-        await tx.inventory_logs.create({
-          data: {
-            facility_id: order.export_facility_id,
-            medicine_id: item.medicine_id,
-            variant_id: item.variant_id,
-            stock_bucket: 'ON_HAND',
-            performed_by_id: user.id,
-            transaction_type: "ORDER_PACKED",
-            quantity_changed: -countNeeded,
-            previous_quantity: updatedInventoryRows[0].stock_quantity + countNeeded,
-            new_quantity: updatedInventoryRows[0].stock_quantity,
-            reference_code: order.order_code,
-            note: `Order #${order.order_code} packed with ${countNeeded} ${item.unit_name || "unit"}(s)`,
-          },
-        });
-      }
-
-      if (uidsToPack.length > 0) {
-        const packagedBoxes = await tx.medicine_boxes.updateMany({
+    const boxesToPack =
+      totalRequired > 0
+        ? await tx.medicine_boxes.findMany({
           where: {
             uid: { in: uidsToPack },
             current_facility_id: order.export_facility_id,
-            status: "RESERVED",
+            status: { in: ["RESERVED", ...AVAILABLE_BOX_STATUSES] },
           },
-          data: { status: "PACKAGED" },
-        });
-        if (packagedBoxes.count !== uidsToPack.length) {
-          throw new BadRequestException(
-            "One or more physical packages could not be marked as packaged.",
-          );
+          include: { medicine_batches: true },
+        })
+        : [];
+
+    if (boxesToPack.length !== totalRequired) {
+      throw new BadRequestException(
+        "One or more physical packages for this order are invalid, already dispatched, or not at the export facility.",
+      );
+    }
+
+    if (
+      boxesToPack.some(
+        (box) => box.status === "RESERVED" && !reservedUidSet.has(box.uid),
+      )
+    ) {
+      throw new BadRequestException(
+        "A scanned package is reserved for another order.",
+      );
+    }
+
+    const unsellableUids = await findUnsellableUids(tx, uidsToPack);
+    if (unsellableUids.length > 0) {
+      const replacementUids: string[] = [];
+      for (const box of boxesToPack.filter((b) => unsellableUids.includes(b.uid))) {
+        const medicineId = box.medicine_batches?.medicine_id;
+        if (!medicineId) continue;
+        const [uid] = await findSellableBoxUids(tx, order.export_facility_id, medicineId, 1, [...uidsToPack, ...replacementUids]);
+        if (uid) replacementUids.push(uid);
+      }
+      throw new AppException(
+        "BOX_NOT_SELLABLE",
+        `These packages are from a held, recalled or expired batch, or do not meet the minimum shelf life: ${unsellableUids.join(", ")}. Scan replacement packages instead.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { uids: unsellableUids, replacementUids },
+      );
+    }
+
+    const boxesByMedicine = new Map<number, typeof boxesToPack>();
+    for (const box of boxesToPack) {
+      const medId = box.medicine_batches?.medicine_id;
+      if (medId) {
+        const list = boxesByMedicine.get(medId) || [];
+        list.push(box);
+        boxesByMedicine.set(medId, list);
+      }
+    }
+
+    for (const item of boxItems) {
+      if (!item.medicine_id) {
+        throw new BadRequestException(
+          `Order item "${item.medicine_name}" is missing medicine ID.`,
+        );
+      }
+      const availableForMed = boxesByMedicine.get(item.medicine_id) || [];
+      if (availableForMed.length < item.quantity) {
+        throw new BadRequestException(
+          `Verified packages do not match medicine "${item.medicine_name}". Required: ${item.quantity}, provided: ${availableForMed.length}.`,
+        );
+      }
+    }
+
+    const reservedBoxMap = new Map(boxesToPack.map((box) => [box.uid, box]));
+
+    const replacementUids = boxesToPack
+      .filter((box) => !reservedUidSet.has(box.uid))
+      .map((box) => box.uid);
+    const releasedUids = reservedUids.filter(
+      (uid) => !uidsToPack.includes(uid),
+    );
+
+    if (replacementUids.length > 0) {
+      const claimed = await tx.medicine_boxes.updateMany({
+        where: {
+          uid: { in: replacementUids },
+          current_facility_id: order.export_facility_id,
+          status: { in: AVAILABLE_BOX_STATUSES },
+        },
+        data: { status: "RESERVED" },
+      });
+      if (claimed.count !== replacementUids.length) {
+        throw new BadRequestException(
+          "A replacement package is no longer available.",
+        );
+      }
+    }
+
+    if (releasedUids.length > 0) {
+      const released = await tx.medicine_boxes.updateMany({
+        where: {
+          uid: { in: releasedUids },
+          current_facility_id: order.export_facility_id,
+          status: "RESERVED",
+        },
+        data: { status: "IN_STOCK" },
+      });
+      if (released.count !== releasedUids.length) {
+        throw new BadRequestException(
+          "The original package reservation changed. Reload the order before packing.",
+        );
+      }
+    }
+
+    const batchesToDecrement = new Map<number, number>();
+    const packageItems: { order_item_id: number; box_uid: string }[] = [];
+
+    for (const item of order.order_items) {
+      const countNeeded = item.quantity;
+      const itemBoxes = isBoxUnit(item.unit_name)
+        ? (boxesByMedicine.get(item.medicine_id || 0) || []).splice(
+          0,
+          item.quantity,
+        )
+        : [];
+      const itemUids = itemBoxes.map((b) => b.uid);
+      packageItems.push(...itemUids.map((uid) => ({ order_item_id: item.id, box_uid: uid })));
+
+      if (isBoxUnit(item.unit_name)) {
+        for (const uid of itemUids) {
+          const batchId = reservedBoxMap.get(uid)?.batch_id;
+          if (batchId) {
+            batchesToDecrement.set(
+              batchId,
+              (batchesToDecrement.get(batchId) || 0) + 1,
+            );
+          }
         }
       }
 
-      for (const [batchId, qty] of batchesToDecrement.entries()) {
-        const batch = await tx.batches.findUnique({ where: { id: batchId } });
-        if (batch) {
-          await tx.batches.update({
-            where: { id: batchId },
-            data: {
-              remaining_quantity: Math.max(0, batch.remaining_quantity - qty),
-            },
-          });
-        }
+      if (!order.export_facility_id || !item.variant_id) {
+        throw new BadRequestException(
+          `Order item "${item.medicine_name}" has no export facility or variant.`,
+        );
       }
 
-      const trackingNumber = `TRK-${order.order_code}-${Date.now().toString().slice(-4)}`;
+      const inventory = await tx.inventories.findUnique({
+        where: {
+          facility_id_variant_id: {
+            facility_id: order.export_facility_id,
+            variant_id: item.variant_id,
+          },
+        },
+      });
+      if (!inventory || !item.inventory_reserved) {
+        throw new BadRequestException(
+          `Inventory for "${item.medicine_name}" is not reserved for this order.`,
+        );
+      }
 
-      await tx.shipments.create({
+      const updatedInventoryRows = await tx.$queryRaw<{ stock_quantity: number }[]>`
+        UPDATE "inventories"
+        SET "stock_quantity" = "stock_quantity" - ${countNeeded},
+            "reserved_quantity" = COALESCE("reserved_quantity", 0) - ${countNeeded},
+            "updated_at" = NOW()
+        WHERE "facility_id" = ${order.export_facility_id}
+          AND "variant_id" = ${item.variant_id}
+          AND "stock_quantity" >= ${countNeeded}
+          AND COALESCE("reserved_quantity", 0) >= ${countNeeded}
+        RETURNING "stock_quantity"
+      `;
+      if (updatedInventoryRows.length !== 1) {
+        throw new BadRequestException(
+          `Reserved inventory for "${item.medicine_name}" is inconsistent.`,
+        );
+      }
+
+      await tx.order_items.update({
+        where: { id: item.id },
         data: {
-          order_id: orderId,
-          tracking_number: trackingNumber,
-          courier_name: dto?.courierName?.trim().toUpperCase() || "EXPRESS_LOGISTICS",
-          shipping_status: "PENDING_PICKUP",
-          cod_amount: order.payment_method === "COD" ? order.total_amount : 0,
-          note: dto?.shippingNote || null,
+          assigned_uids: itemUids.length > 0 ? itemUids : item.assigned_uids,
+          inventory_reserved: false,
         },
       });
 
-      await tx.orders.update({
-        where: { id: orderId },
-        data: { order_status: "PENDING_PICKUP" },
+      await tx.inventory_logs.create({
+        data: {
+          facility_id: order.export_facility_id,
+          medicine_id: item.medicine_id,
+          variant_id: item.variant_id,
+          stock_bucket: 'ON_HAND',
+          performed_by_id: user.id,
+          transaction_type: "ORDER_PACKED",
+          quantity_changed: -countNeeded,
+          previous_quantity: updatedInventoryRows[0].stock_quantity + countNeeded,
+          new_quantity: updatedInventoryRows[0].stock_quantity,
+          reference_code: order.order_code,
+          note: `Order #${order.order_code} packed with ${countNeeded} ${item.unit_name || "unit"}(s)`,
+        },
       });
+    }
 
-      return formatOrder(await tx.orders.findFirst({ where: this.orderAccessWhere(orderId, user), include: ORDER_DETAILS_INCLUDE }));
-    }, authActor(user));
+    if (uidsToPack.length > 0) {
+      const packagedBoxes = await tx.medicine_boxes.updateMany({
+        where: {
+          uid: { in: uidsToPack },
+          current_facility_id: order.export_facility_id,
+          status: "RESERVED",
+        },
+        data: { status: "PACKAGED" },
+      });
+      if (packagedBoxes.count !== uidsToPack.length) {
+        throw new BadRequestException(
+          "One or more physical packages could not be marked as packaged.",
+        );
+      }
+    }
+
+    for (const [batchId, qty] of batchesToDecrement.entries()) {
+      const batch = await tx.batches.findUnique({ where: { id: batchId } });
+      if (batch) {
+        await tx.batches.update({
+          where: { id: batchId },
+          data: {
+            remaining_quantity: Math.max(0, batch.remaining_quantity - qty),
+          },
+        });
+      }
+    }
+
+    const trackingNumber = `TRK-${order.order_code}-${Date.now().toString().slice(-4)}`;
+
+    await tx.shipments.create({
+      data: {
+        order_id: orderId,
+        tracking_number: trackingNumber,
+        courier_name: dto?.courierName?.trim().toUpperCase() || "EXPRESS_LOGISTICS",
+        shipping_status: "PENDING_PICKUP",
+        cod_amount: order.payment_method === "COD" ? order.total_amount : 0,
+        note: dto?.shippingNote || null,
+      },
+    });
+
+    await tx.orders.update({
+      where: { id: orderId },
+      data: { order_status: "PENDING_PICKUP" },
+    });
+
+    if (await tx.order_packages.count({ where: { order_id: orderId, status: 'PACKED' } }) === 0) {
+      await tx.order_packages.create({
+        data: {
+          package_code: `${order.order_code}-PKG`,
+          order_id: orderId,
+          facility_id: order.export_facility_id,
+          packed_by_id: user.id,
+          order_package_items: { create: packageItems },
+        },
+      });
+    }
+
+    return trackingNumber;
   }
 
 }
