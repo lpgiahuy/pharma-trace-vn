@@ -1059,3 +1059,23 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 All scripts can be re-applied. `batch_recalls.sql` sets the final `quarantine_movements` checks; re-run it after any older script that redefines them.
 
 The backend suite `src/modules/recall/recall.integration.spec.ts` (manager refused, checkout and packing refusing the recalled batch, impact matching the box count) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_batch_recall_20261120`.
+
+## Drug disposals
+
+`security/quality/drug_disposals.sql` lets a warehouse dispose of expired, quarantined and recalled boxes with a signed record.
+
+- New tables: `disposals` (unique `disposal_code`, warehouse, `status` `DRAFT` / `APPROVED` / `COMPLETED` / `CANCELLED`, reason, creator, approver, completer), `disposal_items` (one row per box with its source `EXPIRED`, `QUARANTINE` or `RECALL`), `disposal_attachments` (private image references of the disposal record, at most 5 per disposal) and `disposal_events` (every status change and attachment with the employee). All four use forced RLS: warehouse roles read their own warehouse, `SUPER_ADMIN` reads all, and `app_user` has no write grants.
+- `disposal_candidates(warehouse)` lists the boxes that may be disposed of: expired `IN_STOCK` / `MANUFACTURED` boxes and `QUARANTINED` boxes (of a `RECALLED` batch they count as `RECALL`). Boxes that are in date, in an `ACTIVE` batch and not quarantined, `DESTROYED` boxes and boxes on another open (`DRAFT` / `APPROVED`) disposal are refused.
+- `create_disposal(code, warehouse, reason, box_uids)` opens a draft (`WH_ALL`); a repeated code with the same boxes returns the disposal. `add_disposal_attachment` adds an image while the disposal is open. `approve_disposal`, `complete_disposal` and `cancel_disposal` need `WH_MANAGER`.
+- `complete_disposal` is refused without an attachment. It sets the boxes `DESTROYED`, lowers `inventories.stock_quantity` for expired boxes or `quarantine_balances` for quarantined and recalled boxes, lowers `batches.remaining_quantity` and writes `DISPOSAL` rows to `inventory_logs`. It fails with `DP_BOX_CHANGED` when a box changed state after the draft. Completing twice does nothing.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/quality/drug_disposals.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/drug_disposals_test.sql
+```
+
+Both scripts can be re-applied.

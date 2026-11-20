@@ -121,5 +121,6 @@
 \i /docker-entrypoint-initdb.d/security/order/carrier_handovers.sql
 \i /docker-entrypoint-initdb.d/security/inventory/stock_counts.sql
 \i /docker-entrypoint-initdb.d/security/quality/batch_recalls.sql
+\i /docker-entrypoint-initdb.d/security/quality/drug_disposals.sql
 
 \unset bootstrap_current_functions
