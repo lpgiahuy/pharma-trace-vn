@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Layout, Menu, Dropdown, Grid } from 'antd';
 import type { MenuProps } from 'antd';
-import { DashboardOutlined, DatabaseOutlined, ExperimentOutlined, FileTextOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, SendOutlined, RollbackOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { AlertOutlined, DashboardOutlined, DatabaseOutlined, ExperimentOutlined, FileTextOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, SendOutlined, RollbackOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { LogOut, User, Warehouse } from 'lucide-react';
 import { useHydrated } from '@/hooks/useHydrated';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { key: '/warehouse/transfers', icon: <SwapOutlined />, label: 'Transfers' },
   { key: '/warehouse/shipments', icon: <CarOutlined />, label: 'Shipments' },
   { key: '/warehouse/returns', icon: <RollbackOutlined />, label: 'Returns' },
+  { key: '/warehouse/recalls', icon: <AlertOutlined />, label: 'Recalls' },
 ];
 
 export function WarehouseLayout({ children }: { children: React.ReactNode }) {
