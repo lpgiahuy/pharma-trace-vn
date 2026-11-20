@@ -20,6 +20,7 @@ import { PrescriptionModule } from './modules/prescription/prescription.module';
 import { ReturnsModule } from './modules/returns/returns.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
+import { RecallModule } from './modules/recall/recall.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -46,6 +47,7 @@ import { AppService } from './app.service';
     ReturnsModule,
     WarehouseModule,
     ProcurementModule,
+    RecallModule,
   ],
   controllers: [AppController],
   providers: [AppService],
