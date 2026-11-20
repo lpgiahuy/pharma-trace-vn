@@ -1034,3 +1034,28 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 Both scripts can be re-applied.
+
+## Batch recalls
+
+`security/quality/batch_recalls.sql` lets `SUPER_ADMIN` recall batches across every facility.
+
+- New tables: `batch_recalls` (unique `recall_code`, reason, `severity` `LEVEL_1` / `LEVEL_2` / `LEVEL_3`, optional `document_url`, `status` `ACTIVE` / `CLOSED`), `batch_recall_batches` (a batch belongs to at most one recall) and `batch_recall_events` (`CREATE`, `HOLD`, `COLLECT`, `CLOSE` with the employee; `HOLD` and `COLLECT` keep the facility, batch, exact box UIDs and collection transfer). All three use forced RLS and only `SUPER_ADMIN` reads them; `app_user` has no write grants.
+- `create_batch_recall(code, reason, severity, document, batch_ids)` sets the batches `RECALLED` (with a `batch_status_events` row), so `box_sellable()` refuses them at checkout, packing and dispatch. Unreserved `IN_STOCK` / `MANUFACTURED` boxes at every facility become `QUARANTINED`: `inventories.stock_quantity` drops, `quarantine_balances` rises, two `RECALL_HOLD` rows go to `inventory_logs` (on-hand and quarantine side) and a `quarantine_movements` row with origin `RECALL` points at the `HOLD` event. Reserved boxes of unpacked orders are left on the order and listed as tasks; staff use the existing box replacement or cancellation. A repeated code with the same batches returns the recall.
+- `collect_batch_recall(id, destination)` creates one `RECALL_COLLECTION` internal transfer per facility that still holds boxes, to a central or branch warehouse. The held boxes go back to reserved on-hand stock (`RECALL_COLLECT` logs, quarantine action `COLLECT`), so the normal dispatch and receipt workflow carries them. `prepare_dispatch_manifest` accepts those already reserved recalled boxes for collection transfers. On receipt, a trigger quarantines the received boxes at the destination.
+- `close_batch_recall(id, note)` is refused while a collection transfer is still open. Batches stay `RECALLED`.
+- `batch_recall_impact(id)` lists every box of the recalled batches with its location (`FACILITY`, `IN_TRANSIT`, `DELIVERED`, `OTHER`), facility, and the last order and customer it was assigned to. `batch_recall_tasks(facility)` lists held stock, open collection transfers and unpacked orders holding recalled boxes for warehouse roles and `STORE_MANAGER` of that facility.
+- `quarantine_movements` checks now allow origin `RECALL` and action `COLLECT`.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/logistics/source_manifest_assignment.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/quality/batch_recalls.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/batch_recalls_test.sql
+```
+
+All scripts can be re-applied. `batch_recalls.sql` sets the final `quarantine_movements` checks; re-run it after any older script that redefines them.
+
+The backend suite `src/modules/recall/recall.integration.spec.ts` (manager refused, checkout and packing refusing the recalled batch, impact matching the box count) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_batch_recall_20261120`.

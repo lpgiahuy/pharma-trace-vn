@@ -16,6 +16,7 @@ import {
   ShoppingOutlined,
   CarOutlined,
   RollbackOutlined,
+  AlertOutlined,
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -146,6 +147,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           icon: <RollbackOutlined style={{ fontSize: 16 }} />,
           label: 'Returns & Exchanges',
         },
+        ...(normalizedRole === 'SUPERADMIN' || normalizedRole === 'STOREMANAGER'
+          ? [{ key: '/admin/recalls', icon: <AlertOutlined style={{ fontSize: 16 }} />, label: 'Batch Recalls' }]
+          : []),
         {
           key: '/admin/reviews',
           icon: <CommentOutlined style={{ fontSize: 16 }} />,
