@@ -70,6 +70,13 @@ const CATALOG = {
   DP_ATTACHMENT_NOT_FOUND: [NOT_FOUND, 'Attachment not found.'],
   DP_BOX_CHANGED: [CONFLICT, 'A box changed since the disposal was drafted. Cancel this disposal and scan the boxes again.'],
   DP_STOCK_MISMATCH: [CONFLICT, "The warehouse stock record does not match its boxes. Count the stock and try again."],
+  TR_FORBIDDEN: [FORBIDDEN, 'You cannot trace boxes or handle alerts of this warehouse.'],
+  TR_BOX_NOT_FOUND: [NOT_FOUND, 'No history found for this box at your warehouse.'],
+  TR_CARTON_NOT_FOUND: [NOT_FOUND, 'Carton not found at your warehouse.'],
+  TR_CARTON_NOT_UNPACKABLE: [CONFLICT, 'Only packaged cartons can be unpacked.'],
+  TR_CARTON_INCOMPLETE: [CONFLICT, 'Some boxes of this carton are no longer at your warehouse.'],
+  TR_ALERT_NOT_FOUND: [NOT_FOUND, 'Fraud alert not found.'],
+  TR_NOTE_REQUIRED: [UNPROCESSABLE_ENTITY, 'Enter a note of at most 500 characters.'],
 } as const satisfies Record<string, readonly [HttpStatus, string]>;
 
 export type WarehouseErrorCode = keyof typeof CATALOG;
@@ -91,7 +98,7 @@ export async function warehouseDatabase<T>(operation: Promise<T>): Promise<T> {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) throw error;
     const meta = error.meta as DatabaseErrorMeta | undefined;
     const message = meta?.message ?? meta?.driverAdapterError?.cause?.originalMessage ?? error.message;
-    const raised = /\b((?:FB|HV|SC|DP)_[A-Z_]+)\b/.exec(message)?.[1];
+    const raised = /\b((?:FB|HV|SC|DP|TR)_[A-Z_]+)\b/.exec(message)?.[1];
     if (raised && raised in CATALOG) throw warehouseError(raised as WarehouseErrorCode);
     throw error;
   }
