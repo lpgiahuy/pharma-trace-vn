@@ -21,13 +21,17 @@ BEGIN
     RAISE EXCEPTION 'Transfer is not ready for source handoff' USING ERRCODE='22023';
   END IF;
   -- Stock transfers reserved quantities only; the scanned boxes are reserved here.
+  -- Recall collections already reserved the recalled boxes they carry.
   FOR line IN SELECT value FROM jsonb_array_elements(manifest) WHERE t.order_id IS NULL LOOP
     SELECT array_agg(value::uuid) INTO scanned FROM jsonb_array_elements_text(line->'boxUids');
     UPDATE public.medicine_boxes b SET status='RESERVED'
-      WHERE b.uid=ANY(scanned) AND b.current_facility_id=t.from_facility_id AND b.status='IN_STOCK'
+      WHERE b.uid=ANY(scanned) AND b.current_facility_id=t.from_facility_id
         AND EXISTS (SELECT FROM public.batches batch JOIN jsonb_array_elements(t.items) i ON (i->>'medicineId')::integer=batch.medicine_id
           WHERE batch.id=b.batch_id AND i->>'variantId'=line->>'variantId')
-        AND public.box_sellable(b.uid, current_date);
+        AND CASE WHEN t.transfer_type='RECALL_COLLECTION'
+          THEN b.status='RESERVED' AND EXISTS (SELECT FROM public.batch_recall_events e
+            WHERE e.transfer_id=t.id AND e.action='COLLECT' AND b.uid=ANY(e.box_uids))
+          ELSE b.status='IN_STOCK' AND public.box_sellable(b.uid, current_date) END;
     GET DIAGNOSTICS changed=ROW_COUNT;
     IF changed<>coalesce(cardinality(scanned),0) THEN RAISE EXCEPTION 'Scanned packages are unavailable, ineligible or belong to another medicine' USING ERRCODE='22023'; END IF;
   END LOOP;
