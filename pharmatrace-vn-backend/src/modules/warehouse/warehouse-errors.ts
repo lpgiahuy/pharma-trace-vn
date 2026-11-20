@@ -40,6 +40,21 @@ const CATALOG = {
   HV_CARRIER_MISMATCH: [UNPROCESSABLE_ENTITY, 'A package belongs to a shipment of another carrier.'],
   HV_NOT_FOUND: [NOT_FOUND, 'Handover not found.'],
   PK_PACKAGE_NOT_VOIDABLE: [CONFLICT, 'Only packed packages of orders that are still being packed can be voided.'],
+  SC_FORBIDDEN: [FORBIDDEN, 'You cannot count or adjust stock of this warehouse.'],
+  SC_FACILITY_REQUIRED: [UNPROCESSABLE_ENTITY, 'Choose the warehouse to count.'],
+  SC_NOT_FOUND: [NOT_FOUND, 'Stock count not found.'],
+  SC_CODE_INVALID: [UNPROCESSABLE_ENTITY, 'The code must be 6-50 letters, digits, dashes or underscores.'],
+  SC_CODE_CONFLICT: [CONFLICT, 'This code is already used by another stock count or adjustment.'],
+  SC_SCOPE_INVALID: [UNPROCESSABLE_ENTITY, 'Count the whole warehouse, one medicine or one batch, not a mix.'],
+  SC_COUNT_EMPTY: [UNPROCESSABLE_ENTITY, 'There is no stock to count in this scope.'],
+  SC_VARIANT_AMBIGUOUS: [UNPROCESSABLE_ENTITY, 'The medicine of this batch must have exactly one stocked packaging at the warehouse.'],
+  SC_INVALID_TRANSITION: [CONFLICT, 'This action is not available for the stock count in its current status. Please reload the page.'],
+  SC_LINE_INVALID: [UNPROCESSABLE_ENTITY, 'Each counted batch must belong to this count and appear only once.'],
+  SC_LINES_UNCOUNTED: [UNPROCESSABLE_ENTITY, 'Enter a counted quantity for every batch before submitting.'],
+  SC_REASON_REQUIRED: [UNPROCESSABLE_ENTITY, 'Enter a reason of at most 500 characters.'],
+  SC_QUANTITY_INVALID: [UNPROCESSABLE_ENTITY, 'The quantity change cannot be zero.'],
+  SC_BELOW_RESERVED: [CONFLICT, 'Stock cannot go below the units reserved for orders or the unreserved boxes on hand.'],
+  SC_GAIN_UNKNOWN_BOXES: [CONFLICT, 'Only boxes recorded as missing can be restored. Receive or transfer other boxes in.'],
 } as const satisfies Record<string, readonly [HttpStatus, string]>;
 
 export type WarehouseErrorCode = keyof typeof CATALOG;
@@ -61,7 +76,7 @@ export async function warehouseDatabase<T>(operation: Promise<T>): Promise<T> {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) throw error;
     const meta = error.meta as DatabaseErrorMeta | undefined;
     const message = meta?.message ?? meta?.driverAdapterError?.cause?.originalMessage ?? error.message;
-    const raised = /\b((?:FB|HV)_[A-Z_]+)\b/.exec(message)?.[1];
+    const raised = /\b((?:FB|HV|SC)_[A-Z_]+)\b/.exec(message)?.[1];
     if (raised && raised in CATALOG) throw warehouseError(raised as WarehouseErrorCode);
     throw error;
   }

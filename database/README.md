@@ -1014,3 +1014,23 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 `in_transit_custody.sql` keeps its check that refuses active transfers without custody records. All scripts can be re-applied.
+
+## Stock counts and adjustments
+
+`security/inventory/stock_counts.sql` adds warehouse stock counts and manager-approved stock adjustments.
+
+- New tables: `stock_counts` (unique `count_code`, warehouse, `scope` of `FULL`, `MEDICINE` or `BATCH`, `status` `OPEN` / `SUBMITTED` / `APPROVED` / `CANCELLED`), `stock_count_lines` (one per batch: `system_quantity` at opening, `counted_quantity`, and `current_quantity` and `difference` filled at approval) and `stock_count_events` (every status change with the employee and note). All three use forced RLS: warehouse roles read their own warehouse, `SUPER_ADMIN` reads all, and `app_user` has no write grants.
+- A line is a batch. Boxes carry no variant, so the line's variant is the one variant of the batch's medicine that the warehouse stocks. A count (or an adjustment) of a medicine with zero or several stocked variants is refused with `SC_VARIANT_AMBIGUOUS`. `system_quantity` is the number of boxes of the batch at the warehouse in status `IN_STOCK`, `MANUFACTURED`, `RESERVED` or `PACKAGED`.
+- `open_stock_count`, `save_stock_count_lines`, `submit_stock_count`, `cancel_stock_count`, `approve_stock_count` and `record_stock_adjustment` are security-definer functions. Opening, cancelling, approving and adjusting need `WH_MANAGER`; saving lines and submitting need `WH_ALL`. A repeated count or adjustment code returns the record it created.
+- Approval compares each counted number with the units on hand at approval time, not at opening, and books the difference. A loss marks unreserved boxes of the batch `MISSING`; a gain restores `MISSING` boxes of the batch only (`SC_GAIN_UNKNOWN_BOXES` otherwise). Stock never drops below `reserved_quantity` (`SC_BELOW_RESERVED`). Each change adds an `ADJUSTMENT_LOSS` or `ADJUSTMENT_GAIN` row to `inventory_logs` with the batch, before and after units, the code and the employee, and moves `batches.remaining_quantity`. `inventory_logs.transaction_type` has no check constraint, so no schema change is needed.
+
+### Applying to an existing database
+
+Back up the database first. `security/procurement/purchase_orders.sql` must already be installed. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/inventory/stock_counts.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/stock_counts_test.sql
+```
+
+Both scripts can be re-applied.
