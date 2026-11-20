@@ -14,13 +14,15 @@ import { WarehouseInventoryController } from './inventory/warehouse-inventory.co
 import { WarehouseInventoryService } from './inventory/warehouse-inventory.service';
 import { StockCountController } from './stock-count/stock-count.controller';
 import { StockCountService } from './stock-count/stock-count.service';
+import { TraceabilityController } from './traceability/traceability.controller';
+import { TraceabilityService } from './traceability/traceability.service';
 import { WarehouseController } from './warehouse.controller';
 import { WarehouseService } from './warehouse.service';
 
 /** Warehouse portal API (/warehouse/*). Later warehouse features register their controllers here. */
 @Module({
   imports: [PrismaModule, OrderModule],
-  controllers: [WarehouseController, WarehouseInventoryController, FactoryBatchController, FulfillmentController, HandoverController, StockCountController, DisposalController],
-  providers: [WarehouseService, WarehouseInventoryService, BatchStatusService, FactoryBatchService, FulfillmentService, HandoverService, StockCountService, DisposalService],
+  controllers: [WarehouseController, WarehouseInventoryController, FactoryBatchController, FulfillmentController, HandoverController, StockCountController, DisposalController, TraceabilityController],
+  providers: [WarehouseService, WarehouseInventoryService, BatchStatusService, FactoryBatchService, FulfillmentService, HandoverService, StockCountService, DisposalService, TraceabilityService],
 })
 export class WarehouseModule {}
