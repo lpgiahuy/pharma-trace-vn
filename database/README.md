@@ -1079,3 +1079,25 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 Both scripts can be re-applied.
+
+## Warehouse traceability
+
+`security/quality/warehouse_traceability.sql` lets a warehouse check scanned boxes, read a box timeline, unpack cartons and handle fraud alerts. A scan never proves a box is authentic; it only raises alerts that need investigation.
+
+- Changed table: `fraud_alerts` gets `facility_id`, `scanned_code`, `reported_by_id`, `resolved_by_id`, `resolved_at` and `resolution_note`. A unique index allows one unresolved alert per scanned code, reason and warehouse, so repeated scans add nothing. The table now uses forced RLS: managers read the alerts of their warehouse (or of a box held there), `SUPER_ADMIN` reads all, and `app_user` has no write grants.
+- New table: `carton_events` (one `UNPACKED` row per unpacked carton with the warehouse and employee), with forced RLS and read-only access.
+- `scan_box_facts(uid)` returns what the scan check needs about a box; `record_scan_anomaly(uid, reasons)` (`WH_ALL`) opens one alert per reason (`UNKNOWN_UID`, `SIGNATURE_MISMATCH`, `NOT_AT_WAREHOUSE`, `BOX_STATUS_UNEXPECTED`). The signature itself is checked by the API, which holds the QR secret.
+- `box_history(uid)` returns the box timeline, oldest first, from goods receipts, transfers, carton unpacking, packages, carrier handovers, returns, recalls, disposals, public QR scans and fraud alerts. A warehouse sees it when it holds the box now or appears in its history. Stock count adjustments mark boxes `MISSING` without a per-box record, so they are not on the timeline.
+- `carton_overview(sscc)` returns a carton of the caller's warehouse with its boxes. `unpack_carton(sscc)` (`WH_ALL`) marks a `PACKAGED` carton `UNPACKED` when all its boxes are still at the warehouse; boxes keep their carton, and unpacking twice does nothing.
+- `resolve_fraud_alert(id, note)` needs `WH_MANAGER` and a note; resolving twice keeps the first resolution.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/quality/warehouse_traceability.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/warehouse_traceability_test.sql
+```
+
+Both scripts can be re-applied.
