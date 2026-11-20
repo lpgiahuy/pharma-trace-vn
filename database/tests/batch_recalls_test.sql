@@ -122,7 +122,7 @@ RESET ROLE;
 DO $$ BEGIN
   IF pg_temp.rc_stock('w') <> ARRAY[8, 8, 0] OR pg_temp.rc_stock('p') <> ARRAY[0, 0, 0] THEN RAISE EXCEPTION 'Collection or dispatch moved the wrong stock'; END IF;
   UPDATE public.medicine_boxes SET status = 'IN_STOCK', current_facility_id = current_setting('test.d')::integer
-    WHERE uid = ANY ((SELECT box_uids FROM public.transfer_custody WHERE transfer_id = current_setting('test.transfer')::integer));
+    WHERE uid IN (SELECT unnest(box_uids) FROM public.transfer_custody WHERE transfer_id = current_setting('test.transfer')::integer);
   INSERT INTO public.inventories(facility_id, variant_id, stock_quantity, reserved_quantity) VALUES (current_setting('test.d')::integer, current_setting('test.variant')::integer, 3, 0);
   PERFORM set_config('app.current_user_id', current_setting('test.sa'), true);
   UPDATE public.internal_transfers SET status = 'RECEIVED', received_at = now() WHERE id = current_setting('test.transfer')::integer;

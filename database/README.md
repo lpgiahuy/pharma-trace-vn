@@ -1057,3 +1057,5 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 All scripts can be re-applied. `batch_recalls.sql` sets the final `quarantine_movements` checks; re-run it after any older script that redefines them.
+
+The backend suite `src/modules/recall/recall.integration.spec.ts` (manager refused, checkout and packing refusing the recalled batch, impact matching the box count) runs as `app_user` when `WORKFLOW_TEST_DATABASE_URL` points to a freshly initialized database named `codex_batch_recall_20261120`.
