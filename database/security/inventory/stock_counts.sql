@@ -292,7 +292,7 @@ BEGIN
   SELECT * INTO previous FROM public.inventory_logs
     WHERE reference_code = adjustment_ref AND transaction_type IN ('ADJUSTMENT_GAIN', 'ADJUSTMENT_LOSS') ORDER BY id LIMIT 1;
   IF FOUND THEN
-    IF previous.facility_id <> target_facility OR previous.batch_id IS DISTINCT FROM target_batch THEN
+    IF previous.facility_id <> target_facility OR previous.batch_id IS DISTINCT FROM target_batch OR previous.quantity_changed <> units THEN
       RAISE EXCEPTION 'SC_CODE_CONFLICT' USING ERRCODE = '22023';
     END IF;
     RETURN previous.id;
