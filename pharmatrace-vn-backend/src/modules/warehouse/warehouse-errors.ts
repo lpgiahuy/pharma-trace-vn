@@ -55,6 +55,21 @@ const CATALOG = {
   SC_QUANTITY_INVALID: [UNPROCESSABLE_ENTITY, 'The quantity change cannot be zero.'],
   SC_BELOW_RESERVED: [CONFLICT, 'Stock cannot go below the units reserved for orders or the unreserved boxes on hand.'],
   SC_GAIN_UNKNOWN_BOXES: [CONFLICT, 'Only boxes recorded as missing can be restored. Receive or transfer other boxes in.'],
+  DP_FORBIDDEN: [FORBIDDEN, 'You cannot manage disposals of this warehouse.'],
+  DP_FACILITY_REQUIRED: [UNPROCESSABLE_ENTITY, 'Choose the warehouse to dispose from.'],
+  DP_NOT_FOUND: [NOT_FOUND, 'Disposal not found.'],
+  DP_CODE_INVALID: [UNPROCESSABLE_ENTITY, 'The code must be 6-50 letters, digits, dashes or underscores.'],
+  DP_CODE_CONFLICT: [CONFLICT, 'This code is already used by another disposal.'],
+  DP_REASON_REQUIRED: [UNPROCESSABLE_ENTITY, 'Enter a reason of at most 500 characters.'],
+  DP_BOXES_INVALID: [UNPROCESSABLE_ENTITY, 'Scan each box once, between 1 and 500 boxes.'],
+  DP_BOX_NOT_ELIGIBLE: [UNPROCESSABLE_ENTITY, 'A box cannot be disposed of: it is in date, from an active batch and not quarantined, already destroyed, on another open disposal or not at your warehouse.'],
+  DP_INVALID_TRANSITION: [CONFLICT, 'This action is not available for the disposal in its current status. Please reload the page.'],
+  DP_ATTACHMENT_REQUIRED: [UNPROCESSABLE_ENTITY, 'Attach the disposal record before completing the disposal.'],
+  DP_ATTACHMENT_LIMIT: [UNPROCESSABLE_ENTITY, 'You can attach at most 5 images to a disposal.'],
+  DP_ATTACHMENT_INVALID: [UNPROCESSABLE_ENTITY, 'Please upload a JPG, PNG or WEBP image smaller than 8 MB.'],
+  DP_ATTACHMENT_NOT_FOUND: [NOT_FOUND, 'Attachment not found.'],
+  DP_BOX_CHANGED: [CONFLICT, 'A box changed since the disposal was drafted. Cancel this disposal and scan the boxes again.'],
+  DP_STOCK_MISMATCH: [CONFLICT, "The warehouse stock record does not match its boxes. Count the stock and try again."],
 } as const satisfies Record<string, readonly [HttpStatus, string]>;
 
 export type WarehouseErrorCode = keyof typeof CATALOG;
@@ -76,7 +91,7 @@ export async function warehouseDatabase<T>(operation: Promise<T>): Promise<T> {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) throw error;
     const meta = error.meta as DatabaseErrorMeta | undefined;
     const message = meta?.message ?? meta?.driverAdapterError?.cause?.originalMessage ?? error.message;
-    const raised = /\b((?:FB|HV|SC)_[A-Z_]+)\b/.exec(message)?.[1];
+    const raised = /\b((?:FB|HV|SC|DP)_[A-Z_]+)\b/.exec(message)?.[1];
     if (raised && raised in CATALOG) throw warehouseError(raised as WarehouseErrorCode);
     throw error;
   }
