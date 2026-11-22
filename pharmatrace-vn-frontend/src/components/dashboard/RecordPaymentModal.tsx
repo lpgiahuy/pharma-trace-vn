@@ -45,7 +45,7 @@ export function RecordPaymentModal({ payable, onClose, onRecorded }: RecordPayme
       <p className="text-xs text-slate-500 mt-0 mb-4">
         {payable.supplierName}{payable.poCode ? ` · ${payable.poCode}` : ''} · Remaining {formatVnd(payable.amount)}
       </p>
-      {error && <Alert type="error" showIcon message={error} className="mb-4" />}
+      {error && <Alert type="error" showIcon title={error} className="mb-4" />}
       <Form<PaymentFormValues>
         form={form}
         layout="vertical"
@@ -53,7 +53,7 @@ export function RecordPaymentModal({ payable, onClose, onRecorded }: RecordPayme
         onFinish={values => void submit(values)}
       >
         <Form.Item name="amount" label="Amount" rules={[{ required: true, message: 'Enter the amount' }]}>
-          <InputNumber min={0.01} max={payable.amount} precision={2} addonAfter="₫" className="w-full" />
+          <InputNumber min={0.01} max={payable.amount} precision={2} suffix="₫" className="w-full" />
         </Form.Item>
         <Form.Item name="paymentMethod" label="Payment method" rules={[{ required: true }]}>
           <Select options={PAYMENT_METHODS.map(item => ({ value: item.value, label: item.label }))} />
