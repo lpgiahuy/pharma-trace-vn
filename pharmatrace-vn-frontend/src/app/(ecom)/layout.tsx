@@ -3,6 +3,7 @@
 import React from 'react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
+import { ChatbotWidget } from '@/components/shared/ChatbotWidget';
 
 export default function EcomLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export default function EcomLayout({ children }: { children: React.ReactNode }) 
         {children}
       </main>
       <Footer />
+      <ChatbotWidget />
     </div>
   );
 }
