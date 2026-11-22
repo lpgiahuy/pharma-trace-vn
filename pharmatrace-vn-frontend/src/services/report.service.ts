@@ -11,11 +11,14 @@ import type {
   RevenueSeries,
   SalesOverview,
   StockAlertReport,
+  SupplierPayment,
+  SupplierPaymentInput,
 } from '../types/report.types';
 
 interface Envelope<T> { success: boolean; data: T }
 
 const BASE = '/admin/reports';
+const PAYABLES = '/admin/finance/payables';
 
 /** Error bodies of a blob request arrive as a Blob; read the API message out of it. */
 async function blobError(error: unknown): Promise<unknown> {
@@ -49,6 +52,10 @@ export const reportService = {
     apiClient
       .get<unknown, Blob>(`${BASE}/cashbook/export`, { params: filters, responseType: 'blob' })
       .catch(async (error: unknown) => { throw await blobError(error); }),
+  payablePayments: (payableId: number) =>
+    apiClient.get<unknown, Envelope<SupplierPayment[]>>(`${PAYABLES}/${payableId}/payments`),
+  recordPayablePayment: (payableId: number, input: SupplierPaymentInput) =>
+    apiClient.post<unknown, Envelope<{ paymentId: number }>>(`${PAYABLES}/${payableId}/payments`, input),
   setDefaultThreshold: (quantity: number) =>
     apiClient.patch(`${BASE}/stock-thresholds/default`, { quantity }),
   setInventoryThreshold: (inventoryId: number, quantity: number | null) =>
