@@ -19,6 +19,7 @@ import {
   RollbackOutlined,
   AlertOutlined,
   BankOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { canViewFinance } from '@/utils/finance-report';
 
@@ -176,6 +177,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
         ...(showFinance ? [financeGroup] : []),
         ...(normalizedRole === 'SUPERADMIN' || normalizedRole === 'STOREMANAGER'
           ? [{ key: '/admin/recalls', icon: <AlertOutlined style={{ fontSize: 16 }} />, label: 'Batch Recalls' }]
+          : []),
+        ...(normalizedRole === 'SUPERADMIN'
+          ? [{ key: '/admin/security', icon: <SafetyCertificateOutlined style={{ fontSize: 16 }} />, label: 'Fraud Radar' }]
           : []),
         {
           key: '/admin/reviews',
