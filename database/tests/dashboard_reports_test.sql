@@ -52,6 +52,44 @@ SELECT set_config('test.i_low', :'i_low', true), set_config('test.i_b', :'i_b', 
 SELECT set_config('test.a', :'f_a', true), set_config('test.b', :'f_b', true), set_config('test.manager', :'e_manager', true),
   set_config('test.accountant', :'e_accountant', true), set_config('test.staff', :'e_staff', true);
 
+-- Finance fixtures: aging reports as of 2031-01-31, cashbook window 2031-01-01..2031-01-03 (Vietnam days).
+INSERT INTO public.orders(order_code, order_status, payment_method, payment_status, total_amount, created_at)
+SELECT 'DR-AR-' || age, 'DELIVERED', 'COD', 'UNPAID', 1, '2031-01-01'::timestamp FROM unnest(ARRAY[7, 8, 15, 16, 30, 31, 99]) age;
+INSERT INTO public.shipments(order_id, tracking_number)
+SELECT id, 'DR-TRK-' || substr(order_code, 7) FROM public.orders WHERE order_code LIKE 'DR-AR-%';
+INSERT INTO public.courier_receivables(shipment_id, courier_name, amount_due, status, created_at)
+SELECT s.id, 'DR-Courier-A', v.amount, v.status, (('2031-01-31'::date - v.age)::text || ' 12:00+07')::timestamptz
+FROM (VALUES (7, 100, 'OPEN'), (8, 200, 'OPEN'), (15, 400, 'OPEN'), (16, 800, 'OPEN'), (30, 1600, 'OPEN'), (31, 3200, 'OPEN'), (99, 6400, 'SETTLED')) v(age, amount, status)
+JOIN public.shipments s ON s.tracking_number = 'DR-TRK-' || v.age;
+INSERT INTO public.orders(order_code, order_status, payment_method, payment_status, total_amount, created_at) VALUES
+  ('DR-ON-1', 'DELIVERED', 'BANK_TRANSFER', 'UNPAID', 1000, '2031-01-20 05:00'),
+  ('DR-ON-2', 'DELIVERED', 'E_WALLET', 'PAID', 2000, '2031-01-20 05:00'),
+  ('DR-ON-3', 'PENDING', 'BANK_TRANSFER', 'UNPAID', 4000, '2031-01-20 05:00'),
+  ('DR-ON-4', 'DELIVERED', 'COD', 'UNPAID', 8000, '2031-01-20 05:00');
+
+INSERT INTO public.purchase_orders(po_code, supplier_id, status) VALUES ('DR-PO-1', :f_b, 'RECEIVED') RETURNING id AS po \gset p_
+INSERT INTO public.accounts_payable(supplier_name, po_id, total_due_amount, paid_amount, due_date)
+SELECT 'DR-Supplier-A', CASE WHEN due = '2031-02-05' AND total = 100 THEN :p_po END, total, paid, (due || ' 12:00+07')::timestamptz
+FROM (VALUES (100, 0, '2031-02-05'), (200, 0, '2031-01-31'), (1000, 400, '2031-02-05'), (400, 0, '2031-01-30'), (800, 0, '2031-01-01'),
+  (1600, 0, '2030-12-31'), (3200, 0, '2030-12-02'), (6400, 0, '2030-12-01'), (500, 500, '2031-01-01')) v(total, paid, due);
+INSERT INTO public.accounts_payable(supplier_name, total_due_amount) VALUES ('DR-Supplier-A', 12800);
+
+INSERT INTO public.cashbook_logs(transaction_code, transaction_type, category, amount, payment_method, transaction_date, order_id, po_id)
+SELECT 'DR-F-' || code, type, CASE WHEN type = 'INCOME' THEN 'DR-SALE' ELSE 'DR-COST' END, amount, method, at::timestamptz,
+  CASE WHEN code = '1' THEN (SELECT id FROM public.orders WHERE order_code = 'DR-1') END, CASE WHEN code = '4' THEN :p_po END
+FROM (VALUES
+  ('OPEN-IN', 'INCOME', 500000, 'CASH', '2030-12-31 23:30+07'),
+  ('OPEN-EX', 'EXPENSE', 120000, 'CASH', '2030-12-31 10:00+07'),
+  ('1', 'INCOME', 300000, 'CASH', '2031-01-01 00:30+07'),
+  ('2', 'EXPENSE', 50000, 'CASH', '2031-01-01 23:30+07'),
+  ('3', 'INCOME', 700000, 'BANK_TRANSFER', '2031-01-03 09:00+07'),
+  ('4', 'EXPENSE', 80000, 'CASH', '2031-01-03 12:00+07'),
+  ('5', 'INCOME', 100000, 'CASH', '2031-01-04 00:10+07')
+) v(code, type, amount, method, at);
+SELECT coalesce(sum(CASE WHEN transaction_type = 'INCOME' THEN amount ELSE -amount END), 0) AS base FROM public.cashbook_logs
+WHERE payment_method = 'CASH' AND transaction_date < '2031-01-01 00:00+07' AND transaction_code NOT LIKE 'DR-F-%' \gset cash_
+SELECT set_config('test.cash_base', :'cash_base', true);
+
 CREATE FUNCTION pg_temp.dr_expect(expected text, statement text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
   EXECUTE statement;
@@ -174,6 +212,93 @@ BEGIN
   PERFORM pg_temp.dr_check('A NULL threshold uses the default again', result,
     'A/low-default/3/4/LOW_STOCK A/low-own/20/25/LOW_STOCK A/out/0/4/OUT_OF_STOCK');
   PERFORM pg_temp.dr_expect('P0002', format('SELECT public.set_inventory_min_stock_quantity(%s, 1)', ib));
+END $$;
+
+DO $$
+DECLARE base numeric := current_setting('test.cash_base')::numeric; touched integer;
+BEGIN
+  PERFORM pg_temp.dr_as('WAREHOUSE_STAFF', 'staff', 'a');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_receivables_aging(''2031-01-31'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_payables_aging(''2031-01-31'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook(''2031-01-01'', ''2031-01-03'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook_entries(''2031-01-01'', ''2031-01-03'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook_categories()');
+  PERFORM pg_temp.dr_check('Warehouse staff read no cashbook rows', (SELECT count(*) FROM public.cashbook_logs)::text, '0');
+  PERFORM pg_temp.dr_as('STORE_MANAGER', 'manager', 'a');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_receivables_aging(''2031-01-31'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook(''2031-01-01'', ''2031-01-03'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook_categories()');
+  PERFORM pg_temp.dr_check('Store manager reads no cashbook rows', (SELECT count(*) FROM public.cashbook_logs)::text, '0');
+  PERFORM set_config('app.current_user_type', 'customer', true), set_config('app.current_user_role', 'SUPER_ADMIN', true);
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_payables_aging(''2031-01-31'')');
+
+  PERFORM pg_temp.dr_as('ACCOUNTANT', 'accountant', 'none');
+  PERFORM pg_temp.dr_check('Finance reads cashbook rows directly', (SELECT count(*) > 0 FROM public.cashbook_logs)::text, 'true');
+  PERFORM pg_temp.dr_expect('42501', 'INSERT INTO public.cashbook_logs(transaction_code, transaction_type, category, amount) VALUES (''DR-FORGED'', ''INCOME'', ''TEST'', 1)');
+  UPDATE public.cashbook_logs SET amount = 1;
+  GET DIAGNOSTICS touched = ROW_COUNT;
+  PERFORM pg_temp.dr_check('Direct cashbook update changes nothing', touched::text, '0');
+  PERFORM pg_temp.dr_expect('22023', 'SELECT * FROM public.report_cashbook(''2031-01-03'', ''2031-01-01'')');
+  PERFORM pg_temp.dr_expect('22023', 'SELECT * FROM public.report_cashbook_entries(''2031-01-03'', ''2031-01-01'')');
+
+  PERFORM pg_temp.dr_check('Courier receivable buckets honour the 7/8, 15/16 and 30/31 day boundaries',
+    (SELECT string_agg(concat_ws('/', bucket, row_count, amount), ' ' ORDER BY bucket COLLATE "C")
+     FROM public.report_receivables_aging('2031-01-31') WHERE row_type = 'SUMMARY' AND party_name = 'DR-Courier-A'),
+    '0_7/1/100.00 16_30/2/2400.00 8_15/2/600.00 GT_30/1/3200.00');
+  PERFORM pg_temp.dr_check('Receivable details carry order, age and exclude settled rows',
+    (SELECT string_agg(concat_ws('/', order_code, age_days, bucket), ' ' ORDER BY age_days)
+     FROM public.report_receivables_aging('2031-01-31') WHERE row_type = 'DETAIL' AND party_name = 'DR-Courier-A'),
+    'DR-AR-7/7/0_7 DR-AR-8/8/8_15 DR-AR-15/15/8_15 DR-AR-16/16/16_30 DR-AR-30/30/16_30 DR-AR-31/31/GT_30');
+  PERFORM pg_temp.dr_check('Only delivered unpaid online orders are receivable',
+    (SELECT string_agg(concat_ws('/', order_code, amount, age_days, bucket), ' ' ORDER BY order_code)
+     FROM public.report_receivables_aging('2031-01-31') WHERE row_type = 'DETAIL' AND order_code LIKE 'DR-ON-%'),
+    'DR-ON-1/1000.00/11/8_15');
+
+  PERFORM pg_temp.dr_check('Payable buckets honour due dates, remaining balance and the missing due date',
+    (SELECT string_agg(concat_ws('/', bucket, row_count, amount), ' ' ORDER BY bucket COLLATE "C")
+     FROM public.report_payables_aging('2031-01-31') WHERE row_type = 'SUMMARY' AND supplier_name = 'DR-Supplier-A'),
+    '1_30/2/1200.00 31_60/2/4800.00 GT_60/1/6400.00 NOT_DUE/3/900.00 NO_DUE_DATE/1/12800.00');
+  PERFORM pg_temp.dr_check('Payable details link the purchase order and days overdue',
+    (SELECT string_agg(concat_ws('/', po_code, days_overdue, bucket), ' ' ORDER BY due_date)
+     FROM public.report_payables_aging('2031-01-31') WHERE row_type = 'DETAIL' AND supplier_name = 'DR-Supplier-A' AND due_date = '2031-02-05' AND po_code IS NOT NULL),
+    'DR-PO-1/-5/NOT_DUE');
+
+  PERFORM pg_temp.dr_check('Cash summary: opening includes earlier cash rows by Vietnam day, other methods are excluded',
+    (SELECT row(opening - base, income, expense, closing - base, entry_count)::text FROM public.report_cashbook('2031-01-01', '2031-01-03', 'CASH') WHERE row_type = 'SUMMARY'),
+    '(380000.00,300000.00,130000.00,550000.00,3)');
+  PERFORM pg_temp.dr_check('Cash days run from the opening balance and empty days stay',
+    (SELECT string_agg(row(day, opening - base, income, expense, closing - base)::text, ' ' ORDER BY day)
+     FROM public.report_cashbook('2031-01-01', '2031-01-03', 'CASH') WHERE row_type = 'DAY'),
+    '(2031-01-01,380000.00,300000.00,50000.00,630000.00) (2031-01-02,630000.00,0,0,630000.00) (2031-01-03,630000.00,0,80000.00,550000.00)');
+  PERFORM pg_temp.dr_check('Opening + income - expense = closing on every row',
+    (SELECT count(*) FROM public.report_cashbook('2031-01-01', '2031-01-03') WHERE opening + income - expense <> closing)::text, '0');
+  PERFORM pg_temp.dr_check('All methods add the bank income; the type filter only changes the entry count',
+    (SELECT row(income, expense, entry_count)::text FROM public.report_cashbook('2031-01-01', '2031-01-03', NULL, 'INCOME') WHERE row_type = 'SUMMARY'),
+    '(1000000.00,130000.00,2)');
+  PERFORM pg_temp.dr_check('Entries are newest first, paged, with order and PO links',
+    (SELECT string_agg(concat_ws('/', transaction_code, order_code, po_code), ' ' ORDER BY transaction_date DESC, id DESC) FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', 'CASH', NULL, 2, 0)),
+    'DR-F-4/DR-PO-1 DR-F-2');
+  PERFORM pg_temp.dr_check('Second page',
+    (SELECT string_agg(concat_ws('/', transaction_code, order_code, po_code), ' ') FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', 'CASH', NULL, 2, 2)),
+    'DR-F-1/DR-1');
+  PERFORM pg_temp.dr_check('A NULL limit returns every entry matching the filters',
+    (SELECT string_agg(transaction_code, ' ' ORDER BY transaction_date DESC, id DESC) FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', NULL, 'INCOME', NULL, 0)),
+    'DR-F-3 DR-F-1');
+  PERFORM pg_temp.dr_check('The category filter narrows the entry list',
+    (SELECT string_agg(transaction_code, ' ' ORDER BY transaction_date DESC, id DESC)
+     FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', NULL, NULL, NULL, 0, 'DR-COST')),
+    'DR-F-4 DR-F-2');
+  PERFORM pg_temp.dr_check('Category and payment method combine, and the category reaches the second page',
+    (SELECT string_agg(transaction_code, ' ' ORDER BY transaction_date DESC, id DESC)
+     FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', 'CASH', NULL, 1, 1, 'DR-COST')),
+    'DR-F-2');
+  PERFORM pg_temp.dr_check('The category filter only changes the entry count, not the balances',
+    (SELECT row(income, expense, closing - base, entry_count)::text FROM public.report_cashbook('2031-01-01', '2031-01-03', 'CASH', NULL, 'DR-SALE') WHERE row_type = 'SUMMARY'),
+    '(300000.00,130000.00,550000.00,1)');
+  PERFORM pg_temp.dr_check('An unknown category matches nothing',
+    (SELECT count(*) FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', NULL, NULL, NULL, 0, 'DR-NOPE'))::text, '0');
+  PERFORM pg_temp.dr_check('Finance sees every cashbook category once, sorted',
+    (SELECT string_agg(category, ' ') FROM public.report_cashbook_categories() WHERE category LIKE 'DR-%'), 'DR-COST DR-SALE');
 END $$;
 
 RESET ROLE;

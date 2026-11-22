@@ -1,12 +1,13 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { REPORT_READ, STOCK_READ, STOCK_THRESHOLD_WRITE } from '../../common/report-roles';
+import { FINANCE_READ, REPORT_READ, STOCK_READ, STOCK_THRESHOLD_WRITE } from '../../common/report-roles';
 import {
-  ExpiryAlertQueryDto, InventoryThresholdDto, ReportRangeDto, RevenueSeriesDto, StockAlertQueryDto, StockThresholdDto,
+  AgingQueryDto, CashbookExportQueryDto, CashbookQueryDto, ExpiryAlertQueryDto, InventoryThresholdDto, ReportRangeDto, RevenueSeriesDto,
+  StockAlertQueryDto, StockThresholdDto,
 } from './dto/report-query.dto';
 import { ReportService } from './report.service';
 
@@ -48,6 +49,35 @@ export class ReportController {
   @ApiOperation({ summary: 'Batches with boxes in stock that are expired or expire within the given days' })
   async expiryAlerts(@Query() query: ExpiryAlertQueryDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.reports.expiryAlerts(user, query) };
+  }
+
+  @Get('receivables')
+  @Roles(...FINANCE_READ)
+  @ApiOperation({ summary: 'Open courier COD and unpaid delivered online orders by age: 0-7, 8-15, 16-30 and over 30 days' })
+  async receivables(@Query() query: AgingQueryDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.reports.receivables(user, query) };
+  }
+
+  @Get('payables')
+  @Roles(...FINANCE_READ)
+  @ApiOperation({ summary: 'Supplier payables by due date: not due, 1-30, 31-60, over 60 days overdue, and no due date' })
+  async payables(@Query() query: AgingQueryDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.reports.payables(user, query) };
+  }
+
+  @Get('cashbook')
+  @Roles(...FINANCE_READ)
+  @ApiOperation({ summary: 'Opening and closing balance, daily income and expense, and a page of cashbook entries' })
+  async cashbook(@Query() query: CashbookQueryDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.reports.cashbook(user, query) };
+  }
+
+  @Get('cashbook/export')
+  @Roles(...FINANCE_READ)
+  @ApiOperation({ summary: 'Every cashbook entry of the range as a CSV file (UTF-8 with BOM)' })
+  async cashbookExport(@Query() query: CashbookExportQueryDto, @CurrentUser() user: CurrentUserPayload) {
+    const { filename, csv } = await this.reports.cashbookCsv(user, query);
+    return new StreamableFile(Buffer.from(csv, 'utf8'), { type: 'text/csv; charset=utf-8', disposition: `attachment; filename="${filename}"` });
   }
 
   @Patch('stock-thresholds/default')

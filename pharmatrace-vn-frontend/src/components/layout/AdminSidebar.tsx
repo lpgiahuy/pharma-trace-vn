@@ -5,6 +5,7 @@ import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Layout, Menu, Drawer } from 'antd';
 import type { MenuProps } from 'antd';
+import type { MenuItemType, SubMenuType } from 'antd/es/menu/interface';
 import {
   DashboardOutlined,
   TeamOutlined,
@@ -17,9 +18,27 @@ import {
   CarOutlined,
   RollbackOutlined,
   AlertOutlined,
+  BankOutlined,
 } from '@ant-design/icons';
+import { canViewFinance } from '@/utils/finance-report';
 
 const { Sider } = Layout;
+
+type NavLeaf = MenuItemType;
+type NavGroup = SubMenuType<MenuItemType>;
+type NavItem = NavLeaf | NavGroup;
+
+const FINANCE_GROUP_KEY = 'finance';
+
+const financeGroup: NavGroup = {
+  key: FINANCE_GROUP_KEY,
+  icon: <BankOutlined style={{ fontSize: 16 }} />,
+  label: 'Finance',
+  children: [
+    { key: '/admin/finance/debts', label: 'Debts' },
+    { key: '/admin/finance/cashbook', label: 'Cashbook' },
+  ],
+};
 
 interface AdminSidebarProps {
   collapsed: boolean;
@@ -35,6 +54,7 @@ interface SidebarContentProps {
   isCollapsed: boolean;
   selectedKey: string;
   menuItems: MenuProps['items'];
+  openKeys: string[];
   onCollapse: () => void;
   isMobile: boolean;
   onNavigate: (key: string) => void;
@@ -44,6 +64,7 @@ function SidebarContent({
   isCollapsed,
   selectedKey,
   menuItems,
+  openKeys,
   onCollapse,
   isMobile,
   onNavigate,
@@ -85,6 +106,7 @@ function SidebarContent({
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
+          defaultOpenKeys={openKeys}
           items={menuItems}
           onClick={({ key }) => {
             if (isMobile) onCollapse();
@@ -111,11 +133,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   const canManageStaff = normalizedRole === 'SUPERADMIN' || normalizedRole === 'STOREMANAGER';
   const isFinanceStaff = normalizedRole === 'ACCOUNTANT' || normalizedRole === 'FINANCEMANAGER';
 
-  const menuItems = isFinanceStaff
+  const showFinance = canViewFinance(normalizedRole);
+
+  const menuItems: NavItem[] = isFinanceStaff
     ? [
         { key: '/admin', icon: <DashboardOutlined style={{ fontSize: 16 }} />, label: 'Dashboard' },
         { key: '/admin/orders', icon: <ShoppingOutlined style={{ fontSize: 16 }} />, label: 'Order Payments' },
         { key: '/admin/logistics/cod', icon: <CarOutlined style={{ fontSize: 16 }} />, label: 'COD Reconciliation' },
+        financeGroup,
       ]
     : [
         {
@@ -148,6 +173,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           icon: <RollbackOutlined style={{ fontSize: 16 }} />,
           label: 'Returns & Exchanges',
         },
+        ...(showFinance ? [financeGroup] : []),
         ...(normalizedRole === 'SUPERADMIN' || normalizedRole === 'STOREMANAGER'
           ? [{ key: '/admin/recalls', icon: <AlertOutlined style={{ fontSize: 16 }} />, label: 'Batch Recalls' }]
           : []),
@@ -178,12 +204,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       ];
 
   // Determine selected key based on current pathname
+  const leafKeys = menuItems.flatMap((item) =>
+    'children' in item ? item.children.map((child) => String(child?.key)) : [String(item.key)]
+  );
   const selectedKey =
-    menuItems.find(
-      (item) =>
-        pathname === item.key ||
-        (item.key !== '/admin' && pathname.startsWith(item.key))
-    )?.key || '/admin';
+    leafKeys.find(
+      (key) => pathname === key || (key !== '/admin' && pathname.startsWith(key))
+    ) || '/admin';
+  const openKeys = pathname.startsWith('/admin/finance') ? [FINANCE_GROUP_KEY] : [];
 
   // If not mounted yet (SSR), render standard Sider to avoid Drawer SSR hydration errors
   if (!mounted) {
@@ -207,6 +235,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           isCollapsed={collapsed}
           selectedKey={selectedKey}
           menuItems={menuItems}
+          openKeys={openKeys}
           onCollapse={onCollapse}
           isMobile={isMobile}
           onNavigate={(k) => router.push(k)}
@@ -228,6 +257,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           isCollapsed={false}
           selectedKey={selectedKey}
           menuItems={menuItems}
+          openKeys={openKeys}
           onCollapse={onCollapse}
           isMobile={isMobile}
           onNavigate={(k) => router.push(k)}
@@ -257,6 +287,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
         isCollapsed={collapsed}
         selectedKey={selectedKey}
         menuItems={menuItems}
+        openKeys={openKeys}
         onCollapse={onCollapse}
         isMobile={isMobile}
         onNavigate={(k) => router.push(k)}

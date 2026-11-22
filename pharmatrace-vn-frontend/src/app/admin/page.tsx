@@ -15,6 +15,8 @@ import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { OrderStatusDonut } from '@/components/dashboard/OrderStatusDonut';
 import { NewCustomersChart } from '@/components/dashboard/NewCustomersChart';
 import { StockAlertsPanel } from '@/components/dashboard/StockAlertsPanel';
+import { FinanceSummaryRow } from '@/components/dashboard/FinanceSummaryRow';
+import { canViewFinance } from '@/utils/finance-report';
 
 const REPORT_ROLES = ['SUPERADMIN', 'ADMIN', 'STOREMANAGER', 'ACCOUNTANT', 'FINANCEMANAGER'];
 const STOCK_ROLES = ['SUPERADMIN', 'ADMIN', 'STOREMANAGER'];
@@ -141,7 +143,7 @@ export default function AdminDashboardPage() {
             )}
           </div>
 
-          {/* PR 3: finance summary */}
+          {canViewFinance(role) && <FinanceSummaryRow enabled={enabled} />}
         </>
       ) : (
         <p className="text-xs text-slate-500 m-0">Sales reports are available to managers, administrators and finance staff.</p>

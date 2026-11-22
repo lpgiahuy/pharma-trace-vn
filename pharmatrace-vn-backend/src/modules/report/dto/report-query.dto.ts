@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsOptional, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -65,4 +65,50 @@ export class RevenueSeriesDto extends ReportRangeDto {
   @IsOptional()
   @IsIn(['day', 'month'])
   granularity?: 'day' | 'month';
+}
+
+export class AgingQueryDto {
+  @ApiPropertyOptional({ example: '2026-11-30', description: 'Age the debts as of this day (Vietnam time). Defaults to today.' })
+  @IsOptional()
+  @Matches(DAY, { message: 'asOf must be YYYY-MM-DD' })
+  @IsDateString({ strict: true })
+  asOf?: string;
+}
+
+const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'DEBIT_CARD', 'E_WALLET'] as const;
+const CASHBOOK_TYPES = ['INCOME', 'EXPENSE'] as const;
+
+export class CashbookExportQueryDto extends OmitType(ReportRangeDto, ['facilityId'] as const) {
+  @ApiPropertyOptional({ enum: PAYMENT_METHODS, description: 'Also limits the balances and daily totals' })
+  @IsOptional()
+  @IsIn(PAYMENT_METHODS)
+  paymentMethod?: (typeof PAYMENT_METHODS)[number];
+
+  @ApiPropertyOptional({ enum: CASHBOOK_TYPES, description: 'Limits the entries only, not the balances' })
+  @IsOptional()
+  @IsIn(CASHBOOK_TYPES)
+  type?: (typeof CASHBOOK_TYPES)[number];
+
+  @ApiPropertyOptional({ example: 'COD', description: 'Cashbook category as returned in `categories`. Limits the entries only, not the balances' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  category?: string;
+}
+
+export class CashbookQueryDto extends CashbookExportQueryDto {
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ example: 20, default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
 }
