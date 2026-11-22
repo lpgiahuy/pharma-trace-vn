@@ -4,7 +4,9 @@ import { authActor } from '../../common/auth-identity';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { workflowDatabase } from '../../common/workflow-database';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ExpiryAlertQueryDto, ReportRangeDto, RevenueSeriesDto, StockAlertQueryDto } from './dto/report-query.dto';
+import {
+  AgingQueryDto, CashbookExportQueryDto, CashbookQueryDto, ExpiryAlertQueryDto, ReportRangeDto, RevenueSeriesDto, StockAlertQueryDto,
+} from './dto/report-query.dto';
 
 type Granularity = 'day' | 'month';
 type DbNumber = Prisma.Decimal | bigint | number;
@@ -27,7 +29,36 @@ interface ExpiryAlertRow {
   boxes: DbNumber; expiry_date: string; days_left: number; level: 'EXPIRED' | 'LE_30' | 'D31_90' | 'D91_180'; below_min_shelf_life: boolean;
 }
 
+interface ReceivableRow {
+  row_type: 'SUMMARY' | 'DETAIL'; party_name: string; bucket: string; row_count: DbNumber; amount: DbNumber; shipment_id: number | null;
+  order_id: number | null; order_code: string | null; doc_date: string | null; age_days: number | null;
+}
+interface PayableRow {
+  row_type: 'SUMMARY' | 'DETAIL'; supplier_id: number | null; supplier_name: string; bucket: string; row_count: DbNumber; amount: DbNumber;
+  ap_id: number | null; po_id: number | null; po_code: string | null; due_date: string | null; days_overdue: number | null;
+}
+interface CashbookRow {
+  row_type: 'SUMMARY' | 'DAY'; day: string | null; opening: DbNumber; income: DbNumber; expense: DbNumber; closing: DbNumber; entry_count: DbNumber | null;
+}
+interface CashbookEntryRow {
+  id: number; transaction_code: string; transaction_date: Date; transaction_type: 'INCOME' | 'EXPENSE'; category: string; amount: DbNumber;
+  payment_method: string; party_name: string | null; note: string | null; order_id: number | null; order_code: string | null;
+  po_id: number | null; po_code: string | null;
+}
+type CsvCell = string | number | null;
+
 const toNumber = (value: DbNumber): number => Number(value);
+
+const csvCell = (value: CsvCell): string => {
+  if (value === null) return '';
+  const text = typeof value === 'number' ? String(value) : /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+/** UTF-8 BOM so Excel reads Vietnamese text; text cells that start like a formula are neutralised. */
+export const toCsv = (rows: CsvCell[][]): string => '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+
+const vietnamTime = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'medium' });
 
 function vietnamToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
@@ -141,6 +172,108 @@ export class ReportService {
         belowMinShelfLife: row.below_min_shelf_life,
       })),
     };
+  }
+
+  async receivables(user: CurrentUserPayload, query: AgingQueryDto) {
+    const asOf = query.asOf ?? vietnamToday();
+    const rows = await workflowDatabase(this.prisma.withReport(authActor(user), tx => tx.$queryRaw<ReceivableRow[]>`
+      SELECT row_type, party_name, bucket, row_count, amount, shipment_id, order_id, order_code, doc_date::text AS doc_date, age_days
+      FROM public.report_receivables_aging(${asOf}::date)`));
+    return {
+      asOf,
+      summary: rows.filter(row => row.row_type === 'SUMMARY').map(row => ({
+        party: row.party_name, bucket: row.bucket, count: toNumber(row.row_count), amount: toNumber(row.amount),
+      })),
+      details: rows.filter(row => row.row_type === 'DETAIL').map(row => ({
+        party: row.party_name,
+        bucket: row.bucket,
+        amount: toNumber(row.amount),
+        shipmentId: row.shipment_id,
+        orderId: row.order_id,
+        orderCode: row.order_code,
+        documentDate: row.doc_date,
+        ageDays: row.age_days,
+      })),
+    };
+  }
+
+  async payables(user: CurrentUserPayload, query: AgingQueryDto) {
+    const asOf = query.asOf ?? vietnamToday();
+    const rows = await workflowDatabase(this.prisma.withReport(authActor(user), tx => tx.$queryRaw<PayableRow[]>`
+      SELECT row_type, supplier_id, supplier_name, bucket, row_count, amount, ap_id, po_id, po_code, due_date::text AS due_date, days_overdue
+      FROM public.report_payables_aging(${asOf}::date)`));
+    return {
+      asOf,
+      summary: rows.filter(row => row.row_type === 'SUMMARY').map(row => ({
+        supplierId: row.supplier_id, supplierName: row.supplier_name, bucket: row.bucket, count: toNumber(row.row_count), amount: toNumber(row.amount),
+      })),
+      details: rows.filter(row => row.row_type === 'DETAIL').map(row => ({
+        supplierId: row.supplier_id,
+        supplierName: row.supplier_name,
+        bucket: row.bucket,
+        amount: toNumber(row.amount),
+        payableId: row.ap_id,
+        poId: row.po_id,
+        poCode: row.po_code,
+        dueDate: row.due_date,
+        daysOverdue: row.days_overdue,
+      })),
+    };
+  }
+
+  async cashbook(user: CurrentUserPayload, query: CashbookQueryDto) {
+    const { from, to } = reportRange(query, 'day');
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const { rows, entries } = await workflowDatabase(this.prisma.withReport(authActor(user), async tx => ({
+      rows: await tx.$queryRaw<CashbookRow[]>`
+        SELECT row_type, day::text AS day, opening, income, expense, closing, entry_count
+        FROM public.report_cashbook(${from}::date, ${to}::date, ${query.paymentMethod ?? null}::text, ${query.type ?? null}::text)`,
+      entries: await this.cashbookEntries(tx, from, to, query, pageSize, (page - 1) * pageSize),
+    })));
+    const [summary, ...days] = rows;
+    return {
+      from, to, page, pageSize,
+      opening: toNumber(summary.opening),
+      totalIncome: toNumber(summary.income),
+      totalExpense: toNumber(summary.expense),
+      closing: toNumber(summary.closing),
+      total: toNumber(summary.entry_count ?? 0),
+      days: days.map(day => ({ day: day.day, income: toNumber(day.income), expense: toNumber(day.expense), balance: toNumber(day.closing) })),
+      entries: entries.map(entry => ({
+        id: entry.id,
+        code: entry.transaction_code,
+        date: entry.transaction_date.toISOString(),
+        type: entry.transaction_type,
+        category: entry.category,
+        amount: toNumber(entry.amount),
+        paymentMethod: entry.payment_method,
+        partyName: entry.party_name,
+        note: entry.note,
+        orderId: entry.order_id,
+        orderCode: entry.order_code,
+        poId: entry.po_id,
+        poCode: entry.po_code,
+      })),
+    };
+  }
+
+  async cashbookCsv(user: CurrentUserPayload, query: CashbookExportQueryDto) {
+    const { from, to } = reportRange(query, 'day');
+    const entries = await workflowDatabase(this.prisma.withReport(authActor(user), tx => this.cashbookEntries(tx, from, to, query, null, 0)));
+    const header = ['Date', 'Code', 'Type', 'Category', 'Payment method', 'Party', 'Amount', 'Order', 'Purchase order', 'Note'];
+    const lines = entries.map(entry => [
+      vietnamTime.format(entry.transaction_date), entry.transaction_code, entry.transaction_type, entry.category, entry.payment_method,
+      entry.party_name, toNumber(entry.amount), entry.order_code, entry.po_code, entry.note,
+    ]);
+    return { filename: `cashbook_${from}_${to}.csv`, csv: toCsv([header, ...lines]) };
+  }
+
+  private cashbookEntries(tx: Prisma.TransactionClient, from: string, to: string, query: CashbookExportQueryDto, limit: number | null, offset: number) {
+    return tx.$queryRaw<CashbookEntryRow[]>`
+      SELECT id, transaction_code, transaction_date, transaction_type, category, amount, payment_method, party_name, note, order_id, order_code, po_id, po_code
+      FROM public.report_cashbook_entries(${from}::date, ${to}::date, ${query.paymentMethod ?? null}::text, ${query.type ?? null}::text,
+        ${limit}::integer, ${offset}::integer)`;
   }
 
   async setDefaultThreshold(user: CurrentUserPayload, quantity: number) {
