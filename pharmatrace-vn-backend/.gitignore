@@ -4,3 +4,6 @@ node_modules
 
 src/temp/
 src/script/
+
+# Chatbot embedding cache
+.cache/
