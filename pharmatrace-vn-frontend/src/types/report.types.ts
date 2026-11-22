@@ -146,6 +146,22 @@ export interface PayablesReport {
 }
 
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'DEBIT_CARD' | 'E_WALLET';
+
+export interface SupplierPaymentInput {
+  amount: number;
+  paymentMethod: PaymentMethod;
+  reference: string;
+}
+
+export interface SupplierPayment {
+  id: number;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  reference: string;
+  paidAt: string;
+  paidBy: string;
+  cashbookCode: string;
+}
 export type CashbookType = 'INCOME' | 'EXPENSE';
 
 export interface CashbookFilters {

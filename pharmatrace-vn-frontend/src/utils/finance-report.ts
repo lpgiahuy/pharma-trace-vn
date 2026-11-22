@@ -14,6 +14,12 @@ const FINANCE_ROLES = ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT', 'FINANCEMANAGER'];
 export const canViewFinance = (role?: string | null) =>
   FINANCE_ROLES.includes((role || '').toUpperCase().replace(/[\s_-]/g, ''));
 
+const SUPPLIER_PAYMENT_ROLES = ['SUPERADMIN', 'FINANCEMANAGER'];
+
+/** Mirrors SUPPLIER_PAYMENT_WRITE in the API: the roles that may record a supplier payment. */
+export const canRecordSupplierPayment = (role?: string | null) =>
+  SUPPLIER_PAYMENT_ROLES.includes((role || '').toUpperCase().replace(/[\s_-]/g, ''));
+
 export const RECEIVABLE_BUCKETS: { key: ReceivableBucket; label: string }[] = [
   { key: '0_7', label: '0-7 days' },
   { key: '8_15', label: '8-15 days' },

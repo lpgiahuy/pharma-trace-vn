@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Input, Select, Table, Tabs, Tag } from 'antd';
+import { Button, Input, Select, Space, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useHydrated } from '@/hooks/useHydrated';
 import { useReport } from '@/hooks/useReport';
@@ -13,6 +13,7 @@ import {
   PAYABLE_BUCKETS,
   RECEIVABLE_BUCKETS,
   agingChartData,
+  canRecordSupplierPayment,
   canViewFinance,
   filterPayables,
   filterReceivables,
@@ -23,6 +24,8 @@ import { formatCount, formatVnd } from '@/utils/report-format';
 import { AgingChart } from '@/components/dashboard/AgingChart';
 import { FinanceAccessDenied } from '@/components/dashboard/FinanceAccessDenied';
 import { FinanceStatCard } from '@/components/dashboard/FinanceStatCard';
+import { PaymentHistoryDrawer } from '@/components/dashboard/PaymentHistoryDrawer';
+import { RecordPaymentModal } from '@/components/dashboard/RecordPaymentModal';
 
 type DebtTab = 'receivables' | 'payables';
 
@@ -34,11 +37,14 @@ export default function FinanceDebtsPage() {
   const getUser = useAuthStore(state => state.getUser);
   const user = mounted ? getUser() : null;
   const allowed = canViewFinance(user?.role);
+  const canPay = canRecordSupplierPayment(user?.role);
   const canOpenPurchaseOrders = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '') === 'SUPERADMIN';
 
   const [tab, setTab] = useState<DebtTab>('receivables');
   const [receivableFilters, setReceivableFilters] = useState<{ party?: string; bucket?: ReceivableBucket; search?: string }>({});
   const [payableFilters, setPayableFilters] = useState<{ party?: string; bucket?: PayableBucket; search?: string }>({});
+  const [paying, setPaying] = useState<PayableDetail | null>(null);
+  const [historyFor, setHistoryFor] = useState<PayableDetail | null>(null);
 
   const receivables = useReport(useCallback(() => reportService.receivables().then(res => res.data), []), mounted && allowed);
   const payables = useReport(useCallback(() => reportService.payables().then(res => res.data), []), mounted && allowed);
@@ -104,6 +110,17 @@ export default function FinanceDebtsPage() {
     },
     { title: 'Bucket', dataIndex: 'bucket', key: 'bucket', render: (bucket: string) => <Tag color={['1_30', '31_60', 'GT_60'].includes(bucket) ? 'red' : 'default'}>{payableBucketLabel(bucket)}</Tag> },
     { title: 'Amount', dataIndex: 'amount', key: 'amount', align: 'right', render: (value: number) => money(value) },
+    {
+      title: '',
+      key: 'actions',
+      align: 'right',
+      render: (_, row) => row.payableId === null ? null : (
+        <Space size="small">
+          <Button size="small" onClick={() => setHistoryFor(row)}>History</Button>
+          {canPay && <Button type="primary" size="small" onClick={() => setPaying(row)}>Record payment</Button>}
+        </Space>
+      ),
+    },
   ];
 
   const filterBar = (children: React.ReactNode) => <div className="flex flex-wrap items-center gap-2 mb-3">{children}</div>;
@@ -260,6 +277,20 @@ export default function FinanceDebtsPage() {
           },
         ]}
       />
+      {paying?.payableId != null && (
+        <RecordPaymentModal
+          payable={{ ...paying, payableId: paying.payableId }}
+          onClose={() => setPaying(null)}
+          onRecorded={() => { setPaying(null); payables.reload(); }}
+        />
+      )}
+      {historyFor?.payableId != null && (
+        <PaymentHistoryDrawer
+          payableId={historyFor.payableId}
+          title={`Payments · ${historyFor.supplierName}${historyFor.poCode ? ` · ${historyFor.poCode}` : ''}`}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
     </div>
   );
 }
