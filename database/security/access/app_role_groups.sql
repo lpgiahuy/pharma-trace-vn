@@ -9,6 +9,7 @@ BEGIN;
 --   FACTORY_INTAKE : FACTORY_WAREHOUSE_STAFF + SUPER_ADMIN, for registering factory batches
 --   REPORT_READ    : sales dashboard reports (STORE_MANAGER sees only its own facility)
 --   FINANCE_READ   : finance reports
+--   STOCK_READ     : stock and expiry alerts (STORE_MANAGER sees only its own facility)
 -- FACTORY_WAREHOUSE_STAFF is added per feature, together with the workflows that need it.
 CREATE OR REPLACE FUNCTION public.app_role_group(group_name text) RETURNS text[]
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
@@ -20,6 +21,7 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
     WHEN 'FACTORY_INTAKE' THEN ARRAY['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']
     WHEN 'REPORT_READ' THEN ARRAY['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER', 'ACCOUNTANT', 'FINANCE_MANAGER']
     WHEN 'FINANCE_READ' THEN ARRAY['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'FINANCE_MANAGER']
+    WHEN 'STOCK_READ' THEN ARRAY['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER']
   END
 $$;
 
