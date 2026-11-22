@@ -3,7 +3,7 @@ BEGIN;
 -- Read-only finance reports for the FINANCE_READ group. Days are grouped in Asia/Ho_Chi_Minh.
 -- Receivables: OPEN courier COD receivables plus delivered online orders that are not PAID.
 -- Payables: accounts_payable rows with a remaining balance; rows without a due date get their own bucket.
--- Cashbook: balances follow the payment method filter; the type filter only narrows the entry list and its count.
+-- Cashbook: balances follow the payment method filter; the type and category filters only narrow the entry list and its count.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
     RAISE EXCEPTION 'Install finance reports as a trusted superuser';
@@ -84,7 +84,12 @@ BEGIN
 END $$;
 
 -- One SUMMARY row for the range, then one DAY row per Vietnam day. Every row satisfies opening + income - expense = closing.
-CREATE OR REPLACE FUNCTION public.report_cashbook(p_from date, p_to date, p_payment_method text DEFAULT NULL, p_type text DEFAULT NULL)
+-- The category filter changed the signatures; drop the previous ones so no stale overload stays callable.
+DROP FUNCTION IF EXISTS public.report_cashbook(date, date, text, text);
+DROP FUNCTION IF EXISTS public.report_cashbook_entries(date, date, text, text, integer, integer);
+
+CREATE OR REPLACE FUNCTION public.report_cashbook(p_from date, p_to date, p_payment_method text DEFAULT NULL, p_type text DEFAULT NULL,
+  p_category text DEFAULT NULL)
 RETURNS TABLE (row_type text, day date, opening numeric, income numeric, expense numeric, closing numeric, entry_count bigint)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
 #variable_conflict use_column
@@ -111,7 +116,8 @@ BEGIN
   SELECT 'SUMMARY'::text, NULL::date, b.balance, sum(r.income), sum(r.expense), b.balance + sum(r.income) - sum(r.expense),
     (SELECT count(*) FROM public.cashbook_logs l
       WHERE l.transaction_date >= p_from::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh' AND l.transaction_date < (p_to + 1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'
-        AND (p_payment_method IS NULL OR l.payment_method = p_payment_method) AND (p_type IS NULL OR l.transaction_type = p_type))
+        AND (p_payment_method IS NULL OR l.payment_method = p_payment_method) AND (p_type IS NULL OR l.transaction_type = p_type)
+        AND (p_category IS NULL OR l.category = p_category))
   FROM running r CROSS JOIN start_balance b GROUP BY b.balance
   UNION ALL
   SELECT 'DAY', r.day, r.closing - r.income + r.expense, r.income, r.expense, r.closing, NULL::bigint FROM running r
@@ -120,7 +126,7 @@ END $$;
 
 -- A NULL limit returns every entry (CSV export).
 CREATE OR REPLACE FUNCTION public.report_cashbook_entries(p_from date, p_to date, p_payment_method text DEFAULT NULL, p_type text DEFAULT NULL,
-  p_limit integer DEFAULT NULL, p_offset integer DEFAULT 0)
+  p_limit integer DEFAULT NULL, p_offset integer DEFAULT 0, p_category text DEFAULT NULL)
 RETURNS TABLE (id integer, transaction_code text, transaction_date timestamptz, transaction_type text, category text, amount numeric,
   payment_method text, party_name text, note text, order_id integer, order_code text, po_id integer, po_code text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
@@ -135,12 +141,25 @@ BEGIN
   LEFT JOIN public.purchase_orders po ON po.id = l.po_id
   WHERE l.transaction_date >= p_from::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh' AND l.transaction_date < (p_to + 1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'
     AND (p_payment_method IS NULL OR l.payment_method = p_payment_method) AND (p_type IS NULL OR l.transaction_type = p_type)
+    AND (p_category IS NULL OR l.category = p_category)
   ORDER BY l.transaction_date DESC, l.id DESC
   LIMIT p_limit OFFSET p_offset;
 END $$;
 
+-- Every category used by the cashbook, for the filter list.
+CREATE OR REPLACE FUNCTION public.report_cashbook_categories()
+RETURNS TABLE (category text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+#variable_conflict use_column
+BEGIN
+  PERFORM public.report_finance_access();
+  RETURN QUERY SELECT DISTINCT l.category::text FROM public.cashbook_logs l ORDER BY 1;
+END $$;
+
 REVOKE ALL ON FUNCTION public.report_finance_access(date, date, boolean), public.report_receivables_aging(date), public.report_payables_aging(date),
-  public.report_cashbook(date, date, text, text), public.report_cashbook_entries(date, date, text, text, integer, integer) FROM PUBLIC;
+  public.report_cashbook(date, date, text, text, text), public.report_cashbook_entries(date, date, text, text, integer, integer, text),
+  public.report_cashbook_categories() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.report_receivables_aging(date), public.report_payables_aging(date),
-  public.report_cashbook(date, date, text, text), public.report_cashbook_entries(date, date, text, text, integer, integer) TO app_user;
+  public.report_cashbook(date, date, text, text, text), public.report_cashbook_entries(date, date, text, text, integer, integer, text),
+  public.report_cashbook_categories() TO app_user;
 COMMIT;

@@ -75,7 +75,7 @@ FROM (VALUES (100, 0, '2031-02-05'), (200, 0, '2031-01-31'), (1000, 400, '2031-0
 INSERT INTO public.accounts_payable(supplier_name, total_due_amount) VALUES ('DR-Supplier-A', 12800);
 
 INSERT INTO public.cashbook_logs(transaction_code, transaction_type, category, amount, payment_method, transaction_date, order_id, po_id)
-SELECT 'DR-F-' || code, type, 'TEST', amount, method, at::timestamptz,
+SELECT 'DR-F-' || code, type, CASE WHEN type = 'INCOME' THEN 'DR-SALE' ELSE 'DR-COST' END, amount, method, at::timestamptz,
   CASE WHEN code = '1' THEN (SELECT id FROM public.orders WHERE order_code = 'DR-1') END, CASE WHEN code = '4' THEN :p_po END
 FROM (VALUES
   ('OPEN-IN', 'INCOME', 500000, 'CASH', '2030-12-31 23:30+07'),
@@ -222,10 +222,12 @@ BEGIN
   PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_payables_aging(''2031-01-31'')');
   PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook(''2031-01-01'', ''2031-01-03'')');
   PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook_entries(''2031-01-01'', ''2031-01-03'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook_categories()');
   PERFORM pg_temp.dr_check('Warehouse staff read no cashbook rows', (SELECT count(*) FROM public.cashbook_logs)::text, '0');
   PERFORM pg_temp.dr_as('STORE_MANAGER', 'manager', 'a');
   PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_receivables_aging(''2031-01-31'')');
   PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook(''2031-01-01'', ''2031-01-03'')');
+  PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_cashbook_categories()');
   PERFORM pg_temp.dr_check('Store manager reads no cashbook rows', (SELECT count(*) FROM public.cashbook_logs)::text, '0');
   PERFORM set_config('app.current_user_type', 'customer', true), set_config('app.current_user_role', 'SUPER_ADMIN', true);
   PERFORM pg_temp.dr_expect('42501', 'SELECT * FROM public.report_payables_aging(''2031-01-31'')');
@@ -282,6 +284,21 @@ BEGIN
   PERFORM pg_temp.dr_check('A NULL limit returns every entry matching the filters',
     (SELECT string_agg(transaction_code, ' ' ORDER BY transaction_date DESC, id DESC) FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', NULL, 'INCOME', NULL, 0)),
     'DR-F-3 DR-F-1');
+  PERFORM pg_temp.dr_check('The category filter narrows the entry list',
+    (SELECT string_agg(transaction_code, ' ' ORDER BY transaction_date DESC, id DESC)
+     FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', NULL, NULL, NULL, 0, 'DR-COST')),
+    'DR-F-4 DR-F-2');
+  PERFORM pg_temp.dr_check('Category and payment method combine, and the category reaches the second page',
+    (SELECT string_agg(transaction_code, ' ' ORDER BY transaction_date DESC, id DESC)
+     FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', 'CASH', NULL, 1, 1, 'DR-COST')),
+    'DR-F-2');
+  PERFORM pg_temp.dr_check('The category filter only changes the entry count, not the balances',
+    (SELECT row(income, expense, closing - base, entry_count)::text FROM public.report_cashbook('2031-01-01', '2031-01-03', 'CASH', NULL, 'DR-SALE') WHERE row_type = 'SUMMARY'),
+    '(300000.00,130000.00,550000.00,1)');
+  PERFORM pg_temp.dr_check('An unknown category matches nothing',
+    (SELECT count(*) FROM public.report_cashbook_entries('2031-01-01', '2031-01-03', NULL, NULL, NULL, 0, 'DR-NOPE'))::text, '0');
+  PERFORM pg_temp.dr_check('Finance sees every cashbook category once, sorted',
+    (SELECT string_agg(category, ' ') FROM public.report_cashbook_categories() WHERE category LIKE 'DR-%'), 'DR-COST DR-SALE');
 END $$;
 
 RESET ROLE;
