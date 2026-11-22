@@ -1101,3 +1101,26 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 Both scripts can be re-applied.
+
+## Sales reports
+
+`security/reporting/sales_reports.sql` adds read-only dashboard reports for the `REPORT_READ` group (`SUPER_ADMIN`, `ADMIN`, `STORE_MANAGER`, `ACCOUNTANT`, `FINANCE_MANAGER`). `app_role_groups.sql` also gains `FINANCE_READ` for the finance reports. `STORE_MANAGER` always gets its own facility, whatever `facility_id` is passed; other roles get all facilities when it is NULL.
+
+- `orders.created_at` and `customers.created_at` hold UTC wall-clock time; days and months are grouped in `Asia/Ho_Chi_Minh`.
+- Revenue: `DELIVERED`, `COMPLETED` and `PARTIALLY_RETURNED` orders minus their `CUSTOMER_REFUND` cashbook expenses, by order creation date. Collected cash: cashbook `INCOME` by transaction date (with a facility, only rows linked to that facility's orders).
+- `report_sales_overview(from, to, facility_id)` returns the current and the previous period of the same length: revenue, collected cash, orders, cancelled orders, new customers, first-time buyers and average order value.
+- `report_revenue_series(from, to, 'day'|'month', facility_id)` returns one row per bucket, 0 for empty buckets.
+- `report_order_status(from, to, facility_id)` returns the count and amount per order status.
+- Indexes on `orders(created_at)`, `orders(export_facility_id, created_at)`, `customers(created_at)` and `cashbook_logs(transaction_date)`.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/reporting/sales_reports.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/dashboard_reports_test.sql
+```
+
+All scripts can be re-applied.
