@@ -1102,6 +1102,27 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 
 Both scripts can be re-applied.
 
+## Public trace
+
+`security/quality/public_trace.sql` backs the consumer trace portal and the admin fraud radar. It needs `warehouse_traceability.sql` first. It adds the `box_activations` and `box_code_entries` tables (forced RLS, no direct access for `app_user`) and functions.
+
+- `public_box_trace(uid)` returns the medicine, manufacturer, batch, dates, batch and box status, activation time, number of valid code entries and whether the box is flagged as counterfeit. `public_box_timeline(uid)` returns its distribution events oldest first (`MANUFACTURED`, `RECEIVED`, `TRANSFER_DISPATCHED`, `TRANSFER_RECEIVED`, `PACKED`, `HANDED_OVER`, `DELIVERED`, `CODE_ACTIVATED`) with the warehouse name where one applies, and no employee, order or customer data. Both are callable without a login and are empty for an unknown uid.
+- `record_box_verification(uid, valid, device)` records a secret code entry whose validity the API checked with the QR secret, made from a device (a random id kept by the browser, or the IP address when none is sent). Every entry is kept in `box_code_entries`. The first valid entry activates the box (one `box_activations` row); later valid entries only raise `verify_count`; an invalid entry changes nothing. It returns whether this entry was the first, the activation time, the entry count and whether the box is flagged. Alerts open once while an alert of the same type for the box is unresolved: `CODE_BURST` (`CRITICAL`, flags the box) for 10 valid entries within a minute, `CODE_REUSED` (`WARNING`) for a valid code entered from a second device, and `CODE_GUESSING` (`WARNING`) for 5 wrong entries within 10 minutes. The two warnings are for the administrator and do not flag the box.
+- `record_public_scan(uid, lat, lng, ip, agent)` logs one scan in `qr_scan_logs`. There is no score: two findings flag the box as counterfeit and open a `CRITICAL` alert, impossible travel (the distance from the previous located scan implies more than 1000 km/h, with the elapsed time counting as at least one minute, `IMPOSSIBLE_TRAVEL`) and 10 scans of the box within a minute (`EXCESSIVE_SCANS`). The result is `FLAGGED` while the box is flagged and `VALID` otherwise, and `reasons` lists the findings of this scan. The location is optional but both coordinates come together. The impossible travel alert keeps both locations, the distance, the time and the speed, and the unique open-alert index prevents duplicates. Unknown uids raise `TR_BOX_NOT_FOUND` and write nothing.
+- `box_flagged(uid)` is true while the box has an unresolved `IMPOSSIBLE_TRAVEL`, `EXCESSIVE_SCANS` or `CODE_BURST` alert, so resolving the alert in the warehouse fraud alert screen clears the flag. Because the scan location and the box code come from the caller, anyone can trigger these alerts for a real box; the administrator resolves such an alert to restore the box.
+- `fraud_scan_stats()` returns the scans and flagged scans of the last 24 hours for `SUPER_ADMIN` only. `SUPER_ADMIN` reads the alerts through the existing `fraud_alerts` policy.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/quality/public_trace.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/public_trace_test.sql
+```
+
+Both scripts can be re-applied.
+
 ## Sales reports
 
 `security/reporting/sales_reports.sql` adds read-only dashboard reports for the `REPORT_READ` group (`SUPER_ADMIN`, `ADMIN`, `STORE_MANAGER`, `ACCOUNTANT`, `FINANCE_MANAGER`). `app_role_groups.sql` also gains `FINANCE_READ` for the finance reports. `STORE_MANAGER` always gets its own facility, whatever `facility_id` is passed; other roles get all facilities when it is NULL.
