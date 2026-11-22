@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AuthActor, authActor } from '../common/auth-identity';
 import { FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_READ } from '../common/warehouse-roles';
+import { REPORT_READ } from '../common/report-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
 export type VoucherScope = 'validate' | 'read' | 'manage' | 'available';
@@ -292,6 +293,23 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public' WHERE r.rolname = current_user
       `;
       if (!state?.ready) throw new ServiceUnavailableException('Disposal RLS setup is not ready');
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
+      return run(tx);
+    });
+  }
+
+  /** Dashboard reports through the read-only report_* functions; STORE_MANAGER is scoped to its facility in SQL. */
+  async withReport<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const actor = authActor(identity);
+    if (actor.type !== 'employee' || !(REPORT_READ as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid report scope');
+    return this.$transaction(async tx => {
+      const [role] = await tx.$queryRaw<{ rolsuper: boolean; rolbypassrls: boolean }[]>`
+        SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user
+      `;
+      if (!role || role.rolsuper || role.rolbypassrls) throw new ServiceUnavailableException('Report access requires an RLS-enabled database role');
       await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
