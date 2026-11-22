@@ -75,7 +75,7 @@ export class AgingQueryDto {
   asOf?: string;
 }
 
-const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'DEBIT_CARD', 'E_WALLET'] as const;
+export const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'DEBIT_CARD', 'E_WALLET'] as const;
 const CASHBOOK_TYPES = ['INCOME', 'EXPENSE'] as const;
 
 export class CashbookExportQueryDto extends OmitType(ReportRangeDto, ['facilityId'] as const) {

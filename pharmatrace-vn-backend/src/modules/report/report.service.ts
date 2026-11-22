@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   AgingQueryDto, CashbookExportQueryDto, CashbookQueryDto, ExpiryAlertQueryDto, ReportRangeDto, RevenueSeriesDto, StockAlertQueryDto,
 } from './dto/report-query.dto';
+import { RecordSupplierPaymentDto } from './dto/supplier-payment.dto';
 
 type Granularity = 'day' | 'month';
 type DbNumber = Prisma.Decimal | bigint | number;
@@ -46,6 +47,9 @@ interface CashbookEntryRow {
   po_id: number | null; po_code: string | null;
 }
 interface CategoryRow { category: string }
+interface PayablePaymentRow {
+  id: number; amount: DbNumber; payment_method: string; reference: string; paid_at: Date; paid_by_name: string; cashbook_code: string;
+}
 type CsvCell = string | number | null;
 
 const toNumber = (value: DbNumber): number => Number(value);
@@ -278,6 +282,27 @@ export class ReportService {
       SELECT id, transaction_code, transaction_date, transaction_type, category, amount, payment_method, party_name, note, order_id, order_code, po_id, po_code
       FROM public.report_cashbook_entries(${from}::date, ${to}::date, ${query.paymentMethod ?? null}::text, ${query.type ?? null}::text,
         ${limit}::integer, ${offset}::integer, ${query.category ?? null}::text)`;
+  }
+
+  async recordSupplierPayment(user: CurrentUserPayload, payableId: number, dto: RecordSupplierPaymentDto) {
+    const [row] = await workflowDatabase(this.prisma.withReport(authActor(user), tx => tx.$queryRaw<{ id: number }[]>`
+      SELECT public.record_supplier_payment(${payableId}::integer, ${dto.amount}::numeric, ${dto.paymentMethod}::text, ${dto.reference}::text) AS id`));
+    return { paymentId: row.id };
+  }
+
+  async payablePayments(user: CurrentUserPayload, payableId: number) {
+    const rows = await workflowDatabase(this.prisma.withReport(authActor(user), tx => tx.$queryRaw<PayablePaymentRow[]>`
+      SELECT id, amount, payment_method, reference, paid_at, paid_by_name, cashbook_code
+      FROM public.report_payable_payments(${payableId}::integer)`));
+    return rows.map(row => ({
+      id: row.id,
+      amount: toNumber(row.amount),
+      paymentMethod: row.payment_method,
+      reference: row.reference,
+      paidAt: row.paid_at.toISOString(),
+      paidBy: row.paid_by_name,
+      cashbookCode: row.cashbook_code,
+    }));
   }
 
   async setDefaultThreshold(user: CurrentUserPayload, quantity: number) {
