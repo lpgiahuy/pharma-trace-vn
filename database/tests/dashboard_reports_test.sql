@@ -73,6 +73,7 @@ SELECT 'DR-Supplier-A', CASE WHEN due = '2031-02-05' AND total = 100 THEN :p_po 
 FROM (VALUES (100, 0, '2031-02-05'), (200, 0, '2031-01-31'), (1000, 400, '2031-02-05'), (400, 0, '2031-01-30'), (800, 0, '2031-01-01'),
   (1600, 0, '2030-12-31'), (3200, 0, '2030-12-02'), (6400, 0, '2030-12-01'), (500, 500, '2031-01-01')) v(total, paid, due);
 INSERT INTO public.accounts_payable(supplier_name, total_due_amount) VALUES ('DR-Supplier-A', 12800);
+UPDATE public.accounts_payable SET due_date = NULL WHERE total_due_amount = 12800 AND supplier_name = 'DR-Supplier-A';
 
 INSERT INTO public.cashbook_logs(transaction_code, transaction_type, category, amount, payment_method, transaction_date, order_id, po_id)
 SELECT 'DR-F-' || code, type, CASE WHEN type = 'INCOME' THEN 'DR-SALE' ELSE 'DR-COST' END, amount, method, at::timestamptz,

@@ -127,5 +127,6 @@
 \i /docker-entrypoint-initdb.d/security/reporting/stock_alerts.sql
 \i /docker-entrypoint-initdb.d/security/reporting/report_access.sql
 \i /docker-entrypoint-initdb.d/security/reporting/finance_reports.sql
+\i /docker-entrypoint-initdb.d/security/reporting/supplier_payments.sql
 
 \unset bootstrap_current_functions

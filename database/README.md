@@ -1171,3 +1171,22 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 All scripts can be re-applied.
+
+## Supplier payments
+
+`security/reporting/supplier_payments.sql` lets finance pay down supplier payables.
+
+- `system_settings.default_supplier_payment_term_days` (default 30). A trigger gives every new `accounts_payable` row without a `due_date` the goods receipt date plus this term (the row's `created_at` when there is no receipt). The script also fills the existing rows that have no due date, once; re-running it changes nothing more. Change the term with a plain `UPDATE public.system_settings`.
+- `supplier_payments` keeps one row per payment (amount, method, reference, cashbook entry, employee). `(payment_method, reference)` is unique. The table is not readable by `app_user`; the history comes from `report_payable_payments(ap_id)` for `FINANCE_READ`.
+- `record_supplier_payment(ap_id, amount, payment_method, reference)` is for `SUPER_ADMIN` and `FINANCE_MANAGER` only. It locks the payable, rejects an amount above `remaining_balance` and a reference already used with the same method, raises `paid_amount`, sets `PARTIALLY_PAID` or `PAID`, and writes one `EXPENSE` cashbook entry (`SUPPLIER_PAYMENT`, party type `SUPPLIER`, with the purchase order) in the same transaction. It returns the payment id.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/reporting/supplier_payments.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/supplier_payments_test.sql
+```
+
+All scripts can be re-applied.
