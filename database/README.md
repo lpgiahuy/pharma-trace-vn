@@ -1145,3 +1145,26 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 All scripts can be re-applied.
+
+## Finance reports
+
+`security/reporting/report_access.sql` enables RLS on `cashbook_logs` with one select policy for the `FINANCE_READ` group (`SUPER_ADMIN`, `ADMIN`, `ACCOUNTANT`, `FINANCE_MANAGER`). `app_user` can no longer insert, update or delete cashbook rows directly. Every cashbook writer (COD reconciliation, online payment approval, payment exceptions, cancellation, return and approved refunds) is a `SECURITY DEFINER` function owned by a superuser and is unaffected; the table is deliberately not `FORCE`d.
+
+`security/reporting/finance_reports.sql` adds read-only reports for `FINANCE_READ`. Days are grouped in `Asia/Ho_Chi_Minh`. Each function returns `SUMMARY` rows (per party and bucket) and `DETAIL` rows, except the cashbook ones.
+
+- `report_receivables_aging(as_of)`: `OPEN` courier COD receivables (aged from `courier_receivables.created_at`, grouped by courier) plus `DELIVERED` orders paid by `BANK_TRANSFER` or `E_WALLET` whose `payment_status` is not `PAID` (grouped as `Online orders`, aged from the delivery date, falling back to the order date). Buckets: `0_7`, `8_15`, `16_30`, `GT_30` days.
+- `report_payables_aging(as_of)`: `accounts_payable` rows with a remaining balance, per supplier. Buckets: `NOT_DUE` (due today or later), `1_30`, `31_60`, `GT_60` days overdue, and `NO_DUE_DATE`.
+- `report_cashbook(from, to, payment_method, type)`: one `SUMMARY` row for the range and one `DAY` row per day, each with `opening + income - expense = closing`. `payment_method` filters the balances; `type` only changes the `entry_count` of the summary.
+- `report_cashbook_entries(from, to, payment_method, type, limit, offset)`: entries newest first with `order_code` and `po_code`. A NULL limit returns every entry (CSV export).
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/reporting/report_access.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/reporting/finance_reports.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/dashboard_reports_test.sql
+```
+
+All scripts can be re-applied.

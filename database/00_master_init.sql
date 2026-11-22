@@ -125,5 +125,7 @@
 \i /docker-entrypoint-initdb.d/security/quality/warehouse_traceability.sql
 \i /docker-entrypoint-initdb.d/security/reporting/sales_reports.sql
 \i /docker-entrypoint-initdb.d/security/reporting/stock_alerts.sql
+\i /docker-entrypoint-initdb.d/security/reporting/report_access.sql
+\i /docker-entrypoint-initdb.d/security/reporting/finance_reports.sql
 
 \unset bootstrap_current_functions
