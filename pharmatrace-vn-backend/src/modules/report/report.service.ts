@@ -56,7 +56,7 @@ const csvCell = (value: CsvCell): string => {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
-/** UTF-8 BOM so Excel reads Vietnamese text; text cells that start like a formula are neutralised. */
+/** UTF-8 BOM so Excel reads non-ASCII text correctly; text cells that start like a formula are neutralised. */
 export const toCsv = (rows: CsvCell[][]): string => '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 const vietnamTime = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'medium' });

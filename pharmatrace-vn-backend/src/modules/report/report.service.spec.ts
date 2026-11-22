@@ -172,13 +172,13 @@ describe('ReportService', () => {
     const { tx, service } = setup();
     tx.$queryRaw.mockResolvedValueOnce([{
       id: 1, transaction_code: 'REF-1', transaction_date: new Date('2026-10-31T17:30:00Z'), transaction_type: 'EXPENSE', category: 'CUSTOMER_REFUND', amount: decimal('50000.50'),
-      payment_method: 'BANK_TRANSFER', party_name: 'Nguyễn, "Văn" A', note: 'line1\nline2', order_id: null, order_code: null, po_id: null, po_code: null,
+      payment_method: 'BANK_TRANSFER', party_name: 'Smith, "Jo" A', note: 'line1\nline2', order_id: null, order_code: null, po_id: null, po_code: null,
     }]);
     const { filename, csv } = await service.cashbookCsv(manager, { from: '2026-11-01', to: '2026-11-30' });
     expect(filename).toBe('cashbook_2026-11-01_2026-11-30.csv');
     expect(csv).toBe(
       '\uFEFFDate,Code,Type,Category,Payment method,Party,Amount,Order,Purchase order,Note\r\n'
-      + '2026-11-01 00:30:00,REF-1,EXPENSE,CUSTOMER_REFUND,BANK_TRANSFER,"Nguyễn, ""Văn"" A",50000.5,,,"line1\nline2"\r\n',
+      + '2026-11-01 00:30:00,REF-1,EXPENSE,CUSTOMER_REFUND,BANK_TRANSFER,"Smith, ""Jo"" A",50000.5,,,"line1\nline2"\r\n',
     );
     expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['2026-11-01', '2026-11-30', null, null, null, 0, null]);
   });
