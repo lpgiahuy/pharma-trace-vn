@@ -1102,6 +1102,25 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 
 Both scripts can be re-applied.
 
+## Public trace
+
+`security/quality/public_trace.sql` backs the consumer trace portal and the admin fraud radar. It needs `warehouse_traceability.sql` first. It adds functions only; no table changes.
+
+- `public_box_trace(uid)` returns the medicine, manufacturer, batch, dates and batch and box status of one box. `public_box_timeline(uid)` returns its manufacture, goods receipt and transfer receipt events with the warehouse name, and no employee or order data. Both are callable without a login and are empty for an unknown uid.
+- `record_public_scan(uid, lat, lng, ip, agent)` logs one scan in `qr_scan_logs` with the result `VALID` or `SUSPICIOUS`. The location is optional but both coordinates come together. It opens a `CRITICAL` `IMPOSSIBLE_TRAVEL` alert when the distance from the previous located scan implies more than 900 km/h (the elapsed time counts as at least one minute), and a `WARNING` `EXCESSIVE_SCANS` alert when the box was already scanned 5 times in the last hour. The alert keeps both locations, the distance, the time and the speed, and the unique open-alert index prevents duplicates. Unknown uids raise `TR_BOX_NOT_FOUND` and write nothing.
+- `fraud_scan_stats()` returns the scans and suspicious scans of the last 24 hours for `SUPER_ADMIN` only. `SUPER_ADMIN` reads the alerts through the existing `fraud_alerts` policy.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/quality/public_trace.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/public_trace_test.sql
+```
+
+Both scripts can be re-applied.
+
 ## Sales reports
 
 `security/reporting/sales_reports.sql` adds read-only dashboard reports for the `REPORT_READ` group (`SUPER_ADMIN`, `ADMIN`, `STORE_MANAGER`, `ACCOUNTANT`, `FINANCE_MANAGER`). `app_role_groups.sql` also gains `FINANCE_READ` for the finance reports. `STORE_MANAGER` always gets its own facility, whatever `facility_id` is passed; other roles get all facilities when it is NULL.
