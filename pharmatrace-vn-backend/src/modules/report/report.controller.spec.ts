@@ -2,13 +2,16 @@ import { ArgumentMetadata, ExecutionContext, ValidationPipe } from '@nestjs/comm
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import {
-  ExpiryAlertQueryDto, InventoryThresholdDto, ReportRangeDto, RevenueSeriesDto, StockThresholdDto,
+  AgingQueryDto, CashbookExportQueryDto, CashbookQueryDto, ExpiryAlertQueryDto, InventoryThresholdDto, ReportRangeDto, RevenueSeriesDto,
+  StockThresholdDto,
 } from './dto/report-query.dto';
 import { ReportController } from './report.controller';
 
 const handlers = ['overview', 'revenue', 'orderStatus'] as const;
 const stockReadHandlers = ['stockAlerts', 'expiryAlerts'] as const;
-type Handler = (typeof handlers)[number] | (typeof stockReadHandlers)[number] | 'setDefaultThreshold' | 'setInventoryThreshold';
+const financeHandlers = ['receivables', 'payables', 'cashbook', 'cashbookExport'] as const;
+type Handler = (typeof handlers)[number] | (typeof stockReadHandlers)[number] | (typeof financeHandlers)[number]
+  | 'setDefaultThreshold' | 'setInventoryThreshold';
 
 function context(handler: Handler, user: { role: string; type: string }): ExecutionContext {
   return {
@@ -58,6 +61,17 @@ describe('ReportController stock roles', () => {
   });
 });
 
+describe('ReportController finance roles', () => {
+  const guard = new RolesGuard(new Reflector());
+  const allowed = (handler: Handler, role: string, type = 'employee') => guard.canActivate(context(handler, { role, type }));
+
+  it.each(financeHandlers)('%s allows admins and finance roles only', handler => {
+    for (const role of ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'FINANCE_MANAGER']) expect(allowed(handler, role)).toBe(true);
+    for (const role of ['STORE_MANAGER', 'WAREHOUSE_STAFF', 'PHARMACIST']) expect(allowed(handler, role)).toBe(false);
+    expect(allowed(handler, 'CUSTOMER', 'customer')).toBe(false);
+  });
+});
+
 describe('Report query DTOs', () => {
   it('accepts a range, facility and granularity', async () => {
     await expect(validate(RevenueSeriesDto, { from: '2026-11-01', to: '2026-11-30', facilityId: '3', granularity: 'month' }))
@@ -93,5 +107,30 @@ describe('Report query DTOs', () => {
     await expect(body(InventoryThresholdDto, { quantity: 12 })).resolves.toEqual({ quantity: 12 });
     await expect(body(InventoryThresholdDto, {})).rejects.toBeDefined();
     await expect(body(InventoryThresholdDto, { quantity: 1.5 })).rejects.toBeDefined();
+  });
+});
+
+describe('Finance query DTOs', () => {
+  it('accepts an optional asOf day only', async () => {
+    await expect(validate(AgingQueryDto, {})).resolves.toEqual({});
+    await expect(validate(AgingQueryDto, { asOf: '2026-11-30' })).resolves.toEqual({ asOf: '2026-11-30' });
+    await expect(validate(AgingQueryDto, { asOf: '2026-02-30' })).rejects.toBeDefined();
+    await expect(validate(AgingQueryDto, { from: '2026-11-01' })).rejects.toBeDefined();
+  });
+
+  it('accepts cashbook filters and paging', async () => {
+    await expect(validate(CashbookQueryDto, { from: '2026-11-01', to: '2026-11-30', paymentMethod: 'CASH', type: 'INCOME', page: '2', pageSize: '50' }))
+      .resolves.toEqual({ from: '2026-11-01', to: '2026-11-30', paymentMethod: 'CASH', type: 'INCOME', page: 2, pageSize: 50 });
+  });
+
+  it.each([
+    [CashbookQueryDto, { paymentMethod: 'CHEQUE' }],
+    [CashbookQueryDto, { type: 'TRANSFER' }],
+    [CashbookQueryDto, { page: '0' }],
+    [CashbookQueryDto, { pageSize: '101' }],
+    [CashbookQueryDto, { facilityId: '3' }],
+    [CashbookExportQueryDto, { page: '1' }],
+  ])('rejects %j on %p', async (metatype, query) => {
+    await expect(validate(metatype, query)).rejects.toBeDefined();
   });
 });
