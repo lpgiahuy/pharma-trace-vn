@@ -1124,3 +1124,24 @@ docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-
 ```
 
 All scripts can be re-applied.
+
+## Stock alerts
+
+`security/reporting/stock_alerts.sql` adds stock and expiry alerts for the `STOCK_READ` group (`SUPER_ADMIN`, `ADMIN`, `STORE_MANAGER`, added to `app_role_groups.sql`). `STORE_MANAGER` always gets its own facility, whatever `facility_id` is passed.
+
+- Adds `inventories.min_stock_quantity` (NULL uses the default) and `system_settings.default_min_stock_quantity`.
+- `report_stock_alerts(facility_id)` lists inventories with `available = stock_quantity - reserved_quantity` at or below the threshold: `OUT_OF_STOCK` when available is 0 or less, otherwise `LOW_STOCK`.
+- `report_expiry_alerts(facility_id, within_days)` groups boxes physically at a facility (`IN_STOCK`, `MANUFACTURED`, `RESERVED`) by batch and facility. `days_left` is counted from today in `Asia/Ho_Chi_Minh`; levels are `EXPIRED`, `LE_30`, `D31_90` and `D91_180`. Expired batches are always listed. `below_min_shelf_life` uses `min_remaining_shelf_life_days` with `default_min_shelf_life_days` as fallback.
+- `set_default_min_stock_quantity(quantity)` is for `SUPER_ADMIN`. `set_inventory_min_stock_quantity(inventory_id, quantity)` is for `SUPER_ADMIN` and for a `STORE_MANAGER` on its own facility; a NULL quantity restores the default.
+
+### Applying to an existing database
+
+Back up the database first. Run as the database owner:
+
+```powershell
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/security/reporting/stock_alerts.sql
+docker exec phartrace-vn-db psql -X -v ON_ERROR_STOP=1 -U postgres -d phartrace-vn-db -f /docker-entrypoint-initdb.d/tests/dashboard_reports_test.sql
+```
+
+All scripts can be re-applied.

@@ -49,3 +49,45 @@ export interface OrderStatusReport {
   to: string;
   statuses: OrderStatusRow[];
 }
+
+export type StockLevel = 'OUT_OF_STOCK' | 'LOW_STOCK';
+export type ExpiryLevel = 'EXPIRED' | 'LE_30' | 'D31_90' | 'D91_180';
+
+export interface StockAlert {
+  inventoryId: number;
+  facilityId: number;
+  facilityName: string;
+  medicineId: number;
+  medicineName: string;
+  variantId: number;
+  unitName: string;
+  stockQuantity: number;
+  reservedQuantity: number;
+  available: number;
+  minStockQuantity: number | null;
+  threshold: number;
+  level: StockLevel;
+}
+
+export interface StockAlertReport {
+  defaultThreshold: number;
+  items: StockAlert[];
+}
+
+export interface ExpiryAlert {
+  batchId: number;
+  batchNumber: string;
+  medicineId: number;
+  medicineName: string;
+  facilityId: number;
+  facilityName: string;
+  boxes: number;
+  expiryDate: string;
+  daysLeft: number;
+  level: ExpiryLevel;
+  belowMinShelfLife: boolean;
+}
+
+export interface ExpiryAlertReport {
+  items: ExpiryAlert[];
+}

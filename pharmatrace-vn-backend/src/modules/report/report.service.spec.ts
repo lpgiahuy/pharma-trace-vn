@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReportService, reportRange } from './report.service';
@@ -71,5 +71,51 @@ describe('ReportService', () => {
     const { tx, service } = setup();
     tx.$queryRaw.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('Raw query failed', { code: 'P2010', clientVersion: 'test', meta: { code: '42501' } }));
     await expect(service.orderStatus(manager, {})).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('maps stock alerts and the default threshold', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{
+      inventory_id: 7, facility_id: 2, facility_name: 'Store 2', medicine_id: 5, medicine_name: 'Paracetamol', variant_id: 9,
+      unit_name: 'Box', stock_quantity: 8, reserved_quantity: 5, available: 3, min_stock_quantity: null, threshold: 4, level: 'LOW_STOCK',
+    }]).mockResolvedValueOnce([{ value: 4 }]);
+    const data = await service.stockAlerts(manager, { facilityId: 9 });
+    expect(data.defaultThreshold).toBe(4);
+    expect(data.items).toEqual([{
+      inventoryId: 7, facilityId: 2, facilityName: 'Store 2', medicineId: 5, medicineName: 'Paracetamol', variantId: 9, unitName: 'Box',
+      stockQuantity: 8, reservedQuantity: 5, available: 3, minStockQuantity: null, threshold: 4, level: 'LOW_STOCK',
+    }]);
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([9]);
+  });
+
+  it('maps expiry alerts and defaults to 180 days', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{
+      batch_id: 3, batch_number: 'B-1', medicine_id: 5, medicine_name: 'Paracetamol', facility_id: 2, facility_name: 'Store 2', boxes: 12n,
+      expiry_date: '2026-11-23', days_left: 1, level: 'LE_30', below_min_shelf_life: true,
+    }]);
+    await expect(service.expiryAlerts(manager, {})).resolves.toEqual({
+      items: [{
+        batchId: 3, batchNumber: 'B-1', medicineId: 5, medicineName: 'Paracetamol', facilityId: 2, facilityName: 'Store 2', boxes: 12,
+        expiryDate: '2026-11-23', daysLeft: 1, level: 'LE_30', belowMinShelfLife: true,
+      }],
+    });
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([null, 180]);
+  });
+
+  it('passes thresholds to the database functions', async () => {
+    const { tx, service } = setup();
+    const executeRaw = jest.fn().mockResolvedValue(0);
+    Object.assign(tx, { $executeRaw: executeRaw });
+    await service.setDefaultThreshold(manager, 6);
+    await service.setInventoryThreshold(manager, 7, null);
+    expect(executeRaw.mock.calls[0].slice(1)).toEqual([6]);
+    expect(executeRaw.mock.calls[1].slice(1)).toEqual([7, null]);
+  });
+
+  it('turns an unknown inventory into 404', async () => {
+    const { tx, service } = setup();
+    Object.assign(tx, { $executeRaw: jest.fn().mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Raw query failed', { code: 'P2010', clientVersion: 'test', meta: { code: 'P0002' } })) });
+    await expect(service.setInventoryThreshold(manager, 99, 1)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

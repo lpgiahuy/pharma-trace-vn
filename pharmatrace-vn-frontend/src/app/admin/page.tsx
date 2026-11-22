@@ -14,8 +14,10 @@ import { KpiCard } from '@/components/dashboard/KpiCard';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { OrderStatusDonut } from '@/components/dashboard/OrderStatusDonut';
 import { NewCustomersChart } from '@/components/dashboard/NewCustomersChart';
+import { StockAlertsPanel } from '@/components/dashboard/StockAlertsPanel';
 
 const REPORT_ROLES = ['SUPERADMIN', 'ADMIN', 'STOREMANAGER', 'ACCOUNTANT', 'FINANCEMANAGER'];
+const STOCK_ROLES = ['SUPERADMIN', 'ADMIN', 'STOREMANAGER'];
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -130,7 +132,13 @@ export default function AdminDashboardPage() {
               error={series.error}
               onRetry={series.reload}
             />
-            {/* PR 2: StockAlertsPanel */}
+            {STOCK_ROLES.includes(role) && (
+              <StockAlertsPanel
+                facilityId={facilityId}
+                canEditInventory={role === 'SUPERADMIN' || role === 'STOREMANAGER'}
+                canEditDefault={role === 'SUPERADMIN'}
+              />
+            )}
           </div>
 
           {/* PR 3: finance summary */}

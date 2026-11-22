@@ -4,7 +4,7 @@ import { authActor } from '../../common/auth-identity';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { workflowDatabase } from '../../common/workflow-database';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ReportRangeDto, RevenueSeriesDto } from './dto/report-query.dto';
+import { ExpiryAlertQueryDto, ReportRangeDto, RevenueSeriesDto, StockAlertQueryDto } from './dto/report-query.dto';
 
 type Granularity = 'day' | 'month';
 type DbNumber = Prisma.Decimal | bigint | number;
@@ -17,6 +17,15 @@ interface OverviewRow {
 }
 interface SeriesRow { bucket: string; revenue: DbNumber; refunds: DbNumber; orders: DbNumber; new_customers: DbNumber }
 interface StatusRow { status: string; count: DbNumber; amount: DbNumber }
+interface StockAlertRow {
+  inventory_id: number; facility_id: number; facility_name: string; medicine_id: number; medicine_name: string; variant_id: number;
+  unit_name: string; stock_quantity: number; reserved_quantity: number; available: number; min_stock_quantity: number | null;
+  threshold: number; level: 'OUT_OF_STOCK' | 'LOW_STOCK';
+}
+interface ExpiryAlertRow {
+  batch_id: number; batch_number: string; medicine_id: number; medicine_name: string; facility_id: number; facility_name: string;
+  boxes: DbNumber; expiry_date: string; days_left: number; level: 'EXPIRED' | 'LE_30' | 'D31_90' | 'D91_180'; below_min_shelf_life: boolean;
+}
 
 const toNumber = (value: DbNumber): number => Number(value);
 
@@ -82,5 +91,65 @@ export class ReportService {
     const rows = await workflowDatabase(this.prisma.withReport(authActor(user), tx => tx.$queryRaw<StatusRow[]>`
       SELECT status, count, amount FROM public.report_order_status(${from}::date, ${to}::date, ${query.facilityId ?? null}::integer)`));
     return { from, to, statuses: rows.map(row => ({ status: row.status, count: toNumber(row.count), amount: toNumber(row.amount) })) };
+  }
+
+  async stockAlerts(user: CurrentUserPayload, query: StockAlertQueryDto) {
+    const { rows, defaultThreshold } = await workflowDatabase(this.prisma.withReport(authActor(user), async tx => ({
+      rows: await tx.$queryRaw<StockAlertRow[]>`
+        SELECT inventory_id, facility_id, facility_name, medicine_id, medicine_name, variant_id, unit_name, stock_quantity,
+          reserved_quantity, available, min_stock_quantity, threshold, level
+        FROM public.report_stock_alerts(${query.facilityId ?? null}::integer)`,
+      defaultThreshold: (await tx.$queryRaw<{ value: number }[]>`SELECT public.default_min_stock_quantity() AS value`)[0].value,
+    })));
+    return {
+      defaultThreshold,
+      items: rows.map(row => ({
+        inventoryId: row.inventory_id,
+        facilityId: row.facility_id,
+        facilityName: row.facility_name,
+        medicineId: row.medicine_id,
+        medicineName: row.medicine_name,
+        variantId: row.variant_id,
+        unitName: row.unit_name,
+        stockQuantity: row.stock_quantity,
+        reservedQuantity: row.reserved_quantity,
+        available: row.available,
+        minStockQuantity: row.min_stock_quantity,
+        threshold: row.threshold,
+        level: row.level,
+      })),
+    };
+  }
+
+  async expiryAlerts(user: CurrentUserPayload, query: ExpiryAlertQueryDto) {
+    const rows = await workflowDatabase(this.prisma.withReport(authActor(user), tx => tx.$queryRaw<ExpiryAlertRow[]>`
+      SELECT batch_id, batch_number, medicine_id, medicine_name, facility_id, facility_name, boxes, expiry_date::text AS expiry_date,
+        days_left, level, below_min_shelf_life
+      FROM public.report_expiry_alerts(${query.facilityId ?? null}::integer, ${query.withinDays ?? 180}::integer)`));
+    return {
+      items: rows.map(row => ({
+        batchId: row.batch_id,
+        batchNumber: row.batch_number,
+        medicineId: row.medicine_id,
+        medicineName: row.medicine_name,
+        facilityId: row.facility_id,
+        facilityName: row.facility_name,
+        boxes: toNumber(row.boxes),
+        expiryDate: row.expiry_date,
+        daysLeft: row.days_left,
+        level: row.level,
+        belowMinShelfLife: row.below_min_shelf_life,
+      })),
+    };
+  }
+
+  async setDefaultThreshold(user: CurrentUserPayload, quantity: number) {
+    await workflowDatabase(this.prisma.withReport(authActor(user), tx =>
+      tx.$executeRaw`SELECT public.set_default_min_stock_quantity(${quantity}::integer)`));
+  }
+
+  async setInventoryThreshold(user: CurrentUserPayload, inventoryId: number, quantity: number | null) {
+    await workflowDatabase(this.prisma.withReport(authActor(user), tx =>
+      tx.$executeRaw`SELECT public.set_inventory_min_stock_quantity(${inventoryId}::integer, ${quantity}::integer)`));
   }
 }
