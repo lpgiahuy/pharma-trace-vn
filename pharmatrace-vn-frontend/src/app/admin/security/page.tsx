@@ -45,7 +45,7 @@ export default function FraudRadarPage() {
       <h1 className="text-xl font-semibold text-slate-900">Fraud radar</h1>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4"><Statistic title="Scans (24h)" value={report?.scans24h ?? 0} /></div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4"><Statistic title="Suspicious scans (24h)" value={report?.suspicious24h ?? 0} /></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4"><Statistic title="Flagged scans (24h)" value={report?.suspicious24h ?? 0} /></div>
         <div className="rounded-lg border border-slate-200 bg-white p-4"><Statistic title="Open alerts" value={report?.openAlerts ?? 0} /></div>
         <div className="rounded-lg border border-slate-200 bg-white p-4"><Statistic title="Critical alerts" value={report?.criticalAlerts ?? 0} styles={{ content: { color: '#ed1c24' } }} /></div>
       </div>
