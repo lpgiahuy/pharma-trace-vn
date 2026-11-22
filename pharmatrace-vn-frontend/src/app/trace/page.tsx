@@ -1,7 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, App, Button, Descriptions, Input, Timeline } from 'antd';
 import { Navbar } from '@/components/common/Navbar';
 import { traceService, type ScanLocation, type ScanOutcome, type TraceHistory } from '@/services/trace.service';
@@ -22,14 +21,13 @@ function currentLocation(): Promise<ScanLocation | undefined> {
 }
 
 function TraceLookup() {
-  const params = useSearchParams();
   const { message } = App.useApp();
-  const [uid, setUid] = useState(params.get('uid') ?? '');
-  const [code, setCode] = useState(params.get('code') ?? '');
+  const [uid, setUid] = useState('');
+  const [code, setCode] = useState('');
   const [history, setHistory] = useState<TraceHistory>();
   const [codeValid, setCodeValid] = useState<boolean>();
   const [scan, setScan] = useState<ScanOutcome>();
-  const [busy, setBusy] = useState(params.has('uid'));
+  const [busy, setBusy] = useState(false);
 
   const lookup = useCallback((boxUid: string, secret: string) => traceService.history(boxUid)
     .then(async res => {
@@ -45,9 +43,12 @@ function TraceLookup() {
     .finally(() => setBusy(false)), [message]);
 
   useEffect(() => {
-    const queryUid = params.get('uid');
-    if (queryUid) void lookup(queryUid, params.get('code') ?? '');
-  }, [params, lookup]);
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const scannedUid = fragment.get('uid');
+    if (!scannedUid) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    void lookup(scannedUid, fragment.get('code') ?? '');
+  }, [lookup]);
 
   const submit = () => {
     setBusy(true);
@@ -104,9 +105,7 @@ export default function TracePage() {
       <Navbar />
       <main className="mx-auto max-w-2xl space-y-4 px-4 py-10">
         <h1 className="text-2xl font-bold text-gray-900">Trace a medicine</h1>
-        <Suspense>
-          <TraceLookup />
-        </Suspense>
+        <TraceLookup />
       </main>
     </div>
   );
