@@ -72,7 +72,7 @@ export default function AdminLoginPage() {
 
       const userName = result?.user?.fullName || result?.user?.full_name || 'Manager';
       message.success(`Welcome ${userName}!`);
-      router.push(['ACCOUNTANT', 'FINANCE_MANAGER'].includes(userRole || '') ? '/admin/orders' : '/admin');
+      router.push('/admin');
     } catch (err: any) {
       if (err?.code === 'USE_WAREHOUSE_PORTAL') {
         setWarehouseEmail(data.email);
