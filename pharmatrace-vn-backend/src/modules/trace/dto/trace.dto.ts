@@ -6,6 +6,9 @@ export class VerifyBoxDto {
 
   @ApiProperty({ description: 'Secret code printed with the QR code' })
   @IsString() @MinLength(1) @MaxLength(128) code: string;
+
+  @ApiPropertyOptional({ description: 'Random id the browser keeps, used to tell whether a code is entered from several devices' })
+  @IsOptional() @IsUUID() deviceId?: string;
 }
 
 export class ScanBoxDto {

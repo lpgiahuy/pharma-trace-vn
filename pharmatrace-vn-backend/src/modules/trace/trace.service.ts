@@ -13,11 +13,14 @@ export interface TraceBox {
   expiryDate: Date;
   batchStatus: string;
   boxStatus: string;
+  activatedAt: Date | null;
+  verifyCount: number;
+  flagged: boolean;
 }
 
 export interface TraceEvent {
   occurredAt: Date;
-  eventType: 'MANUFACTURED' | 'RECEIVED' | 'TRANSFER_RECEIVED';
+  eventType: 'MANUFACTURED' | 'RECEIVED' | 'TRANSFER_DISPATCHED' | 'TRANSFER_RECEIVED' | 'PACKED' | 'HANDED_OVER' | 'DELIVERED' | 'CODE_ACTIVATED';
   facilityName: string | null;
 }
 
@@ -28,12 +31,14 @@ export interface TraceHistory {
 
 export interface VerifyResult {
   uid: string;
-  valid: boolean;
+  status: 'FIRST_ACTIVATION' | 'ALREADY_ACTIVATED' | 'INVALID_CODE';
+  activatedAt: Date | null;
+  verifyCount: number;
+  flagged: boolean;
 }
 
 export interface ScanOutcome {
-  scanResult: 'VALID' | 'SUSPICIOUS';
-  riskScore: number;
+  scanResult: 'VALID' | 'FLAGGED';
   reasons: ('IMPOSSIBLE_TRAVEL' | 'EXCESSIVE_SCANS')[];
 }
 
@@ -51,14 +56,19 @@ export class TraceService {
     return { box, timeline };
   }
 
-  async verify(dto: VerifyBoxDto): Promise<VerifyResult> {
+  async verify(dto: VerifyBoxDto, ip: string): Promise<VerifyResult> {
     const box = await this.findBox(dto.uid);
-    return { uid: box.uid, valid: CryptoUtil.verifyBoxSignature(box.uid, box.batchNumber, dto.code.toLowerCase()) };
+    const valid = CryptoUtil.verifyBoxSignature(box.uid, box.batchNumber, dto.code.toLowerCase());
+    const [entry] = await this.prisma.$queryRaw<{ firstActivation: boolean; activatedAt: Date | null; verifyCount: number; flagged: boolean }[]>`
+      SELECT first_activation AS "firstActivation", activated_at AS "activatedAt", verify_count AS "verifyCount", flagged
+      FROM public.record_box_verification(${box.uid}::uuid, ${valid}, ${dto.deviceId ?? `ip:${ip}`}::text)`;
+    const status = !valid ? 'INVALID_CODE' : entry.firstActivation ? 'FIRST_ACTIVATION' : 'ALREADY_ACTIVATED';
+    return { uid: box.uid, status, activatedAt: entry.activatedAt, verifyCount: entry.verifyCount, flagged: entry.flagged };
   }
 
   async scan(dto: ScanBoxDto, ip: string, userAgent?: string): Promise<ScanOutcome> {
     const [outcome] = await traceDatabase(this.prisma.$queryRaw<ScanOutcome[]>`
-      SELECT scan_result AS "scanResult", risk_score AS "riskScore", reasons
+      SELECT scan_result AS "scanResult", reasons
       FROM public.record_public_scan(${dto.uid}::uuid, ${dto.latitude ?? null}::double precision,
         ${dto.longitude ?? null}::double precision, ${ip}::text, ${userAgent ?? null}::text)`);
     return outcome;
@@ -67,7 +77,8 @@ export class TraceService {
   private async findBox(uid: string): Promise<TraceBox> {
     const [box] = await this.prisma.$queryRaw<TraceBox[]>`
       SELECT uid::text AS uid, medicine_name AS "medicineName", manufacturer, batch_number AS "batchNumber",
-        production_date AS "productionDate", expiry_date AS "expiryDate", batch_status AS "batchStatus", box_status AS "boxStatus"
+        production_date AS "productionDate", expiry_date AS "expiryDate", batch_status AS "batchStatus", box_status AS "boxStatus",
+        activated_at AS "activatedAt", verify_count AS "verifyCount", flagged
       FROM public.public_box_trace(${uid}::uuid)`;
     if (!box) throw traceError('TR_BOX_NOT_FOUND');
     return box;

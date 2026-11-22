@@ -9,13 +9,13 @@ export class TraceController {
   constructor(private readonly trace: TraceService) {}
 
   @Post('verify')
-  @ApiOperation({ summary: 'Check the secret code printed with a box QR code (HMAC SHA-256)' })
-  async verify(@Body() dto: VerifyBoxDto) {
-    return { success: true, data: await this.trace.verify(dto) };
+  @ApiOperation({ summary: 'Check the secret code of a box (HMAC SHA-256). The first valid entry activates the box; later ones report the original activation; 10 valid entries in a minute flag the box as counterfeit' })
+  async verify(@Body() dto: VerifyBoxDto, @Ip() ip: string) {
+    return { success: true, data: await this.trace.verify(dto, ip) };
   }
 
   @Post('scan')
-  @ApiOperation({ summary: 'Log a public QR scan and flag impossible travel speed or excessive rescans' })
+  @ApiOperation({ summary: 'Log a public QR scan; a box scanned 10 times in a minute or in two places too far apart is flagged as counterfeit' })
   async scan(@Body() dto: ScanBoxDto, @Ip() ip: string, @Headers('user-agent') userAgent?: string) {
     return { success: true, data: await this.trace.scan(dto, ip, userAgent) };
   }
