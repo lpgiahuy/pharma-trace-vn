@@ -190,6 +190,46 @@ describe('ReportService', () => {
   });
 });
 
+describe('ReportService supplier payments', () => {
+  it('records a payment and returns its id', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{ id: 12 }]);
+    await expect(service.recordSupplierPayment(manager, 5, { amount: 400000, paymentMethod: 'BANK_TRANSFER', reference: 'FT1' }))
+      .resolves.toEqual({ paymentId: 12 });
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([5, 400000, 'BANK_TRANSFER', 'FT1']);
+  });
+
+  it('turns an overpayment into 400 with the database message', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('Raw query failed', {
+      code: 'P2010', clientVersion: 'test', meta: { code: '22023', message: 'Payment exceeds the remaining balance' },
+    }));
+    await expect(service.recordSupplierPayment(manager, 5, { amount: 1, paymentMethod: 'CASH', reference: 'FT2' }))
+      .rejects.toThrow('Payment exceeds the remaining balance');
+  });
+
+  it('turns a role denial into 403 and a missing payable into 404', async () => {
+    const { tx, service } = setup();
+    const failure = (code: string) => new Prisma.PrismaClientKnownRequestError('Raw query failed', { code: 'P2010', clientVersion: 'test', meta: { code } });
+    tx.$queryRaw.mockRejectedValueOnce(failure('42501')).mockRejectedValueOnce(failure('P0002'));
+    const dto = { amount: 1, paymentMethod: 'CASH' as const, reference: 'FT3' };
+    await expect(service.recordSupplierPayment(manager, 5, dto)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.recordSupplierPayment(manager, 5, dto)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('maps the payment history', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{
+      id: 12, amount: decimal('400000.00'), payment_method: 'CASH', reference: 'FT1', paid_at: new Date('2026-11-20T03:00:00Z'),
+      paid_by_name: 'Finance Manager', cashbook_code: 'SUP-12',
+    }]);
+    await expect(service.payablePayments(manager, 5)).resolves.toEqual([{
+      id: 12, amount: 400000, paymentMethod: 'CASH', reference: 'FT1', paidAt: '2026-11-20T03:00:00.000Z', paidBy: 'Finance Manager', cashbookCode: 'SUP-12',
+    }]);
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([5]);
+  });
+});
+
 describe('toCsv', () => {
   it('starts with a BOM, ends rows with CRLF and leaves plain cells alone', () => {
     expect(toCsv([['a', 1, null]])).toBe('\uFEFFa,1,\r\n');

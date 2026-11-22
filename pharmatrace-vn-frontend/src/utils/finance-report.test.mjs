@@ -5,6 +5,7 @@ import {
   RECEIVABLE_BUCKETS,
   OTHER_PARTIES,
   agingChartData,
+  canRecordSupplierPayment,
   canViewFinance,
   cashbookFilename,
   cashflowData,
@@ -24,6 +25,11 @@ test('only admins and finance roles open the finance pages', () => {
   for (const role of ['STORE_MANAGER', 'WAREHOUSE_STAFF', 'CUSTOMER', '', null, undefined]) {
     assert.equal(canViewFinance(role), false, String(role));
   }
+});
+
+test('only super admins and finance managers record supplier payments', () => {
+  for (const role of ['SUPER_ADMIN', 'FINANCE_MANAGER', 'Finance Manager']) assert.equal(canRecordSupplierPayment(role), true, role);
+  for (const role of ['ACCOUNTANT', 'ADMIN', 'STORE_MANAGER', '', null, undefined]) assert.equal(canRecordSupplierPayment(role), false, String(role));
 });
 
 test('receivable totals treat debts older than 30 days as overdue', () => {
