@@ -155,15 +155,17 @@ describe('ReportService', () => {
       .mockResolvedValueOnce([{
         id: 1, transaction_code: 'COD-SHIP-1', transaction_date: new Date('2026-10-31T17:30:00Z'), transaction_type: 'INCOME', category: 'COD', amount: decimal('300000.00'),
         payment_method: 'CASH', party_name: null, note: null, order_id: 9, order_code: 'ORD-9', po_id: null, po_code: null,
-      }]);
-    const data = await service.cashbook(manager, { from: '2026-11-01', to: '2026-11-03', paymentMethod: 'CASH', type: 'INCOME', page: 3, pageSize: 20 });
+      }])
+      .mockResolvedValueOnce([{ category: 'COD' }, { category: 'CUSTOMER_REFUND' }]);
+    const data = await service.cashbook(manager, { from: '2026-11-01', to: '2026-11-03', paymentMethod: 'CASH', type: 'INCOME', category: 'COD', page: 3, pageSize: 20 });
     expect(data).toMatchObject({
       opening: 380000, totalIncome: 300000, totalExpense: 130000, closing: 550000, total: 41, page: 3, pageSize: 20,
+      categories: ['COD', 'CUSTOMER_REFUND'],
       days: [{ day: '2026-11-01', income: 300000, expense: 50000, balance: 630000 }],
       entries: [{ code: 'COD-SHIP-1', date: '2026-10-31T17:30:00.000Z', type: 'INCOME', amount: 300000, orderCode: 'ORD-9', poCode: null }],
     });
-    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['2026-11-01', '2026-11-03', 'CASH', 'INCOME']);
-    expect(tx.$queryRaw.mock.calls[1].slice(1)).toEqual(['2026-11-01', '2026-11-03', 'CASH', 'INCOME', 20, 40]);
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['2026-11-01', '2026-11-03', 'CASH', 'INCOME', 'COD']);
+    expect(tx.$queryRaw.mock.calls[1].slice(1)).toEqual(['2026-11-01', '2026-11-03', 'CASH', 'INCOME', 20, 40, 'COD']);
   });
 
   it('exports every entry as CSV with a BOM, Vietnam time and escaped cells', async () => {
@@ -178,7 +180,7 @@ describe('ReportService', () => {
       '\uFEFFDate,Code,Type,Category,Payment method,Party,Amount,Order,Purchase order,Note\r\n'
       + '2026-11-01 00:30:00,REF-1,EXPENSE,CUSTOMER_REFUND,BANK_TRANSFER,"Nguyễn, ""Văn"" A",50000.5,,,"line1\nline2"\r\n',
     );
-    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['2026-11-01', '2026-11-30', null, null, null, 0]);
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['2026-11-01', '2026-11-30', null, null, null, 0, null]);
   });
 
   it('turns a finance denial into 403', async () => {

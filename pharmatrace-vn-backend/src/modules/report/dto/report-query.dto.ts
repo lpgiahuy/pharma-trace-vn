@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsOptional, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -88,6 +88,12 @@ export class CashbookExportQueryDto extends OmitType(ReportRangeDto, ['facilityI
   @IsOptional()
   @IsIn(CASHBOOK_TYPES)
   type?: (typeof CASHBOOK_TYPES)[number];
+
+  @ApiPropertyOptional({ example: 'COD', description: 'Cashbook category as returned in `categories`. Limits the entries only, not the balances' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  category?: string;
 }
 
 export class CashbookQueryDto extends CashbookExportQueryDto {

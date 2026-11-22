@@ -45,6 +45,7 @@ interface CashbookEntryRow {
   payment_method: string; party_name: string | null; note: string | null; order_id: number | null; order_code: string | null;
   po_id: number | null; po_code: string | null;
 }
+interface CategoryRow { category: string }
 type CsvCell = string | number | null;
 
 const toNumber = (value: DbNumber): number => Number(value);
@@ -225,11 +226,13 @@ export class ReportService {
     const { from, to } = reportRange(query, 'day');
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const { rows, entries } = await workflowDatabase(this.prisma.withReport(authActor(user), async tx => ({
+    const { rows, entries, categories } = await workflowDatabase(this.prisma.withReport(authActor(user), async tx => ({
       rows: await tx.$queryRaw<CashbookRow[]>`
         SELECT row_type, day::text AS day, opening, income, expense, closing, entry_count
-        FROM public.report_cashbook(${from}::date, ${to}::date, ${query.paymentMethod ?? null}::text, ${query.type ?? null}::text)`,
+        FROM public.report_cashbook(${from}::date, ${to}::date, ${query.paymentMethod ?? null}::text, ${query.type ?? null}::text,
+          ${query.category ?? null}::text)`,
       entries: await this.cashbookEntries(tx, from, to, query, pageSize, (page - 1) * pageSize),
+      categories: await tx.$queryRaw<CategoryRow[]>`SELECT category FROM public.report_cashbook_categories()`,
     })));
     const [summary, ...days] = rows;
     return {
@@ -239,6 +242,7 @@ export class ReportService {
       totalExpense: toNumber(summary.expense),
       closing: toNumber(summary.closing),
       total: toNumber(summary.entry_count ?? 0),
+      categories: categories.map(row => row.category),
       days: days.map(day => ({ day: day.day, income: toNumber(day.income), expense: toNumber(day.expense), balance: toNumber(day.closing) })),
       entries: entries.map(entry => ({
         id: entry.id,
@@ -273,7 +277,7 @@ export class ReportService {
     return tx.$queryRaw<CashbookEntryRow[]>`
       SELECT id, transaction_code, transaction_date, transaction_type, category, amount, payment_method, party_name, note, order_id, order_code, po_id, po_code
       FROM public.report_cashbook_entries(${from}::date, ${to}::date, ${query.paymentMethod ?? null}::text, ${query.type ?? null}::text,
-        ${limit}::integer, ${offset}::integer)`;
+        ${limit}::integer, ${offset}::integer, ${query.category ?? null}::text)`;
   }
 
   async setDefaultThreshold(user: CurrentUserPayload, quantity: number) {

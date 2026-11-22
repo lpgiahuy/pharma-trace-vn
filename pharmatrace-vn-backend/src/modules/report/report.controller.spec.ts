@@ -119,8 +119,8 @@ describe('Finance query DTOs', () => {
   });
 
   it('accepts cashbook filters and paging', async () => {
-    await expect(validate(CashbookQueryDto, { from: '2026-11-01', to: '2026-11-30', paymentMethod: 'CASH', type: 'INCOME', page: '2', pageSize: '50' }))
-      .resolves.toEqual({ from: '2026-11-01', to: '2026-11-30', paymentMethod: 'CASH', type: 'INCOME', page: 2, pageSize: 50 });
+    await expect(validate(CashbookQueryDto, { from: '2026-11-01', to: '2026-11-30', paymentMethod: 'CASH', type: 'INCOME', category: 'COD', page: '2', pageSize: '50' }))
+      .resolves.toEqual({ from: '2026-11-01', to: '2026-11-30', paymentMethod: 'CASH', type: 'INCOME', category: 'COD', page: 2, pageSize: 50 });
   });
 
   it.each([
@@ -128,6 +128,7 @@ describe('Finance query DTOs', () => {
     [CashbookQueryDto, { type: 'TRANSFER' }],
     [CashbookQueryDto, { page: '0' }],
     [CashbookQueryDto, { pageSize: '101' }],
+    [CashbookQueryDto, { category: 'x'.repeat(51) }],
     [CashbookQueryDto, { facilityId: '3' }],
     [CashbookExportQueryDto, { page: '1' }],
   ])('rejects %j on %p', async (metatype, query) => {
