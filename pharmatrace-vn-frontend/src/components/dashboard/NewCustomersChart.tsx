@@ -12,30 +12,28 @@ interface NewCustomersChartProps {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-  className?: string;
 }
 
-export function NewCustomersChart({ buckets, granularity, loading, error, onRetry, className }: NewCustomersChartProps) {
+const tick = { fontSize: 11, fill: '#64748b' };
+
+export function NewCustomersChart({ buckets, granularity, loading, error, onRetry }: NewCustomersChartProps) {
   const data = buckets.map(b => ({ label: bucketLabel(b.bucket, granularity), newCustomers: b.newCustomers }));
-  const empty = buckets.every(b => b.newCustomers === 0);
 
   return (
     <ChartCard
       title="New customers"
-      subtitle={granularity === 'month' ? 'Accounts created per month' : 'Accounts created per day'}
       loading={loading}
       error={error}
-      empty={empty}
+      empty={buckets.every(b => b.newCustomers === 0)}
       onRetry={onRetry}
       height={240}
-      className={className}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -16 }}>
+        <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} minTickGap={12} />
-          <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} width={40} />
-          <Tooltip formatter={value => formatCount(Number(value))} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+          <XAxis dataKey="label" tick={tick} tickLine={false} axisLine={false} minTickGap={12} />
+          <YAxis allowDecimals={false} tick={tick} tickLine={false} axisLine={false} width={40} />
+          <Tooltip formatter={value => formatCount(Number(value))} />
           <Bar dataKey="newCustomers" name="New customers" fill="#0d9488" radius={[3, 3, 0, 0]} maxBarSize={28} />
         </BarChart>
       </ResponsiveContainer>

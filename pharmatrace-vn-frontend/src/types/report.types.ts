@@ -1,6 +1,5 @@
 export type Granularity = 'day' | 'month';
 
-/** Days are YYYY-MM-DD in Vietnam time; `to` is inclusive. */
 export interface ReportRange {
   from: string;
   to: string;
@@ -19,14 +18,12 @@ export interface SalesPeriod {
   avgOrderValue: number;
 }
 
-/** `previous` is the period of the same length right before `current`. */
 export interface SalesOverview {
   current: SalesPeriod;
   previous: SalesPeriod;
 }
 
 export interface RevenueBucket {
-  /** First day of the bucket (YYYY-MM-DD). */
   bucket: string;
   revenue: number;
   refunds: number;
