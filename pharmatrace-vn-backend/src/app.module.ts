@@ -21,6 +21,8 @@ import { ReturnsModule } from './modules/returns/returns.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { RecallModule } from './modules/recall/recall.module';
+import { TraceModule } from './modules/trace/trace.module';
+import { FraudModule } from './modules/fraud/fraud.module';
 import { ReportModule } from './modules/report/report.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -49,6 +51,8 @@ import { AppService } from './app.service';
     WarehouseModule,
     ProcurementModule,
     RecallModule,
+    TraceModule,
+    FraudModule,
     ReportModule,
   ],
   controllers: [AppController],
