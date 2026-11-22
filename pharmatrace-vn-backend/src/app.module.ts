@@ -21,6 +21,7 @@ import { ReturnsModule } from './modules/returns/returns.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { RecallModule } from './modules/recall/recall.module';
+import { ReportModule } from './modules/report/report.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -48,6 +49,7 @@ import { AppService } from './app.service';
     WarehouseModule,
     ProcurementModule,
     RecallModule,
+    ReportModule,
   ],
   controllers: [AppController],
   providers: [AppService],

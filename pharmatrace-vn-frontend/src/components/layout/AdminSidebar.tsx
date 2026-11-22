@@ -113,6 +113,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 
   const menuItems = isFinanceStaff
     ? [
+        { key: '/admin', icon: <DashboardOutlined style={{ fontSize: 16 }} />, label: 'Dashboard' },
         { key: '/admin/orders', icon: <ShoppingOutlined style={{ fontSize: 16 }} />, label: 'Order Payments' },
         { key: '/admin/logistics/cod', icon: <CarOutlined style={{ fontSize: 16 }} />, label: 'COD Reconciliation' },
       ]

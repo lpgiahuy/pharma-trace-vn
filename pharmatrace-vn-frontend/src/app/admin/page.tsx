@@ -1,20 +1,21 @@
 'use client';
 
 import { useHydrated } from '@/hooks/useHydrated';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, Tag, Button, Descriptions } from 'antd';
-import {
-  SafetyCertificateOutlined,
-  TeamOutlined,
-  UserOutlined,
-  ArrowRightOutlined,
-  AppstoreOutlined,
-  MedicineBoxOutlined,
-} from '@ant-design/icons';
+import { Button } from 'antd';
 import { useAuthStore } from '@/store/useAuthStore';
-import { apiClient } from '@/services/api.client';
-import { formatRole } from '@/utils';
+import { useReport } from '@/hooks/useReport';
+import { reportService } from '@/services/report.service';
+import type { Granularity } from '@/types/report.types';
+import { formatCount, formatVnd, presetRange, rangeDays, vietnamToday } from '@/utils/report-format';
+import { DateRangeFilter, type DashboardRange } from '@/components/dashboard/DateRangeFilter';
+import { KpiCard } from '@/components/dashboard/KpiCard';
+import { RevenueChart } from '@/components/dashboard/RevenueChart';
+import { OrderStatusDonut } from '@/components/dashboard/OrderStatusDonut';
+import { NewCustomersChart } from '@/components/dashboard/NewCustomersChart';
+
+const REPORT_ROLES = ['SUPERADMIN', 'ADMIN', 'STOREMANAGER', 'ACCOUNTANT', 'FINANCEMANAGER'];
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -22,11 +23,13 @@ export default function AdminDashboardPage() {
   const getUser = useAuthStore((state) => state.getUser);
 
   const mounted = useHydrated();
-  const [adminTestData, setAdminTestData] = useState<any>(null);
-  const [loadingTest, setLoadingTest] = useState(false);
+  const [range, setRange] = useState<DashboardRange>(() => ({ preset: 'last30', ...presetRange('last30', vietnamToday()) }));
+  const [granularity, setGranularity] = useState<Granularity>('day');
 
   const isAuthenticated = mounted ? getIsAuthenticated() : false;
   const user = mounted ? getUser() : null;
+  const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
+  const canReport = REPORT_ROLES.includes(role);
 
   useEffect(() => {
     if (mounted && !isAuthenticated) {
@@ -34,156 +37,107 @@ export default function AdminDashboardPage() {
     }
   }, [mounted, isAuthenticated, router]);
 
-  const verifyAdminAccess = async () => {
-    try {
-      setLoadingTest(true);
-      const res = await apiClient.get('/auth/admin-test');
-      setAdminTestData(res);
-    } catch (err: any) {
-      setAdminTestData({ error: err?.message || 'Access Denied: SuperAdmin role required.' });
-    } finally {
-      setLoadingTest(false);
-    }
-  };
+  const { from, to, facilityId } = range;
+  const dayDisabled = rangeDays(from, to) > 366;
+  const bucketSize: Granularity = dayDisabled ? 'month' : granularity;
+  const enabled = isAuthenticated && canReport;
+
+  const overview = useReport(
+    useCallback(() => reportService.overview({ from, to, facilityId }).then(res => res.data), [from, to, facilityId]),
+    enabled,
+  );
+  const series = useReport(
+    useCallback(() => reportService.revenue({ from, to, facilityId }, bucketSize).then(res => res.data), [from, to, facilityId, bucketSize]),
+    enabled,
+  );
+  const status = useReport(
+    useCallback(() => reportService.orderStatus({ from, to, facilityId }).then(res => res.data), [from, to, facilityId]),
+    enabled,
+  );
 
   if (!mounted || !isAuthenticated || !user) {
     return null;
   }
 
-  const isSuperAdmin = user.role === 'SUPER_ADMIN' || user.role === 'SuperAdmin';
+  const current = overview.data?.current;
+  const previous = overview.data?.previous;
+  const buckets = series.data?.buckets ?? [];
+  const kpis = [
+    { title: 'Revenue', key: 'revenue', format: formatVnd, spark: buckets.map(b => b.revenue) },
+    { title: 'Collected cash', key: 'collectedCash', format: formatVnd },
+    { title: 'Orders', key: 'orders', format: formatCount, spark: buckets.map(b => b.orders) },
+    { title: 'New customers', key: 'newCustomers', format: formatCount, spark: buckets.map(b => b.newCustomers) },
+    { title: 'Avg order value', key: 'avgOrderValue', format: formatVnd },
+  ] as const;
 
   return (
-    <div className="space-y-5 animate-fade-in font-sans w-full">
-      {/* Header */}
-      <div className="pb-1">
-        <h1 className="text-xl font-bold text-slate-900 m-0 tracking-tight">
-          Admin Portal Dashboard
-        </h1>
-        <p className="text-slate-500 text-xs m-0 mt-0.5">
-          Overview and administrative control for PharmaTrace VN platform
-        </p>
-      </div>
-
-      {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div
-          onClick={() => router.push('/admin/categories')}
-          className="bg-white p-4 rounded-[6px] border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-[6px] bg-slate-100 text-slate-600 flex items-center justify-center text-sm group-hover:bg-slate-200 transition-colors">
-              <AppstoreOutlined />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900 m-0">Categories</h3>
-              <p className="text-[11px] text-slate-400 m-0 mt-0.5">Medical taxonomy hierarchy</p>
-            </div>
-          </div>
-          <ArrowRightOutlined className="text-slate-300 text-xs group-hover:text-slate-600 transition-colors" />
+    <div className="space-y-4 animate-fade-in font-sans w-full min-w-0">
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 m-0 tracking-tight">Dashboard</h1>
+          <p className="text-slate-500 text-xs m-0 mt-0.5">Sales performance for the selected period</p>
         </div>
-
-        <div
-          onClick={() => router.push('/admin/products')}
-          className="bg-white p-4 rounded-[6px] border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-[6px] bg-slate-100 text-slate-600 flex items-center justify-center text-sm group-hover:bg-slate-200 transition-colors">
-              <MedicineBoxOutlined />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900 m-0">Medicines Catalog</h3>
-              <p className="text-[11px] text-slate-400 m-0 mt-0.5">Products, batches & stock</p>
-            </div>
-          </div>
-          <ArrowRightOutlined className="text-slate-300 text-xs group-hover:text-slate-600 transition-colors" />
-        </div>
-
-        {isSuperAdmin && (
-          <div
-            onClick={() => router.push('/admin/staff')}
-            className="bg-white p-4 rounded-[6px] border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center justify-between group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-[6px] bg-slate-100 text-slate-600 flex items-center justify-center text-sm group-hover:bg-slate-200 transition-colors">
-                <TeamOutlined />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 m-0">Staff & RBAC</h3>
-                <p className="text-[11px] text-slate-400 m-0 mt-0.5">Employees & permissions</p>
-              </div>
-            </div>
-            <ArrowRightOutlined className="text-slate-300 text-xs group-hover:text-slate-600 transition-colors" />
-          </div>
+        {canReport && (
+          <DateRangeFilter value={range} onChange={setRange} showFacility={role === 'SUPERADMIN' || role === 'ADMIN'} />
         )}
-
-        <div
-          onClick={() => router.push('/admin/customers')}
-          className="bg-white p-4 rounded-[6px] border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-[6px] bg-slate-100 text-slate-600 flex items-center justify-center text-sm group-hover:bg-slate-200 transition-colors">
-              <UserOutlined />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900 m-0">Customers</h3>
-              <p className="text-[11px] text-slate-400 m-0 mt-0.5">Accounts & order history</p>
-            </div>
-          </div>
-          <ArrowRightOutlined className="text-slate-300 text-xs group-hover:text-slate-600 transition-colors" />
-        </div>
       </div>
 
-      {/* Main Info Panels */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white p-5 rounded-[6px] border border-slate-200/80 shadow-xs space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900 m-0 pb-2 border-b border-slate-100">
-            Admin Profile Information
-          </h2>
-          <Descriptions bordered column={1} size="small" className="text-xs">
-            <Descriptions.Item label="Full Name">
-              <span className="font-medium text-slate-800">{user.fullName || user.full_name || 'Admin User'}</span>
-            </Descriptions.Item>
-            <Descriptions.Item label="Email">
-              <span className="text-slate-600">{user.email || 'N/A'}</span>
-            </Descriptions.Item>
-            <Descriptions.Item label="Role">
-              <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-[6px]">
-                {formatRole(user.role)}
-              </span>
-            </Descriptions.Item>
-            <Descriptions.Item label="Status">
-              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Active
-              </span>
-            </Descriptions.Item>
-          </Descriptions>
-        </div>
-
-        <div className="bg-white p-5 rounded-[6px] border border-slate-200/80 shadow-xs space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900 m-0 pb-2 border-b border-slate-100">
-            RBAC Security Check
-          </h2>
-          <p className="text-xs text-slate-500 m-0">
-            Test backend endpoint (<code className="text-slate-700 bg-slate-100 px-1 py-0.5 rounded-[6px]">/v1/pharmatrace/auth/admin-test</code>) enforcing role access.
-          </p>
-          <button
-            type="button"
-            onClick={verifyAdminAccess}
-            disabled={loadingTest}
-            className="w-full inline-flex items-center justify-center gap-2 py-2 px-4 rounded-[6px] bg-[#1e4287] hover:bg-[#163266] text-white text-xs font-medium transition-colors cursor-pointer border-none shadow-xs"
-          >
-            <SafetyCertificateOutlined />
-            {loadingTest ? 'Verifying...' : 'Verify SuperAdmin Endpoint'}
-          </button>
-
-          {adminTestData && (
-            <div className="p-3 bg-slate-50 rounded-[6px] text-xs font-mono text-slate-600 break-all border border-slate-200/60 max-h-40 overflow-y-auto">
-              {JSON.stringify(adminTestData, null, 2)}
-            </div>
+      {canReport ? (
+        <>
+          {overview.error && (
+            <p className="text-xs text-red-600 m-0">
+              {overview.error} <Button type="link" size="small" onClick={overview.reload}>Retry</Button>
+            </p>
           )}
-        </div>
-      </div>
+
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+            {kpis.map(kpi => (
+              <KpiCard
+                key={kpi.key}
+                title={kpi.title}
+                value={kpi.format(current?.[kpi.key] ?? 0)}
+                current={current?.[kpi.key] ?? 0}
+                previous={previous?.[kpi.key] ?? 0}
+                spark={'spark' in kpi && !series.loading ? kpi.spark : undefined}
+                loading={overview.loading}
+              />
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <RevenueChart
+              buckets={buckets}
+              granularity={bucketSize}
+              onGranularityChange={setGranularity}
+              dayDisabled={dayDisabled}
+              loading={series.loading}
+              error={series.error}
+              onRetry={series.reload}
+            />
+            <OrderStatusDonut
+              statuses={status.data?.statuses ?? []}
+              loading={status.loading}
+              error={status.error}
+              onRetry={status.reload}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            <NewCustomersChart
+              buckets={buckets}
+              granularity={bucketSize}
+              loading={series.loading}
+              error={series.error}
+              onRetry={series.reload}
+            />
+            {/* PR 2: StockAlertsPanel */}
+          </div>
+
+          {/* PR 3: finance summary */}
+        </>
+      ) : (
+        <p className="text-xs text-slate-500 m-0">Sales reports are available to managers, administrators and finance staff.</p>
+      )}
     </div>
   );
 }

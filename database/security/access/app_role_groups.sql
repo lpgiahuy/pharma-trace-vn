@@ -1,12 +1,14 @@
 \set ON_ERROR_STOP on
 BEGIN;
 -- Named employee role groups shared by RLS policies and security functions.
--- Mirrors pharmatrace-vn-backend/src/common/warehouse-roles.ts; change both together.
+-- Mirrors pharmatrace-vn-backend/src/common/warehouse-roles.ts and report-roles.ts; change both together.
 --   WH_STAFF   : warehouse floor staff
 --   WH_MANAGER : warehouse managers (SUPER_ADMIN is always allowed by the callers' own lists)
 --   WH_ALL     : WH_STAFF + WH_MANAGER
 --   WH_READ    : WH_ALL + FACTORY_WAREHOUSE_STAFF, for read-only inventory and batch views
 --   FACTORY_INTAKE : FACTORY_WAREHOUSE_STAFF + SUPER_ADMIN, for registering factory batches
+--   REPORT_READ    : sales dashboard reports (STORE_MANAGER sees only its own facility)
+--   FINANCE_READ   : finance reports
 -- FACTORY_WAREHOUSE_STAFF is added per feature, together with the workflows that need it.
 CREATE OR REPLACE FUNCTION public.app_role_group(group_name text) RETURNS text[]
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
@@ -16,6 +18,8 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
     WHEN 'WH_ALL' THEN ARRAY['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SUPER_ADMIN']
     WHEN 'WH_READ' THEN ARRAY['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SUPER_ADMIN', 'FACTORY_WAREHOUSE_STAFF']
     WHEN 'FACTORY_INTAKE' THEN ARRAY['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']
+    WHEN 'REPORT_READ' THEN ARRAY['SUPER_ADMIN', 'ADMIN', 'STORE_MANAGER', 'ACCOUNTANT', 'FINANCE_MANAGER']
+    WHEN 'FINANCE_READ' THEN ARRAY['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'FINANCE_MANAGER']
   END
 $$;
 
