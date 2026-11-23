@@ -170,6 +170,8 @@ export const warehouseService = {
   createFactoryBatch: (input: FactoryBatchInput) => apiClient.post<unknown, Envelope<FactoryBatchSummary>>('/warehouse/batches', input),
   batchLabels: (id: number, facilityId?: number) =>
     apiClient.get<unknown, Blob>(`/warehouse/batches/${id}/labels`, { params: facilityId ? { facilityId } : undefined, responseType: 'blob' }),
+  voidFactoryBatch: (id: number, reason: string) =>
+    apiClient.post<unknown, Envelope<{ id: number }>>(`/warehouse/batches/${id}/void`, { reason }),
   holdBatch: (id: number, reason: string) =>
     apiClient.patch<unknown, Envelope<{ id: number; status: string }>>(`/warehouse/batches/${id}/hold`, { reason }),
   releaseBatch: (id: number, reason: string) =>

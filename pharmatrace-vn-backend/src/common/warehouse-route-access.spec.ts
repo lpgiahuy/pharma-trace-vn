@@ -95,7 +95,7 @@ describe('Warehouse route access', () => {
     expect(rolesOf(WarehouseController, 'me').has('WAREHOUSE_STAFF')).toBe(true);
   });
 
-  it('opens factory batch intake to factory staff and SUPER_ADMIN only', () => {
+  it('opens factory batch intake, voiding and labels to factory staff and SUPER_ADMIN only', () => {
     const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryBatchController) as string[]);
     expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
   });

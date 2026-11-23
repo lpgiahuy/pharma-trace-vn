@@ -71,6 +71,8 @@ function BatchesPage() {
   // Only the factory registers batches (the backend also limits this to FACTORY facilities); SUPER_ADMIN picks the factory.
   const canCreate = role === 'FACTORY_WAREHOUSE_STAFF' || role === 'SUPER_ADMIN';
   const [createOpen, setCreateOpen] = useState(false);
+  const [voidTarget, setVoidTarget] = useState<BatchItem>();
+  const [voidReason, setVoidReason] = useState('');
 
   const labelsColumn: ColumnsType<BatchItem>[number] = {
     title: 'Labels',
@@ -94,7 +96,17 @@ function BatchesPage() {
       </Button>
     ),
   }] : COLUMNS;
-  const tableColumns = canCreate ? [...columns, labelsColumn] : columns;
+  const voidColumn: ColumnsType<BatchItem>[number] = {
+    title: 'Void',
+    render: (_, batch) => batch.status === 'ACTIVE' && (
+      <Button size="small" danger onClick={event => {
+        event.stopPropagation();
+        setVoidReason('');
+        setVoidTarget(batch);
+      }}>Void</Button>
+    ),
+  };
+  const tableColumns = canCreate ? [...columns, labelsColumn, voidColumn] : columns;
 
   const submit = async () => {
     if (!action) return;
@@ -108,6 +120,22 @@ function BatchesPage() {
       setReload(value => value + 1);
     } catch (err) {
       message.error(workflowErrorMessage(err, 'We could not change the batch status.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitVoid = async () => {
+    if (!voidTarget) return;
+    setSaving(true);
+    try {
+      await warehouseService.voidFactoryBatch(voidTarget.id, voidReason.trim());
+      message.success(`Batch ${voidTarget.batchNumber} voided`);
+      setVoidTarget(undefined);
+      setLoading(true);
+      setReload(value => value + 1);
+    } catch (err) {
+      message.error(workflowErrorMessage(err, 'We could not void the batch.'));
     } finally {
       setSaving(false);
     }
@@ -149,6 +177,20 @@ function BatchesPage() {
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: value => { setLoading(true); setPage(value); } }}
       />
       <FactoryBatchModal open={createOpen} pickFactory={role === 'SUPER_ADMIN'} onClose={() => setCreateOpen(false)} onCreated={() => { setLoading(true); setReload(value => value + 1); }} />
+      <Modal
+        open={!!voidTarget}
+        title={voidTarget && `Void batch ${voidTarget.batchNumber}`}
+        okText="Void batch"
+        okButtonProps={{ danger: true, disabled: !voidReason.trim(), loading: saving }}
+        onOk={submitVoid}
+        onCancel={() => setVoidTarget(undefined)}
+      >
+        <p>
+          Use this only for a batch registered by mistake. It is allowed while every box is still in factory stock and untouched.
+          The batch is removed from stock, and the labels already printed stop verifying. This cannot be undone.
+        </p>
+        <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={voidReason} onChange={event => setVoidReason(event.target.value)} />
+      </Modal>
       <BatchDrawer id={selected} onClose={() => setSelected(undefined)} />
       <Modal
         open={!!action}

@@ -6,7 +6,7 @@ import { CryptoUtil } from '../../../common/utils/crypto.util';
 import { FACTORY_INTAKE, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { warehouseDatabase, warehouseError } from '../warehouse-errors';
-import { CreateFactoryBatchDto, FactoryFacilityQueryDto } from './dto/factory-batch.dto';
+import { CreateFactoryBatchDto, FactoryFacilityQueryDto, VoidFactoryBatchDto } from './dto/factory-batch.dto';
 
 interface CartonPayload {
   sscc: string;
@@ -54,6 +54,15 @@ export class FactoryBatchService {
           ${dto.productionDate}::date, ${dto.expiryDate}::date, ${dto.certificateCoCq?.trim() || null}::text,
           ${JSON.stringify(cartons)}::jsonb) AS id`;
       return { id: row.id, batchNumber, boxCount: dto.boxCount, cartonCount: cartons.length };
+    }));
+  }
+
+  /** Voids a batch registered by mistake while all its boxes are still untouched at the factory (void_factory_batch). */
+  async void(user: CurrentUserPayload, batchId: number, dto: VoidFactoryBatchDto): Promise<{ id: number }> {
+    warehouseScope(user, {}, FACTORY_INTAKE);
+    return await warehouseDatabase(this.prisma.withFactoryIntake(authActor(user), async tx => {
+      const [row] = await tx.$queryRaw<{ id: number }[]>`SELECT public.void_factory_batch(${batchId}::integer, ${dto.reason.trim()}::text) AS id`;
+      return { id: row.id };
     }));
   }
 

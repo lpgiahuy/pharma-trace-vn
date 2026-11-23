@@ -51,3 +51,11 @@ export class CreateFactoryBatchDto extends FactoryFacilityQueryDto {
   @MaxLength(500)
   certificateCoCq?: string;
 }
+
+export class VoidFactoryBatchDto {
+  @ApiProperty({ example: 'Registered with the wrong box count', description: 'Why the batch is voided; kept in the batch status history' })
+  @IsString()
+  @Matches(/\S/, { message: 'reason must not be blank' })
+  @MaxLength(500)
+  reason: string;
+}

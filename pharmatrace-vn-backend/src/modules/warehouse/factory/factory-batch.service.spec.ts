@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { AppException } from '../../../common/errors/app-exception';
 import { CryptoUtil } from '../../../common/utils/crypto.util';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -145,5 +146,35 @@ describe('FactoryBatchService.labels', () => {
     const { prisma, service } = setup();
     expect(await errorCode(service.labels(warehouseStaff, 31, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
     expect(prisma.withWarehouseRead).not.toHaveBeenCalled();
+  });
+});
+
+describe('FactoryBatchService.void', () => {
+  it('calls the void function with the trimmed reason inside the factory intake context', async () => {
+    const { tx, prisma, service } = setup();
+    await expect(service.void(staff, 31, { reason: '  wrong box count ' })).resolves.toEqual({ id: 31 });
+    expect(prisma.withFactoryIntake).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([31, 'wrong box count']);
+  });
+
+  it('lets SUPER_ADMIN void a batch', async () => {
+    const { service } = setup();
+    await expect(service.void(admin, 31, { reason: 'duplicate' })).resolves.toEqual({ id: 31 });
+  });
+
+  it('rejects warehouse staff before touching the database', async () => {
+    const { prisma, service } = setup();
+    expect(await errorCode(service.void(warehouseStaff, 31, { reason: 'x' }))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
+    expect(prisma.withFactoryIntake).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['FB_VOID_NOT_ALLOWED', 'FB_VOID_NOT_ALLOWED'],
+    ['FB_VOID_REASON_REQUIRED', 'FB_VOID_REASON_REQUIRED'],
+    ['FB_BATCH_NOT_FOUND', 'FB_BATCH_NOT_FOUND'],
+  ])('maps the database error %s to an application error', async (raised, code) => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockRejectedValue(new Prisma.PrismaClientKnownRequestError(raised, { code: 'P2010', clientVersion: 'test', meta: { message: `ERROR: ${raised}` } }));
+    expect(await errorCode(service.void(staff, 31, { reason: 'x' }))).toBe(code);
   });
 });
