@@ -142,7 +142,7 @@ export const Header: React.FC = () => {
             {/* Left: Logo + Categories dropdown + Nav Links */}
             <div className="flex items-center gap-5">
               {/* Logo */}
-              <Link href="/products" className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              <Link href="/" className="flex items-center gap-2 sm:gap-2.5 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={Logo} alt="Logo" className="h-8 sm:h-9 w-auto object-contain shrink-0" />
                 <div className="flex flex-col">

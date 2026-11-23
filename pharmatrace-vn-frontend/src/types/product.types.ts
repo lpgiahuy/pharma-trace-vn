@@ -59,6 +59,9 @@ export interface Product {
     discountPercent?: number;
     saleStartDate?: string | null;
     saleEndDate?: string | null;
+    isSaleActive?: boolean;
+    /** Available units (stock minus reserved). */
+    stock?: number;
   }[];
   totalReviews?: number;
   reviewsList?: ProductReview[];
@@ -76,6 +79,7 @@ export interface ProductQuery {
   countryOfOrigin?: string;
   isPrescription?: boolean;
   inStock?: boolean;
+  onSale?: boolean;
   status?: string;
   sortBy?: 'id' | 'price' | 'name' | 'createdAt';
   sortOrder?: 'asc' | 'desc';
