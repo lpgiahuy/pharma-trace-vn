@@ -296,6 +296,8 @@ export interface ReceiveTransferLinePayload {
   receivedQuantity: number;
   goodUids?: string[];
   damagedUids?: string[];
+  /** Dispatched boxes that did not arrive; with damagedUids, every other box counts as good. */
+  missingUids?: string[];
   damagedQuantity?: number;
   missingQuantity?: number;
   notes?: string;

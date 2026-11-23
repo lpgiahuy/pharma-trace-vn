@@ -8,7 +8,7 @@ import { isBoxUnit } from "../../../common/inventory/box.helper";
 import { DispatchTransferDto } from './dto/dispatch-transfer.dto';
 import { ReceiveTransferDto, ReceiveTransferLineDto } from './dto/receive-transfer.dto';
 import { HaltTransferDto, RerouteTransferDto, ReceiveTransferReturnDto } from './dto/transfer-return.dto';
-import { validateInspectionUids } from '../inspection.helper';
+import { deriveGoodUids, validateInspectionUids } from '../inspection.helper';
 import { LogisticsHistoryEvent } from '../logistics.types';
 import { ResolveDiscrepancyDto } from './dto/resolve-discrepancy.dto';
 
@@ -419,8 +419,8 @@ export class InternalTransferService {
         if ((damagedQty > 0 || missingQty > 0) && isBoxUnit(orderItem?.unit_name) && shippedUids.length !== totalQuantity) {
           throw new BadRequestException('Assign dispatched package UIDs before discrepancy inspection.');
         }
-        const inspectedGoodUids = lineSpec?.goodUids ?? (damagedQty === 0 && missingQty === 0 ? shippedUids : []);
         const inspectedDamagedUids = lineSpec?.damagedUids ?? [];
+        const inspectedGoodUids = deriveGoodUids(shippedUids, lineSpec?.goodUids, inspectedDamagedUids, lineSpec?.missingUids);
         validateInspectionUids(shippedUids, [
           { quantity: goodQty, uids: inspectedGoodUids }, { quantity: damagedQty, uids: inspectedDamagedUids },
         ], true);
