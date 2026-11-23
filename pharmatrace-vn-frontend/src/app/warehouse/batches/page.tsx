@@ -2,7 +2,9 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Alert, App, Button, Descriptions, Drawer, Input, Modal, Select, Table, Tabs, Tag } from 'antd';
+import { DownOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Select, Table, Tabs, Tag } from 'antd';
+import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useHydrated } from '@/hooks/useHydrated';
 import { FactoryBatchModal, downloadBatchLabels, downloadBatchLabelsPdf } from '@/components/warehouse/FactoryBatchModal';
@@ -85,59 +87,58 @@ function BatchesPage() {
   const [recallReason, setRecallReason] = useState('');
   const [pdfBatch, setPdfBatch] = useState<number>();
 
-  const labelsColumn: ColumnsType<BatchItem>[number] = {
-    title: 'Labels',
-    render: (_, batch) => (
-      <div className="flex gap-1">
-        <Button size="small" loading={pdfBatch === batch.id} onClick={event => {
-          event.stopPropagation();
-          setPdfBatch(batch.id);
-          downloadBatchLabelsPdf(batch.id, batch)
-            .catch(err => message.error(workflowErrorMessage(err, 'We could not build the label PDF.')))
-            .finally(() => setPdfBatch(undefined));
-        }}>PDF</Button>
-        <Button size="small" onClick={event => {
-          event.stopPropagation();
-          downloadBatchLabels(batch.id).catch(err => message.error(workflowErrorMessage(err, 'We could not download the labels.')));
-        }}>CSV</Button>
-      </div>
-    ),
+  // One menu per row instead of a column per action; each entry appears only when the role and the batch status allow it.
+  const actionItems = (batch: BatchItem): MenuProps['items'] => {
+    const open = batch.status === 'ACTIVE' || batch.status === 'ON_HOLD';
+    const items: NonNullable<MenuProps['items']> = [];
+    if ((manager || factoryStaff) && open) {
+      items.push({
+        key: 'hold', label: batch.status === 'ACTIVE' ? 'Hold' : 'Release', danger: batch.status === 'ACTIVE',
+        onClick: () => { setReason(''); setAction({ batch, release: batch.status === 'ON_HOLD' }); },
+      });
+    }
+    if (canCreate) {
+      items.push(
+        {
+          key: 'pdf', label: pdfBatch === batch.id ? 'Building PDF...' : 'Labels (PDF)', disabled: pdfBatch === batch.id,
+          onClick: () => {
+            setPdfBatch(batch.id);
+            downloadBatchLabelsPdf(batch.id, batch)
+              .catch(err => message.error(workflowErrorMessage(err, 'We could not build the label PDF.')))
+              .finally(() => setPdfBatch(undefined));
+          },
+        },
+        {
+          key: 'csv', label: 'Labels (CSV)',
+          onClick: () => { downloadBatchLabels(batch.id).catch(err => message.error(workflowErrorMessage(err, 'We could not download the labels.'))); },
+        },
+      );
+    }
+    const destructive: NonNullable<MenuProps['items']> = [];
+    if (factoryStaff && (open || batch.status === 'EXPIRED')) {
+      destructive.push({
+        key: 'recall', label: 'Recall', danger: true,
+        onClick: () => { setRecallReason(''); setRecallSeverity('LEVEL_2'); setRecallTarget({ batch, code: newRecallCode() }); },
+      });
+    }
+    if (canCreate && batch.status === 'ACTIVE') {
+      destructive.push({ key: 'cancel', label: 'Cancel batch', danger: true, onClick: () => { setVoidReason(''); setVoidTarget(batch); } });
+    }
+    return destructive.length ? [...items, { type: 'divider' }, ...destructive] : items;
   };
-
-  const columns: ColumnsType<BatchItem> = manager || factoryStaff ? [...COLUMNS, {
-    title: 'Action',
-    render: (_, batch) => (batch.status === 'ACTIVE' || batch.status === 'ON_HOLD') && (
-      <Button size="small" danger={batch.status === 'ACTIVE'} onClick={event => {
-        event.stopPropagation();
-        setReason('');
-        setAction({ batch, release: batch.status === 'ON_HOLD' });
-      }}>
-        {batch.status === 'ACTIVE' ? 'Hold' : 'Release'}
-      </Button>
-    ),
-  }] : COLUMNS;
-  const voidColumn: ColumnsType<BatchItem>[number] = {
-    title: 'Cancel batch',
-    render: (_, batch) => batch.status === 'ACTIVE' && (
-      <Button size="small" danger onClick={event => {
-        event.stopPropagation();
-        setVoidReason('');
-        setVoidTarget(batch);
-      }}>Cancel batch</Button>
-    ),
+  const actionsColumn: ColumnsType<BatchItem>[number] = {
+    title: 'Actions',
+    width: 110,
+    render: (_, batch) => {
+      const items = actionItems(batch);
+      return items?.length ? (
+        <Dropdown menu={{ items, onClick: ({ domEvent }) => domEvent.stopPropagation() }} trigger={['click']}>
+          <Button size="small" onClick={event => event.stopPropagation()}>Actions <DownOutlined /></Button>
+        </Dropdown>
+      ) : null;
+    },
   };
-  const recallColumn: ColumnsType<BatchItem>[number] = {
-    title: 'Recall',
-    render: (_, batch) => (batch.status === 'ACTIVE' || batch.status === 'ON_HOLD' || batch.status === 'EXPIRED') && (
-      <Button size="small" danger onClick={event => {
-        event.stopPropagation();
-        setRecallReason('');
-        setRecallSeverity('LEVEL_2');
-        setRecallTarget({ batch, code: newRecallCode() });
-      }}>Recall</Button>
-    ),
-  };
-  const tableColumns = canCreate ? [...columns, labelsColumn, ...(factoryStaff ? [recallColumn] : []), voidColumn] : columns;
+  const tableColumns = manager || factoryStaff || canCreate ? [...COLUMNS, actionsColumn] : COLUMNS;
 
   const submitRecall = async () => {
     if (!recallTarget) return;
