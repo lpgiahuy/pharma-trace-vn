@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { App, Button, Input, InputNumber, Modal, Select, Table, Tag } from 'antd';
+import { App, Button, Dropdown, Input, InputNumber, Modal, Select, Table, Tag } from 'antd';
+import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, DownOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useHydrated } from '@/hooks/useHydrated';
 import { useLogisticsList } from '@/hooks/useLogisticsList';
 import { facilityService } from '@/services/facility.service';
@@ -156,13 +157,16 @@ export function StockTransferRequests() {
       const atSource = isDecider && row.from_facility.id === facilityId;
       const canCancel = isDecider && (atSource || row.to_facility.id === facilityId)
         && (row.status === 'REQUESTED' || (row.status === 'APPROVED' && row.transfer?.status === 'REQUESTED'));
-      return <div className="flex gap-1">
-        {atSource && row.status === 'REQUESTED' && <>
-          <Button size="small" type="primary" onClick={() => openDecision(row, 'approve')}>Approve</Button>
-          <Button size="small" danger onClick={() => openDecision(row, 'reject')}>Reject</Button>
-        </>}
-        {canCancel && <Button size="small" onClick={() => openDecision(row, 'cancel')}>Cancel</Button>}
-      </div>;
+      const items: NonNullable<MenuProps['items']> = [];
+      if (atSource && row.status === 'REQUESTED') {
+        items.push(
+          { key: 'approve', label: 'Approve', onClick: () => openDecision(row, 'approve') },
+          { key: 'reject', label: 'Reject', danger: true, onClick: () => openDecision(row, 'reject') },
+        );
+      }
+      if (canCancel) items.push({ key: 'cancel', label: 'Cancel request', onClick: () => openDecision(row, 'cancel') });
+      if (!items.length) return null;
+      return <Dropdown menu={{ items }} trigger={['click']}><Button size="small">Actions <DownOutlined /></Button></Dropdown>;
     } },
   ];
 
