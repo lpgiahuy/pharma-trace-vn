@@ -12,7 +12,7 @@ function canCall(controller: any, method: string, role: string): boolean {
     getClass: () => controller,
     switchToHttp: () => ({ getRequest: () => ({ user: { role, type: 'employee' } }) }),
   } as unknown as ExecutionContext;
-  return guard.canActivate(context) as boolean;
+  return guard.canActivate(context);
 }
 
 const OTHER_STAFF = ['STORE_MANAGER', 'PHARMACIST', 'ADMIN', 'WAREHOUSE_STAFF'];
