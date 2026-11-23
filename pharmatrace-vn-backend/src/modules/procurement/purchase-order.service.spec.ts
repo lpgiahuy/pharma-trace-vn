@@ -40,6 +40,7 @@ async function errorCode(promise: Promise<unknown>): Promise<string | undefined>
 const manager = { id: 4, role: 'WAREHOUSE_MANAGER', type: 'employee', facilityId: 7 };
 const admin = { id: 1, role: 'SUPER_ADMIN', type: 'employee' };
 const staff = { id: 5, role: 'WAREHOUSE_STAFF', type: 'employee', facilityId: 7 };
+const factoryStaff = { id: 9, role: 'FACTORY_WAREHOUSE_STAFF', type: 'employee', facilityId: 2 };
 const pharmacist = { id: 6, role: 'PHARMACIST', type: 'employee', facilityId: 7 };
 
 const order: PurchaseOrderDto = {
@@ -213,6 +214,12 @@ describe('PurchaseOrderService reads', () => {
     const { service } = setup();
     expect(await errorCode(service.list(staff, { facilityId: 8 }))).toBe('WAREHOUSE_FACILITY_FORBIDDEN');
     expect(await errorCode(service.list(pharmacist, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
+  });
+
+  it('lists the orders that ask the factory for stock, by supplier', async () => {
+    const { tx, service } = setup();
+    await service.list(factoryStaff, { status: 'APPROVED' });
+    expect(tx.purchase_orders.findMany.mock.calls[0][0].where).toEqual({ supplier_id: 2, status: 'APPROVED' });
   });
 
   it('offers warehouses, factories, manufacturers and products to staff', async () => {

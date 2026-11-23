@@ -29,6 +29,8 @@ const CATALOG = {
   GR_BOX_UNAVAILABLE: [CONFLICT, 'A scanned box has already been received or is not available.'],
   GR_CARTON_INVALID: [UNPROCESSABLE_ENTITY, 'A scanned carton code is unknown or was scanned twice.'],
   GR_CARTON_WRONG_BATCH: [UNPROCESSABLE_ENTITY, 'A scanned carton belongs to another batch.'],
+  GR_BATCH_NOT_FROM_SUPPLIER: [UNPROCESSABLE_ENTITY, 'This batch was not registered by the factory that supplies this order.'],
+  GR_SUPPLIER_STOCK_INSUFFICIENT: [CONFLICT, 'The supplying factory does not have enough available stock for these boxes.'],
   GR_CARTON_UNAVAILABLE: [CONFLICT, 'A scanned carton has already been received.'],
   GR_REJECT_REASON_REQUIRED: [UNPROCESSABLE_ENTITY, 'Enter a reason of at most 300 characters for the rejected boxes.'],
   GR_OVER_RECEIPT: [CONFLICT, 'The received quantity is more than what is still open on the purchase order line.'],

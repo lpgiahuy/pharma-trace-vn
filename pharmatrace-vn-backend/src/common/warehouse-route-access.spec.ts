@@ -75,14 +75,16 @@ describe('Warehouse route access', () => {
   });
 
   it('lets warehouse staff read purchase orders but only managers change them', () => {
-    // Read routes inherit the class-level roles.
+    // The class-level roles stay warehouse-only; the two read routes also admit the factory that supplies the order.
     const readers = Reflect.getMetadata(ROLES_KEY, PurchaseOrderController) as string[];
     expect(readers).toContain('WAREHOUSE_STAFF');
     expect(readers).not.toContain('FACTORY_WAREHOUSE_STAFF');
+    for (const method of ['list', 'detail']) expect(rolesOf(PurchaseOrderController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
     for (const method of ['create', 'update', 'approve', 'cancel', 'close']) {
       const roles = rolesOf(PurchaseOrderController, method);
       expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
       expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
+      expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
     }
   });
 

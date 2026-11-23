@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   { key: '/warehouse/traceability', icon: <ScanOutlined />, label: 'Traceability' },
 ];
 
-const FACTORY_NAV_KEYS = ['/warehouse', '/warehouse/inventory', '/warehouse/batches', '/warehouse/transfers'];
+const FACTORY_NAV_KEYS = ['/warehouse', '/warehouse/inventory', '/warehouse/batches', '/warehouse/transfers', '/warehouse/purchase-orders'];
 
 export function WarehouseLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();

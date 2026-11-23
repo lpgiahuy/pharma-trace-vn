@@ -250,7 +250,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /** Purchase orders of one warehouse: reads for WH_ALL, writes for WH_MANAGER (purchase_order_* policies). */
   async withPurchaseOrder<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !(WH_ALL as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid purchase order scope');
+    // Factory staff only read the purchase orders addressed to their factory; the routes and RLS keep them read-only.
+    if (actor.type !== 'employee' || !(WH_READ as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid purchase order scope');
     if (actor.role !== 'SUPER_ADMIN' && (!Number.isInteger(actor.facilityId) || Number(actor.facilityId) <= 0)) throw new ForbiddenException('Staff account is not assigned to a facility');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`

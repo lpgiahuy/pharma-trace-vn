@@ -95,7 +95,7 @@ export default function PurchaseOrderDetailPage() {
 
       <Table rowKey="id" dataSource={order.purchase_order_items} columns={COLUMNS} pagination={false} scroll={{ x: 640 }} />
 
-      {(order.status === 'APPROVED' || order.status === 'PARTIALLY_RECEIVED') && (receiving
+      {role !== 'FACTORY_WAREHOUSE_STAFF' && (order.status === 'APPROVED' || order.status === 'PARTIALLY_RECEIVED') && (receiving
         ? <GoodsReceiptForm order={order} />
         : <Button type="primary" onClick={() => setReceiving(true)}>Receive goods</Button>)}
 

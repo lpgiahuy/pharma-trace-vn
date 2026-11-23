@@ -55,6 +55,7 @@ export default function PurchaseOrdersPage() {
         options={STATUSES.map(value => ({ value, label: value.replace(/_/g, ' ') }))}
         onChange={value => { setLoading(true); setPage(1); setStatus(value); }}
       />
+      {role === 'FACTORY_WAREHOUSE_STAFF' && <Alert type="info" showIcon title="These approved orders ask your factory for stock. Prepare the batches and cartons; the warehouse receives them by scanning, or you can send them from the Transfers tab." />}
       {error && <Alert type="error" showIcon title="We could not load purchase orders. Please try again." />}
       <Table
         rowKey="id"
