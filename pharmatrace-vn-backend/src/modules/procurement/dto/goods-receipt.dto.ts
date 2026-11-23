@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested,
+  ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -15,18 +15,33 @@ export class GoodsReceiptLineDto {
   @Min(1)
   poItemId: number;
 
-  @ApiProperty({ example: 'LOT-2026-001', description: 'An existing batch of the same medicine, or a new batch to register' })
+  @ApiPropertyOptional({ description: 'Receive every box the factory shipped on this line except the rejected and missing ones; batch and dates then come from the boxes' })
+  @IsOptional()
+  @IsBoolean()
+  shipped?: boolean;
+
+  @ApiPropertyOptional({ type: [String], description: 'With shipped: box UIDs that did not arrive; they stay reserved until the order is closed' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5000)
+  @IsUUID('all', { each: true })
+  missingBoxUids?: string[];
+
+  @ApiPropertyOptional({ example: 'LOT-2026-001', description: 'An existing batch of the same medicine, or a new batch to register; not needed with shipped' })
+  @ValidateIf((line: GoodsReceiptLineDto) => !line.shipped)
   @IsString()
   @Matches(/\S/, { message: 'batchNumber must not be blank' })
   @MaxLength(100)
   batchNumber: string;
 
-  @ApiProperty({ example: '2026-01-15' })
+  @ApiPropertyOptional({ example: '2026-01-15' })
+  @ValidateIf((line: GoodsReceiptLineDto) => !line.shipped)
   @IsDateString({ strict: true })
   @Matches(DATE_ONLY, { message: 'productionDate must be a date in YYYY-MM-DD format' })
   productionDate: string;
 
-  @ApiProperty({ example: '2028-01-15' })
+  @ApiPropertyOptional({ example: '2028-01-15' })
+  @ValidateIf((line: GoodsReceiptLineDto) => !line.shipped)
   @IsDateString({ strict: true })
   @Matches(DATE_ONLY, { message: 'expiryDate must be a date in YYYY-MM-DD format' })
   expiryDate: string;
@@ -51,6 +66,20 @@ export class GoodsReceiptLineDto {
   @IsString({ each: true })
   @MaxLength(50, { each: true })
   ssccCodes?: string[];
+
+  @ApiPropertyOptional({ example: 80, description: 'Outside manufacturer only: boxes counted in good condition; the system issues their UIDs. Use instead of boxUids' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  acceptedQuantity?: number;
+
+  @ApiPropertyOptional({ example: 2, description: 'Outside manufacturer only: boxes counted as damaged (quarantined); the system issues their UIDs' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  rejectedQuantity?: number;
 
   @ApiPropertyOptional({ type: [String], description: 'Scanned box UIDs rejected into quarantine' })
   @IsOptional()

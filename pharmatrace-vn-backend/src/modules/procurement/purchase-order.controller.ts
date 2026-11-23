@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { WH_ALL, WH_MANAGER, WH_READ } from '../../common/warehouse-roles';
 import { ClosePurchaseOrderDto } from './dto/goods-receipt.dto';
-import { CancelPurchaseOrderDto, PurchaseOrderDto, PurchaseOrderOptionsQueryDto, PurchaseOrderQueryDto } from './dto/purchase-order.dto';
+import { CancelPurchaseOrderDto, PurchaseOrderDto, PurchaseOrderOptionsQueryDto, PurchaseOrderQueryDto, ShipPurchaseOrderDto } from './dto/purchase-order.dto';
 import { PurchaseOrderService } from './purchase-order.service';
 
 @ApiTags('Warehouse - Purchase Orders')
@@ -56,6 +56,20 @@ export class PurchaseOrderController {
   @ApiOperation({ summary: 'Approve a PENDING purchase order' })
   async approve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.purchaseOrders.approve(user, id) };
+  }
+
+  @Post(':id/ship')
+  @Roles('FACTORY_WAREHOUSE_STAFF')
+  @ApiOperation({ summary: 'The supplying factory ships an approved purchase order by scanning the boxes it sends; they are reserved' })
+  async ship(@Param('id', ParseIntPipe) id: number, @Body() dto: ShipPurchaseOrderDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.purchaseOrders.ship(user, id, dto) };
+  }
+
+  @Post(':id/reject')
+  @Roles('FACTORY_WAREHOUSE_STAFF')
+  @ApiOperation({ summary: 'The supplying factory rejects an approved purchase order with a reason' })
+  async reject(@Param('id', ParseIntPipe) id: number, @Body() dto: CancelPurchaseOrderDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.purchaseOrders.reject(user, id, dto.reason) };
   }
 
   @Post(':id/cancel')

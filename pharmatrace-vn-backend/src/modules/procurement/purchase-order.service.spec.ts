@@ -178,6 +178,38 @@ describe('PurchaseOrderService.cancel', () => {
   });
 });
 
+describe('PurchaseOrderService supplier answer', () => {
+  const sqlOf = (tx: ReturnType<typeof setup>['tx']) => (tx.$queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]]);
+
+  it('ships through the supplier function with the scanned manifest and a trimmed note', async () => {
+    const { tx, service } = setup({ status: 'APPROVED' });
+    await service.ship(factoryStaff, 5, {
+      lines: [{ poItemId: 31, boxUids: ['0e434d6b-2621-4488-b435-220421e8c36d'], ssccCodes: [' 000000000000000001 '] }], note: '  On the truck ',
+    });
+    const [strings, ...values] = sqlOf(tx);
+    expect(strings.join('')).toContain('supplier_ship_purchase_order');
+    expect(values[0]).toBe(5);
+    expect(JSON.parse(values[1] as string)).toEqual([
+      { poItemId: 31, boxUids: ['0e434d6b-2621-4488-b435-220421e8c36d'], ssccCodes: ['000000000000000001'] },
+    ]);
+    expect(values[2]).toBe('On the truck');
+  });
+
+  it('rejects with the reason through the supplier function', async () => {
+    const { tx, service } = setup({ status: 'APPROVED' });
+    await service.reject(factoryStaff, 5, ' Out of stock ');
+    const [strings, ...values] = sqlOf(tx);
+    expect(strings.join('')).toContain('supplier_respond_purchase_order');
+    expect(values).toEqual([5, 'Out of stock']);
+  });
+
+  it('lets the warehouse manager cancel a shipped order that never arrived', async () => {
+    const { tx, service } = setup({ status: 'SHIPPED' });
+    await service.cancel(manager, 5, 'Lost in transit');
+    expect(tx.purchase_orders.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { status: 'CANCELLED', cancel_reason: 'Lost in transit' } });
+  });
+});
+
 describe('PurchaseOrderService.close', () => {
   it('closes a partially received order with a trimmed reason and records it', async () => {
     const { tx, service } = setup({ status: 'PARTIALLY_RECEIVED' });

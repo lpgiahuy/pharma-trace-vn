@@ -22,7 +22,8 @@ interface FormValues {
   lines?: { variantId?: number; quantity?: number; unitPrice?: number }[];
 }
 
-const variantLabel = (variant: Variant) => `${variant.medicine.medicine_name} (${variant.unit_name})`;
+// The unit comes first because long medicine names are truncated in the dropdown and the unit is what tells variants apart.
+const variantLabel = (variant: Variant) => `[${variant.unit_name}] ${variant.medicine.medicine_name}`;
 
 function initialValues(order: PurchaseOrderDetail): FormValues {
   return {
@@ -51,9 +52,13 @@ export function PurchaseOrderForm({ order }: { order?: PurchaseOrderDetail }) {
   const lines = Form.useWatch('lines', form);
   const total = (lines ?? []).reduce((sum, line) => sum + (line?.quantity ?? 0) * (line?.unitPrice ?? 0), 0);
 
+  // `variants` remembers every variant ever loaded so selected lines keep their labels; the dropdown lists only the latest search result.
+  const [searchedIds, setSearchedIds] = useState<Set<number>>(new Set());
+
   const search = (text?: string) => purchaseOrderService.options(text)
     .then(res => {
       setOptions(res.data);
+      setSearchedIds(new Set(res.data.variants.map(found => found.id)));
       setVariants(known => [...known, ...res.data.variants.filter(found => !known.some(variant => variant.id === found.id))]);
     })
     .catch(() => setError(true));
@@ -81,8 +86,8 @@ export function PurchaseOrderForm({ order }: { order?: PurchaseOrderDetail }) {
   };
 
   const supplierOptions = [
-    { label: 'Manufacturers', options: (options?.manufacturers ?? []).map(item => ({ value: `m:${item.id}`, label: item.name })) },
-    { label: 'Factories', options: (options?.factories ?? []).map(item => ({ value: `f:${item.id}`, label: item.facility_name })) },
+    { label: 'Manufacturers', options: (options?.manufacturers ?? []).map(item => ({ value: `m:${item.id}`, label: `${item.name} (outside manufacturer)` })) },
+    { label: 'Factories', options: (options?.factories ?? []).map(item => ({ value: `f:${item.id}`, label: `${item.facility_name} (our factory: ships and rejects in this system)` })) },
   ];
 
   return (
@@ -113,7 +118,9 @@ export function PurchaseOrderForm({ order }: { order?: PurchaseOrderDetail }) {
                     <Select
                       showSearch={{ filterOption: false, onSearch: search }}
                       placeholder="Search a product"
-                      options={variants.map(variant => ({ value: variant.id, label: variantLabel(variant) }))}
+                      options={variants
+                        .filter(variant => searchedIds.has(variant.id) || variant.id === form.getFieldValue(['lines', field.name, 'variantId']))
+                        .map(variant => ({ value: variant.id, label: variantLabel(variant) }))}
                     />
                   </Form.Item>
                   <Form.Item name={[field.name, 'quantity']} rules={[{ required: true, message: 'Quantity' }]} className="mb-0">
@@ -132,7 +139,7 @@ export function PurchaseOrderForm({ order }: { order?: PurchaseOrderDetail }) {
         <div className="mt-3 text-right text-sm text-slate-600">Estimated total: <strong>{formatCurrency(total)}</strong></div>
       </Card>
 
-      <div className="flex gap-2">
+      <div className="mt-4 flex gap-2">
         <Button type="primary" htmlType="submit" loading={saving}>{order ? 'Save changes' : 'Create purchase order'}</Button>
         <Button onClick={() => router.back()}>Cancel</Button>
       </div>

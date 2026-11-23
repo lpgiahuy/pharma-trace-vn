@@ -6,8 +6,8 @@ import { CurrentUserPayload } from '../../common/decorators/current-user.decorat
 import { WH_MANAGER, WH_READ, warehouseScope } from '../../common/warehouse-roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Page, pagination } from '../warehouse/inventory/warehouse-inventory.service';
-import { PurchaseOrderDto, PurchaseOrderQueryDto } from './dto/purchase-order.dto';
-import { procurementError } from './procurement-errors';
+import { PurchaseOrderDto, PurchaseOrderQueryDto, ShipPurchaseOrderDto } from './dto/purchase-order.dto';
+import { procurementDatabase, procurementError } from './procurement-errors';
 
 type Tx = Prisma.TransactionClient;
 
@@ -25,7 +25,7 @@ const listSelect = {
 
 const detailSelect = {
   id: true, po_code: true, status: true, total_amount: true, note: true, expected_at: true, received_at: true,
-  created_at: true, approved_at: true, cancel_reason: true, closed_reason: true,
+  created_at: true, approved_at: true, cancel_reason: true, closed_reason: true, rejected_reason: true,
   ...partiesSelect,
   employees: { select: { id: true, full_name: true } },
   approved_by: { select: { id: true, full_name: true } },
@@ -153,12 +153,31 @@ export class PurchaseOrderService {
     });
   }
 
-  /** PENDING and APPROVED orders have received nothing yet; any later status cannot be cancelled. */
+  /** The supplying factory ships an APPROVED order by scanning the boxes it sends; they are reserved for this order. */
+  ship(user: CurrentUserPayload, id: number, dto: ShipPurchaseOrderDto): Promise<PurchaseOrderDetail> {
+    const manifest = JSON.stringify(dto.lines.map(line => ({
+      poItemId: line.poItemId, boxUids: line.boxUids ?? [], ssccCodes: (line.ssccCodes ?? []).map(code => code.trim()),
+    })));
+    return this.prisma.withPurchaseOrder(authActor(user), tx => procurementDatabase((async () => {
+      await tx.$queryRaw`SELECT public.supplier_ship_purchase_order(${id}::integer, ${manifest}::jsonb, ${dto.note?.trim() || null}::text)`;
+      return this.load(tx, id);
+    })()));
+  }
+
+  /** The supplying factory turns an APPROVED order down; the reason is required and the order ends as REJECTED. */
+  reject(user: CurrentUserPayload, id: number, reason: string): Promise<PurchaseOrderDetail> {
+    return this.prisma.withPurchaseOrder(authActor(user), tx => procurementDatabase((async () => {
+      await tx.$queryRaw`SELECT public.supplier_respond_purchase_order(${id}::integer, 'REJECT'::text, ${reason.trim()}::text)`;
+      return this.load(tx, id);
+    })()));
+  }
+
+  /** PENDING, APPROVED and SHIPPED orders have received nothing yet; any later status cannot be cancelled. */
   cancel(user: CurrentUserPayload, id: number, reason: string): Promise<PurchaseOrderDetail> {
     const actor = authActor(user);
     const note = reason.trim();
     return this.prisma.withPurchaseOrder(actor, async tx => {
-      const po = await this.lock(tx, id, ['PENDING', 'APPROVED']);
+      const po = await this.lock(tx, id, ['PENDING', 'APPROVED', 'SHIPPED']);
       await tx.purchase_orders.update({ where: { id }, data: { status: 'CANCELLED', cancel_reason: note } });
       await this.record(tx, id, 'CANCELLED', po.status, 'CANCELLED', actor.id, note);
       return this.load(tx, id);

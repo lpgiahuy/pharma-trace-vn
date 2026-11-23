@@ -23,6 +23,7 @@ function setup(rows: { inventories?: unknown[]; quarantine?: unknown[]; boxes?: 
       findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue(rows.batch ?? null),
     },
+    goods_receipt_lines: { findMany: jest.fn().mockResolvedValue([]) },
     medicine_boxes: { groupBy: jest.fn().mockResolvedValue(rows.boxes ?? []) },
     internal_transfers: { count: jest.fn().mockResolvedValue(3) },
     orders: { count: jest.fn().mockResolvedValue(4) },

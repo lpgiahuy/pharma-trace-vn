@@ -4,7 +4,9 @@ export function readPackageUid(code: string): string | null {
   let uid = code.trim();
   if (/^https?:\/\//i.test(uid)) {
     try {
-      uid = new URL(uid).searchParams.get('uid') || '';
+      // Label QR codes carry the UID in the hash (`/trace#uid=…&code=…`); older links used `?uid=`.
+      const url = new URL(uid);
+      uid = url.searchParams.get('uid') || new URLSearchParams(url.hash.replace(/^#/, '')).get('uid') || '';
     } catch {
       return null;
     }

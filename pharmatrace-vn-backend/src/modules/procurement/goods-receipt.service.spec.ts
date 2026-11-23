@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { AppException } from '../../common/errors/app-exception';
+import { CryptoUtil } from '../../common/utils/crypto.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { GoodsReceiptDto } from './dto/goods-receipt.dto';
@@ -61,9 +62,46 @@ describe('GoodsReceiptService.receive', () => {
     expect(values.slice(0, 3)).toEqual([5, 'GR-20261118-0001', 'Morning truck']);
     expect(JSON.parse(values[3] as string)).toEqual([{
       poItemId: 31, batchNumber: 'LOT-1', productionDate: '2026-01-01', expiryDate: '2028-01-01', certificateCoCq: null,
-      boxUids: [box.toLowerCase()], ssccCodes: ['SSCC-1'], rejectedBoxUids: [], rejectReason: null,
+      boxUids: [box.toLowerCase()], ssccCodes: ['SSCC-1'], rejectedBoxUids: [], rejectReason: null, shipped: false, missingBoxUids: [],
     }]);
     expect(tx.goods_receipts.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 12, po_id: 5 } }));
+  });
+
+  it('issues UIDs and secret codes for boxes that are counted, not scanned', async () => {
+    process.env.QR_SECRET_KEY = 'test-key';
+    const { tx, service } = setup();
+    await service.receive(staff, 5, {
+      receiptCode: 'GR-20261118-0003',
+      lines: [{ poItemId: 31, batchNumber: ' LOT-9 ', productionDate: '2026-01-01', expiryDate: '2028-01-01', acceptedQuantity: 3, rejectedQuantity: 1, rejectReason: 'Crushed' }],
+    });
+    const [line] = JSON.parse((tx.$queryRaw.mock.calls[0].slice(1) as unknown[])[3] as string);
+    expect(line.boxUids).toHaveLength(3);
+    expect(line.rejectedBoxUids).toHaveLength(1);
+    const uids = [...line.boxUids, ...line.rejectedBoxUids];
+    expect(new Set(uids).size).toBe(4);
+    expect(Object.keys(line.signatures).sort()).toEqual([...uids].sort());
+    expect(CryptoUtil.verifyBoxSignature(uids[0], 'LOT-9', line.signatures[uids[0]])).toBe(true);
+  });
+
+  it('rejects a line that both counts and scans boxes', () => {
+    const { service } = setup();
+    expect(() => service.receive(staff, 5, {
+      receiptCode: 'GR-20261118-0004',
+      lines: [{ poItemId: 31, batchNumber: 'LOT-9', productionDate: '2026-01-01', expiryDate: '2028-01-01', acceptedQuantity: 2, boxUids: [box] }],
+    })).toThrow(expect.objectContaining({ code: 'GR_LINE_INVALID' }));
+  });
+
+  it('sends a shipped line with only its damaged and missing boxes and no batch details', async () => {
+    const { tx, service } = setup();
+    await service.receive(staff, 5, {
+      receiptCode: 'GR-20261118-0002',
+      lines: [{ poItemId: 31, shipped: true, rejectedBoxUids: [box], missingBoxUids: [box.replace('0F8F', '1F8F')], rejectReason: 'Crushed' }],
+    } as GoodsReceiptDto);
+    const values = tx.$queryRaw.mock.calls[0].slice(1) as unknown[];
+    expect(JSON.parse(values[3] as string)).toEqual([{
+      poItemId: 31, shipped: true, batchNumber: null, productionDate: null, expiryDate: null, certificateCoCq: null,
+      boxUids: [], ssccCodes: [], rejectedBoxUids: [box.toLowerCase()], missingBoxUids: [box.replace('0F8F', '1F8F').toLowerCase()], rejectReason: 'Crushed',
+    }]);
   });
 
   it.each([

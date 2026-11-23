@@ -5,6 +5,26 @@ import { LoadingOutlined } from '@ant-design/icons';
 import type { Html5Qrcode } from 'html5-qrcode';
 import styles from './OrderPackingModal.module.css';
 
+/** Decode a package QR code from an uploaded image. Throws if no code is found. */
+export async function scanPackageImage(file: File): Promise<string> {
+  const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+  const holder = document.createElement('div');
+  holder.id = `package-image-${Math.random().toString(36).slice(2)}`;
+  holder.style.display = 'none';
+  document.body.appendChild(holder);
+  const scanner = new Html5Qrcode(holder.id, {
+    formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128],
+    useBarCodeDetectorIfSupported: true,
+    verbose: false,
+  });
+  try {
+    return await scanner.scanFile(file, false);
+  } finally {
+    try { scanner.clear(); } catch { /* nothing to clear */ }
+    holder.remove();
+  }
+}
+
 interface Props {
   onRead: (code: string) => void;
 }
@@ -34,13 +54,12 @@ export function PackageQrCamera({ onRead }: Props) {
         scanner = new Html5Qrcode(id, {
           formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128],
           verbose: false,
+          useBarCodeDetectorIfSupported: true,
         });
+        // No qrbox: decode the whole frame so large or dense QR codes (e.g. on a phone screen) are not cropped.
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: (width, height) => {
-            const size = Math.floor(Math.min(width, height, 280) * 0.8);
-            return { width: size, height: size };
-          } },
+          { fps: 15, videoConstraints: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } },
           (code) => {
             if (cancelled || code === lastCode) return;
             lastCode = code;

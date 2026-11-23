@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Alert, App, Button, Descriptions, Spin, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { PrinterOutlined } from '@ant-design/icons';
 import { purchaseOrderService, type GoodsReceiptDetail } from '@/services/purchaseOrder.service';
+import { downloadBatchLabelsPdf } from '@/components/warehouse/FactoryBatchModal';
+import { MAX_PDF_LABELS } from '@/utils/batch-label-pdf';
+import { workflowErrorMessage } from '@/utils/workflow-error';
 import { formatCurrency, formatDate, formatDateTime } from '@/utils';
 
 type Line = GoodsReceiptDetail['goods_receipt_lines'][number];
@@ -35,6 +39,7 @@ export default function GoodsReceiptDetailPage() {
   const { message } = App.useApp();
   const [receipt, setReceipt] = useState<GoodsReceiptDetail>();
   const [error, setError] = useState(false);
+  const [printing, setPrinting] = useState<number>();
 
   useEffect(() => {
     purchaseOrderService.receipt(poId, receiptId).then(res => setReceipt(res.data)).catch(() => setError(true));
@@ -43,6 +48,21 @@ export default function GoodsReceiptDetailPage() {
   const view = (attachmentId: number) => purchaseOrderService.attachment(poId, receiptId, attachmentId)
     .then(blob => window.open(URL.createObjectURL(blob), '_blank'))
     .catch(() => message.error('We could not load this file.'));
+
+  const printLabels = async (line: Line) => {
+    setPrinting(line.id);
+    try {
+      await downloadBatchLabelsPdf(line.batches.id, {
+        batchNumber: line.batches.batch_number,
+        medicineName: line.purchase_order_items.medicines.medicine_name,
+        expiryDate: line.batches.expiry_date ?? '',
+      });
+    } catch (err) {
+      message.error(workflowErrorMessage(err, 'We could not create the labels.'));
+    } finally {
+      setPrinting(undefined);
+    }
+  };
 
   if (error) return <Alert type="error" showIcon title="We could not load this goods receipt." />;
   if (!receipt) return <Spin />;
@@ -67,7 +87,21 @@ export default function GoodsReceiptDetailPage() {
       <Table
         rowKey="id"
         dataSource={receipt.goods_receipt_lines}
-        columns={COLUMNS}
+        columns={[...COLUMNS, {
+          title: 'Labels',
+          render: (_, line) => (
+            <Button
+              size="small"
+              icon={<PrinterOutlined />}
+              loading={printing === line.id}
+              disabled={line.box_uids.length === 0 || line.box_uids.length > MAX_PDF_LABELS}
+              title={line.box_uids.length > MAX_PDF_LABELS ? `More than ${MAX_PDF_LABELS} boxes: print in smaller receipts` : undefined}
+              onClick={() => printLabels(line)}
+            >
+              Print labels
+            </Button>
+          ),
+        }]}
         pagination={false}
         scroll={{ x: 800 }}
         expandable={{

@@ -268,7 +268,7 @@ COPY public.manufacturers (id, name, slug, country, logo_url, website, status, c
 230	Bouchara	bouchara	Việt Nam	\N	\N	ACTIVE	2026-09-03 13:45:57.245917+00	\N	\N	\N	\N	UNVERIFIED
 231	Salonpas	salonpas	Việt Nam	\N	\N	ACTIVE	2026-09-03 13:45:57.251618+00	\N	\N	\N	\N	UNVERIFIED
 232	Truong Son	truong-son	Việt Nam	\N	\N	ACTIVE	2026-09-03 13:45:57.257252+00	\N	\N	\N	\N	UNVERIFIED
-236	Pharmatrace Factory - Binh Duong	pharmatrace-factory-binh-duong	Việt Nam	\N	\N	ACTIVE	2026-09-03 13:45:57.268273+00	\N	\N	\N	\N	UNVERIFIED
+236	Binh Duong Pharma Manufacturing Co., Ltd	binh-duong-pharma-manufacturing	Việt Nam	\N	\N	ACTIVE	2026-09-03 13:45:57.268273+00	\N	\N	\N	\N	UNVERIFIED
 237	Becamex Pharmaceutical Joint Stock Company (Vietnam)	becamex-pharmaceutical-joint-stock-company-vietnam	Vietnam	\N	\N	ACTIVE	2026-09-03 13:45:57.319338+00	\N	\N	\N	\N	UNVERIFIED
 238	Usa - Nic Pharma Company (vietnam)	usa-nic-pharma-company-vietnam	Vietnam	\N	\N	ACTIVE	2026-09-03 13:45:57.331374+00	\N	\N	\N	\N	UNVERIFIED
 239	Apimed Pharmaceutical Joint Stock Company	apimed-pharmaceutical-joint-stock-company	Vietnam	\N	\N	ACTIVE	2026-09-03 13:45:57.3795+00	\N	\N	\N	\N	UNVERIFIED

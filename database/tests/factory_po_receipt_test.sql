@@ -11,7 +11,7 @@ INSERT INTO public.employees(full_name,email,role,status,facility_id) VALUES ('F
 INSERT INTO public.medicines(medicine_name) VALUES ('FR medicine') RETURNING id AS id \gset med_
 INSERT INTO public.packaging_variants(medicine_id,unit_name) VALUES (:med_id,'box') RETURNING id AS id \gset v_
 INSERT INTO public.purchase_orders(po_code,supplier_id,facility_id,created_by_employee_id,status)
-  VALUES ('PO-FR-1',:f_f,:f_w,:e_wm,'APPROVED') RETURNING id AS id \gset p_
+  VALUES ('PO-FR-1',:f_f,:f_w,:e_wm,'SHIPPED') RETURNING id AS id \gset p_
 INSERT INTO public.purchase_order_items(po_id,medicine_id,variant_id,quantity,unit_price) VALUES (:p_id,:med_id,:v_id,12,10) RETURNING id AS id \gset i_
 INSERT INTO public.purchase_order_events(po_id,action,to_status,actor_id) VALUES (:p_id,'APPROVED','APPROVED',:e_wm);
 SELECT set_config('test.f',:'f_f',true), set_config('test.g',:'f_g',true), set_config('test.w',:'f_w',true), set_config('test.po',:'p_id',true),

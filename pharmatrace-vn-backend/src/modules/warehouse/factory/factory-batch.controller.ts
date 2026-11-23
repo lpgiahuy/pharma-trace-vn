@@ -4,7 +4,7 @@ import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/curr
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { FACTORY_INTAKE } from '../../../common/warehouse-roles';
+import { FACTORY_INTAKE, WH_ALL } from '../../../common/warehouse-roles';
 import { CreateFactoryBatchDto, FactoryFacilityQueryDto, ProductionReportQueryDto, VoidFactoryBatchDto } from './dto/factory-batch.dto';
 import { FactoryBatchService } from './factory-batch.service';
 
@@ -29,8 +29,9 @@ export class FactoryBatchController {
   }
 
   @Get(':id/labels')
+  @Roles(...FACTORY_INTAKE, ...WH_ALL)
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'Download the box UIDs and SSCC codes of a factory batch as CSV for label printing' })
+  @ApiOperation({ summary: 'Download the box UIDs, SSCC codes and secret codes of a batch as CSV for label printing: the factory that made it, or the warehouse that received it from an outside manufacturer' })
   async labels(@Param('id', ParseIntPipe) id: number, @Query() query: FactoryFacilityQueryDto, @CurrentUser() user: CurrentUserPayload) {
     const csv = await this.batches.labels(user, id, query);
     return new StreamableFile(Buffer.from(csv), { type: 'text/csv; charset=utf-8', disposition: `attachment; filename="batch-${id}-labels.csv"` });

@@ -99,7 +99,7 @@ function BatchesPage() {
         onClick: () => { setReason(''); setAction({ batch, release: batch.status === 'ON_HOLD' }); },
       });
     }
-    if (canCreate && batch.status !== 'VOIDED') {
+    if ((canCreate || batch.labelsHere) && batch.status !== 'VOIDED') {
       items.push(
         {
           key: 'pdf', label: pdfBatch === batch.id ? 'Building PDF...' : 'Labels (PDF)', disabled: pdfBatch === batch.id,
@@ -140,7 +140,7 @@ function BatchesPage() {
       ) : null;
     },
   };
-  const tableColumns = manager || factoryStaff || canCreate ? [...COLUMNS, actionsColumn] : COLUMNS;
+  const tableColumns = manager || factoryStaff || canCreate || rows.some(row => row.labelsHere) ? [...COLUMNS, actionsColumn] : COLUMNS;
 
   const submitRecall = async () => {
     if (!recallTarget) return;

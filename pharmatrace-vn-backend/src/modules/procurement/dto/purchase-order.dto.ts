@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested,
+  ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested,
 } from 'class-validator';
 import { WarehouseStaffQueryDto } from '../../warehouse/dto/warehouse-staff-query.dto';
 
-export const PURCHASE_ORDER_STATUSES = ['PENDING', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'] as const;
+export const PURCHASE_ORDER_STATUSES = ['PENDING', 'APPROVED', 'SHIPPED', 'REJECTED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'] as const;
 
 export class PurchaseOrderLineDto {
   @ApiProperty({ example: 12, description: 'Packaging variant to order' })
@@ -64,6 +64,44 @@ export class PurchaseOrderDto {
   @ValidateNested({ each: true })
   @Type(() => PurchaseOrderLineDto)
   lines: PurchaseOrderLineDto[];
+}
+
+export class ShipLineDto {
+  @ApiProperty({ example: 31, description: 'Purchase order line being shipped' })
+  @IsInt()
+  @Min(1)
+  poItemId: number;
+
+  @ApiPropertyOptional({ type: [String], description: 'Scanned box UIDs sent for this line' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5000)
+  @IsUUID('all', { each: true })
+  boxUids?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Scanned SSCC cartons sent for this line; every box in them is shipped' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  ssccCodes?: string[];
+}
+
+export class ShipPurchaseOrderDto {
+  @ApiProperty({ type: [ShipLineDto], description: 'One entry per order line with exactly the ordered quantity of boxes' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ShipLineDto)
+  lines: ShipLineDto[];
+
+  @ApiPropertyOptional({ example: 'Shipped by truck, arriving tomorrow' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 export class CancelPurchaseOrderDto {
