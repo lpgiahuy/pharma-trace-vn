@@ -100,6 +100,7 @@ export class InternalTransferService {
             WHERE e.transfer_id = ${transferId} ORDER BY e.created_at, e.id`;
         }
       }
+      if (transfer.request_id !== null) history = await this.withRequesterOnFirstEvent(tx, transferId, history);
       const manifest = await tx.$queryRaw<Array<{ lines: Prisma.JsonValue; prepared_by: number; prepared_at: Date }>>`
         SELECT lines, prepared_by, prepared_at FROM public.transfer_manifests WHERE transfer_id = ${transferId}
       `;
@@ -111,6 +112,24 @@ export class InternalTransferService {
       `;
       return { ...transfer, history, manifest: manifest[0] || null, custody, resolution: resolutions[0] || null };
     }, authActor(user)));
+  }
+
+  /**
+   * A transfer made from a stock transfer request only exists from the approval, so the database records its first
+   * event under the approving manager. Show the requester there and keep the approver in the note.
+   */
+  private async withRequesterOnFirstEvent(tx: Prisma.TransactionClient, transferId: number, history: LogisticsHistoryEvent[]): Promise<LogisticsHistoryEvent[]> {
+    const trail = await tx.$queryRaw<Array<{ action: string; actor_id: number; actor_name: string; actor_role: string; created_at: Date }>>`
+      SELECT action, actor_id, actor_name, actor_role, created_at FROM public.transfer_request_trail(${transferId})`;
+    const requested = trail.find(step => step.action === 'CREATE');
+    const approved = trail.find(step => step.action === 'APPROVE');
+    const first = history.findIndex(event => !event.old_status && event.new_status === 'REQUESTED');
+    if (!requested || first < 0) return history;
+    const note = [history[first].reason, approved ? `Approved by ${approved.actor_name} (${approved.actor_role})` : null].filter(Boolean).join(' · ');
+    return history.map((event, index) => index !== first ? event : {
+      ...event, reason: note || null, actor_id: requested.actor_id, actor_type: 'employee', actor_name: requested.actor_name,
+      actor_role: requested.actor_role, actor_inferred: false, created_at: requested.created_at, occurred_at: requested.created_at,
+    });
   }
 
   async transportStaff(transferId: number, user: CurrentUserPayload) {

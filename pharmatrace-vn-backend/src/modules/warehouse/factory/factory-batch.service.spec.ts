@@ -142,10 +142,20 @@ describe('FactoryBatchService.labels', () => {
     expect(tx.batches.findFirst.mock.calls[0][0].where).toEqual({ id: 31 });
   });
 
-  it('rejects warehouse staff', async () => {
-    const { prisma, service } = setup();
-    expect(await errorCode(service.labels(warehouseStaff, 31, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
-    expect(prisma.withWarehouseRead).not.toHaveBeenCalled();
+  it('lets the receiving warehouse print labels of a batch it took in from an outside manufacturer', async () => {
+    const { tx, service } = setup();
+    tx.batches.findFirst.mockResolvedValue({ medicine_boxes: [{ uid: 'u-1', signature: 's-1', sscc_cartons: null }] });
+    await expect(service.labels(warehouseStaff, 31, {})).resolves.toBe('sscc,uid,secret_code\n,u-1,s-1');
+    const call = tx.batches.findFirst.mock.calls[0][0];
+    expect(call.where.manufacturer_source_facility_id).toBeNull();
+    expect(call.where.goods_receipt_lines.some.goods_receipts.facility_id).toEqual(expect.any(Number));
+    expect(call.select.medicine_boxes.where.status).toEqual({ not: 'QUARANTINED' });
+  });
+
+  it('does not show warehouse staff the labels of a batch they did not receive from outside', async () => {
+    const { tx, service } = setup();
+    tx.batches.findFirst.mockResolvedValue(null);
+    expect(await errorCode(service.labels(warehouseStaff, 31, {}))).toBe('WAREHOUSE_BATCH_NOT_FOUND');
   });
 });
 

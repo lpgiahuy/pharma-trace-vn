@@ -50,6 +50,8 @@ export interface BatchItem {
   expiryDate: Date;
   status: string | null;
   boxesInStock: number;
+  /** The warehouse received this batch from an outside manufacturer, so it is the first unit and prints the labels. */
+  labelsHere?: boolean;
 }
 
 export interface Pagination { total: number; page: number; limit: number; totalPages: number }
@@ -75,7 +77,7 @@ function toInventoryItem(row: InventoryRow, quarantine: Map<string, number>, hel
   };
 }
 
-function toBatchItem(row: BatchRow, boxesInStock: number): BatchItem {
+function toBatchItem(row: BatchRow, boxesInStock: number, labelsHere?: boolean): BatchItem {
   return {
     id: row.id,
     batchNumber: row.batch_number,
@@ -85,6 +87,7 @@ function toBatchItem(row: BatchRow, boxesInStock: number): BatchItem {
     expiryDate: row.expiry_date,
     status: row.status,
     boxesInStock,
+    ...(labelsHere === undefined ? {} : { labelsHere }),
   };
 }
 
@@ -255,7 +258,13 @@ export class WarehouseInventoryService {
           orderBy: [{ expiry_date: 'asc' }, { id: 'asc' }], skip: (page - 1) * limit, take: limit,
         }),
       ]);
-      return { items: rows.map(r => toBatchItem(r, r._count.medicine_boxes)), pagination: pagination(total, page, limit) };
+      // Batches this warehouse registered when it received them from an outside manufacturer: it prints their labels.
+      const received = facilityId === null || !isWarehouseRole(user.role, WH_ALL) ? [] : await tx.goods_receipt_lines.findMany({
+        where: { batch_id: { in: rows.map(r => r.id) }, batches: { manufacturer_source_facility_id: null }, goods_receipts: { facility_id: facilityId } },
+        select: { batch_id: true }, distinct: ['batch_id'],
+      });
+      const labelsHere = new Set(received.map(line => line.batch_id));
+      return { items: rows.map(r => toBatchItem(r, r._count.medicine_boxes, labelsHere.has(r.id))), pagination: pagination(total, page, limit) };
     });
   }
 

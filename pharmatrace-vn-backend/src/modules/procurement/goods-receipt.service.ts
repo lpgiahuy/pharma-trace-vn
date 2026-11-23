@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import sharp from 'sharp';
 import { authActor } from '../../common/auth-identity';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { CryptoUtil } from '../../common/utils/crypto.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { GoodsReceiptDto, ReceiptAttachmentDto } from './dto/goods-receipt.dto';
@@ -48,15 +50,21 @@ export type ReceiptAttachment = Prisma.goods_receipt_attachmentsGetPayload<{ sel
 
 interface ReceiptLinePayload {
   poItemId: number;
-  batchNumber: string;
-  productionDate: string;
-  expiryDate: string;
+  shipped: boolean;
+  missingBoxUids: string[];
+  batchNumber: string | null;
+  productionDate: string | null;
+  expiryDate: string | null;
   certificateCoCq: string | null;
   boxUids: string[];
   ssccCodes: string[];
   rejectedBoxUids: string[];
+  /** Secret code of every box whose UID the system issued: HMAC(uid, batch number), as for a factory batch. */
+  signatures?: Record<string, string>;
   rejectReason: string | null;
 }
+
+const issueUids = (count: number) => Array.from({ length: count }, () => randomUUID());
 
 @Injectable()
 export class GoodsReceiptService {
@@ -64,17 +72,30 @@ export class GoodsReceiptService {
 
   /** Records one delivery; resending the same receipt code returns the receipt created the first time. */
   receive(user: CurrentUserPayload, poId: number, dto: GoodsReceiptDto): Promise<GoodsReceiptDetail> {
-    const lines: ReceiptLinePayload[] = dto.lines.map(line => ({
-      poItemId: line.poItemId,
-      batchNumber: line.batchNumber.trim(),
-      productionDate: line.productionDate,
-      expiryDate: line.expiryDate,
-      certificateCoCq: line.certificateCoCq?.trim() || null,
-      boxUids: (line.boxUids ?? []).map(uid => uid.toLowerCase()),
-      ssccCodes: (line.ssccCodes ?? []).map(code => code.trim()),
-      rejectedBoxUids: (line.rejectedBoxUids ?? []).map(uid => uid.toLowerCase()),
-      rejectReason: line.rejectReason?.trim() || null,
-    }));
+    const lines: ReceiptLinePayload[] = dto.lines.map(line => {
+      const payload: ReceiptLinePayload = {
+        poItemId: line.poItemId,
+        shipped: line.shipped === true,
+        missingBoxUids: (line.missingBoxUids ?? []).map(uid => uid.toLowerCase()),
+        batchNumber: line.batchNumber?.trim() ?? null,
+        productionDate: line.productionDate ?? null,
+        expiryDate: line.expiryDate ?? null,
+        certificateCoCq: line.certificateCoCq?.trim() || null,
+        boxUids: (line.boxUids ?? []).map(uid => uid.toLowerCase()),
+        ssccCodes: (line.ssccCodes ?? []).map(code => code.trim()),
+        rejectedBoxUids: (line.rejectedBoxUids ?? []).map(uid => uid.toLowerCase()),
+        rejectReason: line.rejectReason?.trim() || null,
+      };
+      if (line.acceptedQuantity === undefined && line.rejectedQuantity === undefined) return payload;
+      // Boxes from an outside manufacturer are counted, not scanned: the system issues their UIDs and secret codes.
+      if (payload.shipped || payload.boxUids.length || payload.ssccCodes.length || payload.rejectedBoxUids.length || !payload.batchNumber) {
+        throw procurementError('GR_LINE_INVALID');
+      }
+      payload.boxUids = issueUids(line.acceptedQuantity ?? 0);
+      payload.rejectedBoxUids = issueUids(line.rejectedQuantity ?? 0);
+      payload.signatures = Object.fromEntries([...payload.boxUids, ...payload.rejectedBoxUids].map(uid => [uid, CryptoUtil.signBox(uid, payload.batchNumber as string)]));
+      return payload;
+    });
     return procurementDatabase(this.prisma.withPurchaseOrder(authActor(user), async tx => {
       const [row] = await tx.$queryRaw<{ id: number }[]>`
         SELECT public.record_goods_receipt(${poId}::integer, ${dto.receiptCode}::text, ${dto.note?.trim() || null}::text,

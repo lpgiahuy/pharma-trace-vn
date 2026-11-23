@@ -4,7 +4,7 @@ import { randomInt, randomUUID } from 'crypto';
 import { authActor } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { CryptoUtil } from '../../../common/utils/crypto.util';
-import { FACTORY_INTAKE, warehouseScope } from '../../../common/warehouse-roles';
+import { FACTORY_INTAKE, WH_ALL, isWarehouseRole, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { warehouseDatabase, warehouseError } from '../warehouse-errors';
 import { CreateFactoryBatchDto, FactoryFacilityQueryDto, ProductionReportQueryDto, VoidFactoryBatchDto } from './dto/factory-batch.dto';
@@ -108,12 +108,23 @@ export class FactoryBatchService {
     });
   }
 
+  /**
+   * Label data for the first unit that holds a batch: the factory that made it, or the warehouse that received it from an
+   * outside manufacturer (the batch has no source factory and a goods receipt at that warehouse).
+   */
   async labels(user: CurrentUserPayload, batchId: number, query: FactoryFacilityQueryDto): Promise<string> {
-    const facilityId = warehouseScope(user, query, FACTORY_INTAKE);
+    const receiving = !isWarehouseRole(user.role, FACTORY_INTAKE) && isWarehouseRole(user.role, WH_ALL);
+    const facilityId = warehouseScope(user, query, receiving ? WH_ALL : FACTORY_INTAKE);
     const batch = await this.prisma.withWarehouseRead(authActor(user), tx => tx.batches.findFirst({
-      where: { id: batchId, ...(facilityId === null ? {} : { manufacturer_source_facility_id: facilityId }) },
+      where: receiving
+        ? { id: batchId, manufacturer_source_facility_id: null, goods_receipt_lines: { some: { goods_receipts: { facility_id: facilityId as number } } } }
+        : { id: batchId, ...(facilityId === null ? {} : { manufacturer_source_facility_id: facilityId }) },
       select: {
-        medicine_boxes: { select: { uid: true, signature: true, sscc_cartons: { select: { sscc_code: true } } }, orderBy: [{ carton_id: 'asc' }, { uid: 'asc' }] },
+        medicine_boxes: {
+          where: receiving ? { current_facility_id: facilityId, status: { not: 'QUARANTINED' } } : undefined,
+          select: { uid: true, signature: true, sscc_cartons: { select: { sscc_code: true } } },
+          orderBy: [{ carton_id: 'asc' }, { uid: 'asc' }],
+        },
       },
     }));
     if (!batch) throw warehouseError('WAREHOUSE_BATCH_NOT_FOUND');
