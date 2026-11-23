@@ -165,8 +165,6 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
     });
   };
 
-  const countCodes = (value?: string) => (value ?? '').split(/[\s,]+/).filter(Boolean).length;
-
   const handleDispatch = async () => {
     if (!selectedTransfer) return;
     setActionLoading(true);
@@ -675,9 +673,6 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
             return <div key={variantId} className="flex flex-col gap-3 rounded border border-slate-200 p-3">
               <div>{item.medicineName || `Variant #${variantId}`} — expected {item.quantity}</div>
               <ScanToolbar onCode={scanned => addScannedCode(variantId, scanned)} hint="Box QR codes go to the UID box, carton QR codes to the SSCC box." />
-              <div className="text-xs text-slate-600">
-                Required: <b>{item.quantity}</b> boxes, set by the request and not editable. Scanned: {countCodes(line.boxUids)} boxes, {countCodes(line.cartonCodes)} cartons.
-              </div>
               <Input.TextArea aria-label={`Scanned UIDs for variant ${variantId}`} value={line.boxUids} placeholder="Scan package UIDs, separated by lines or commas"
                 onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, boxUids: event.target.value } }))} />
               <Input.TextArea aria-label={`Scanned carton codes for variant ${variantId}`} value={line.cartonCodes ?? ''} rows={2}
