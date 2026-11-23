@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -23,6 +23,7 @@ export class FactoryBatchController {
   }
 
   @Get(':id/labels')
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Download the box UIDs and SSCC codes of a factory batch as CSV for label printing' })
   async labels(@Param('id', ParseIntPipe) id: number, @Query() query: FactoryFacilityQueryDto, @CurrentUser() user: CurrentUserPayload) {
     const csv = await this.batches.labels(user, id, query);

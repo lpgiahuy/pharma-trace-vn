@@ -121,9 +121,10 @@ describe('FactoryBatchService.labels', () => {
   it('lists every box with the SSCC of its carton', async () => {
     const { tx, service } = setup();
     tx.batches.findFirst.mockResolvedValue({ medicine_boxes: [
-      { uid: 'u-1', sscc_cartons: { sscc_code: '100' } }, { uid: 'u-2', sscc_cartons: { sscc_code: '100' } }, { uid: 'u-3', sscc_cartons: null },
+      { uid: 'u-1', signature: 's-1', sscc_cartons: { sscc_code: '100' } }, { uid: 'u-2', signature: 's-2', sscc_cartons: { sscc_code: '100' } },
+      { uid: 'u-3', signature: 's-3', sscc_cartons: null },
     ] });
-    await expect(service.labels(staff, 31, {})).resolves.toBe('sscc,uid\n100,u-1\n100,u-2\n,u-3');
+    await expect(service.labels(staff, 31, {})).resolves.toBe('sscc,uid,secret_code\n100,u-1,s-1\n100,u-2,s-2\n,u-3,s-3');
     expect(tx.batches.findFirst.mock.calls[0][0].where).toEqual({ id: 31, manufacturer_source_facility_id: 4 });
   });
 

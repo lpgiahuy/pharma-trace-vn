@@ -62,10 +62,12 @@ export class FactoryBatchService {
     const batch = await this.prisma.withWarehouseRead(authActor(user), tx => tx.batches.findFirst({
       where: { id: batchId, ...(facilityId === null ? {} : { manufacturer_source_facility_id: facilityId }) },
       select: {
-        medicine_boxes: { select: { uid: true, sscc_cartons: { select: { sscc_code: true } } }, orderBy: [{ carton_id: 'asc' }, { uid: 'asc' }] },
+        medicine_boxes: { select: { uid: true, signature: true, sscc_cartons: { select: { sscc_code: true } } }, orderBy: [{ carton_id: 'asc' }, { uid: 'asc' }] },
       },
     }));
     if (!batch) throw warehouseError('WAREHOUSE_BATCH_NOT_FOUND');
-    return ['sscc,uid', ...batch.medicine_boxes.map(box => `${box.sscc_cartons?.sscc_code ?? ''},${box.uid}`)].join('\n');
+    // secret_code is printed under the scratch layer. Customers type it at /trace and it is checked against
+    // HMAC(uid, batch number) (CryptoUtil.verifyBoxSignature), which is what record_factory_batch stores in signature.
+    return ['sscc,uid,secret_code', ...batch.medicine_boxes.map(box => `${box.sscc_cartons?.sscc_code ?? ''},${box.uid},${box.signature ?? ''}`)].join('\n');
   }
 }

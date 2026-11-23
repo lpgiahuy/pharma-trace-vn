@@ -110,7 +110,7 @@ export function FactoryBatchModal({ open, pickFactory, onClose, onCreated }: Pro
           <Button onClick={() => downloadBatchLabels(created.batch.id, created.facilityId).catch(error => message.error(workflowErrorMessage(error, 'We could not download the labels.')))}>
             Download labels (CSV)
           </Button>
-          <p className="m-0 text-xs text-slate-500">The file lists every box UID and SSCC code. You can download it again later from the Labels column.</p>
+          <p className="m-0 text-xs text-slate-500">The file lists every box UID, its SSCC carton code and the secret code printed under the scratch layer. Treat it as confidential: anyone holding it can verify a box as authentic. You can download it again from the Labels column.</p>
         </div>
       ) : (
         <Form form={form} layout="vertical" requiredMark>
