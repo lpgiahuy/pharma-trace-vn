@@ -170,10 +170,10 @@ export function StockTransferRequests() {
       <Table rowKey="id" dataSource={result?.data || []} columns={columns} loading={loading} scroll={{ x: 900 }} pagination={{ pageSize: 20 }} />
 
       <Modal title={isFactory ? 'Send stock to a warehouse' : 'Request stock'} open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} confirmLoading={busy} okText={isFactory ? 'Create transfer' : 'Submit request'}>
-        <div className="space-y-3 py-2">
+        <div className="flex flex-col gap-4 py-3">
           <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
-          {lines.map((line, index) => <div key={index} className="flex gap-2">
+          {lines.map((line, index) => <div key={index} className="flex items-center gap-3">
             <Select className="min-w-0 flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
               {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock', classNames: { popup: { root: '[&_.ant-select-item-option-content]:whitespace-normal! [&_.ant-select-item-option-content]:text-clip!' } } } : { filterOption: false, onSearch: searchVariants })}
               value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
