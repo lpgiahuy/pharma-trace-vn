@@ -9,13 +9,14 @@ import { useLogisticsList } from '@/hooks/useLogisticsList';
 import { facilityService } from '@/services/facility.service';
 import { productService } from '@/services/product.service';
 import { logisticsService, type StockTransferAction, type StockTransferRequest } from '@/services/logistics.service';
+import { warehouseService } from '@/services/warehouse.service';
 import type { Facility } from '@/types/facility.types';
 import { useAuthStore } from '@/store/useAuthStore';
 import { formatDateTime } from '@/utils';
 import { workflowErrorMessage } from '@/utils/workflow-error';
 
 type Line = { variantId?: number; quantity: number };
-type Option = { value: number; label: string };
+type Option = { value: number; label: string; available?: number };
 
 const STATUS_COLORS: Record<StockTransferRequest['status'], string> = {
   REQUESTED: 'gold', APPROVED: 'green', REJECTED: 'red', CANCELLED: 'default',
@@ -57,6 +58,15 @@ export function StockTransferRequests() {
     setLines([{ quantity: 1 }]);
     setReason('');
     setCreateOpen(true);
+    // A factory can only send what it holds: offer its in-stock products, not the whole catalog.
+    if (isFactory) {
+      setVariantOptions([]);
+      warehouseService.inventory({ limit: 100 })
+        .then(res => setVariantOptions(res.items.filter(item => item.variantId !== null && item.available > 0).map(item => ({
+          value: item.variantId as number, label: `${item.medicineName} · ${item.unitName} (${item.available} available)`, available: item.available,
+        }))))
+        .catch((error: unknown) => message.error(workflowErrorMessage(error, 'Unable to load factory stock')));
+    }
     try {
       const res = await facilityService.getDropdownList();
       setFacilities(res.data.filter(facility => facility.id !== facilityId && (!isFactory || String(facility.rawType ?? facility.type).toUpperCase().includes('WAREHOUSE'))));
@@ -161,9 +171,10 @@ export function StockTransferRequests() {
           <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
           {lines.map((line, index) => <div key={index} className="flex gap-2">
-            <Select className="flex-1" placeholder="Search medicine" showSearch filterOption={false} onSearch={searchVariants}
-              value={line.variantId} onChange={variantId => setLine(index, { variantId })} options={variantOptions} />
-            <InputNumber min={1} max={100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
+            <Select className="flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
+              {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock' } : { filterOption: false, onSearch: searchVariants })}
+              value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
+            <InputNumber min={1} max={(isFactory && variantOptions.find(o => o.value === line.variantId)?.available) || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
             <Button icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />
           </div>)}
           <Button type="dashed" block icon={<PlusOutlined />} onClick={() => setLines(current => [...current, { quantity: 1 }])}>Add line</Button>
