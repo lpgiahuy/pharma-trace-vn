@@ -26,7 +26,7 @@ export function PromoBanners() {
           {Array.from({ length: slideCount }).map((_, si) => (
             <div key={si} className="w-full shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-3">
               {PROMO_BANNERS.slice(si * PER_SLIDE, si * PER_SLIDE + PER_SLIDE).map((b) => (
-                <BannerImage key={b.src} banner={b} className="h-40 sm:h-52 rounded-xl" />
+                <BannerImage key={b.src} banner={b} overlayText className="h-40 sm:h-52 rounded-xl" />
               ))}
             </div>
           ))}

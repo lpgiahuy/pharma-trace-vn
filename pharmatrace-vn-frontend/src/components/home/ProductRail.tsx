@@ -8,6 +8,30 @@ import { ProductCard } from '@/components/shared/ProductCard';
 import { Product, ProductQuery } from '@/types/product.types';
 import { cn } from '@/utils';
 
+/** Sold / remaining units at the sale price, shown only when the variant has a sale quota. */
+function SaleProgress({ variant }: { variant?: NonNullable<Product['packagingOptions']>[number] }) {
+  const quota = variant?.saleQuantity;
+  if (!variant || !quota) return null;
+
+  const sold = Math.min(variant.saleSold ?? 0, quota);
+  const left = Math.max(0, quota - sold);
+  const percent = Math.round((sold / quota) * 100);
+
+  return (
+    <div className="mt-2 px-1" role="progressbar" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={sold}>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-red-100">
+        <div className="h-full rounded-full bg-[#EF4444]" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-xs">
+        <span className="text-slate-500">{sold} sold</span>
+        <span className={left <= 5 ? 'font-bold text-[#EF4444]' : 'text-slate-500'}>
+          {left <= 5 ? `Only ${left} left` : `${left} left`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 interface ProductRailProps {
   title: string;
   query: ProductQuery;
@@ -78,8 +102,9 @@ export function ProductRail({ title, query, href = '/products', filter, variantF
                 <div key={i} className="w-[180px] sm:w-[210px] shrink-0 h-[340px] rounded-2xl bg-slate-200/70 animate-pulse" />
               ))
             : products.map((p) => (
-                <div key={p.id} className="w-[180px] sm:w-[210px] shrink-0 snap-start">
+                <div key={p.id} className="flex w-[180px] sm:w-[210px] shrink-0 snap-start flex-col [&>article]:h-auto [&>article]:flex-1">
                   <ProductCard product={p} variant={variantFor?.(p)} />
+                  {sale && <SaleProgress variant={variantFor?.(p)} />}
                 </div>
               ))}
         </div>

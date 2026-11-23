@@ -60,6 +60,10 @@ export interface Product {
     saleStartDate?: string | null;
     saleEndDate?: string | null;
     isSaleActive?: boolean;
+    /** Units that can be sold at the sale price (null = unlimited), how many are left and how many are sold. */
+    saleQuantity?: number | null;
+    saleRemaining?: number | null;
+    saleSold?: number | null;
     /** Available units (stock minus reserved). */
     stock?: number;
   }[];
@@ -122,5 +126,6 @@ export interface ProductPayload {
     isBaseUnit?: boolean;
     saleStartDate?: string | Date;
     saleEndDate?: string | Date;
+    saleQuantity?: number | null;
   }[];
 }

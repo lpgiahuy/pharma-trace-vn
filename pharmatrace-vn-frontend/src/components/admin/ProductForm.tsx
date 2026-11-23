@@ -324,6 +324,7 @@ export default function ProductForm({ productId }: { productId?: number }) {
                 discountPercent: discountPct,
                 saleStartDate: opt.saleStartDate ? dayjs(opt.saleStartDate) : null,
                 saleEndDate: opt.saleEndDate ? dayjs(opt.saleEndDate) : null,
+                saleQuantity: opt.saleQuantity ?? null,
                 isBaseUnit: idx === 0,
               };
             })
@@ -791,6 +792,7 @@ export default function ProductForm({ productId }: { productId?: number }) {
         isBaseUnit: Boolean(v.isBaseUnit),
         saleStartDate: v.saleStartDate ? (v.saleStartDate.toISOString ? v.saleStartDate.toISOString() : v.saleStartDate) : undefined,
         saleEndDate: v.saleEndDate ? (v.saleEndDate.toISOString ? v.saleEndDate.toISOString() : v.saleEndDate) : undefined,
+        saleQuantity: v.saleQuantity ? Number(v.saleQuantity) : null,
       }));
 
       const payload: ProductPayload = {
@@ -1691,6 +1693,18 @@ export default function ProductForm({ productId }: { productId?: number }) {
                                         style={{ width: '100%' }}
                                         placeholder={hasDiscount ? "Required with discount" : "Sale end date"}
                                       />
+                                    </Form.Item>
+                                    <Form.Item
+                                      {...restField}
+                                      label={
+                                        <span>
+                                          Sale Quantity <span className="text-gray-400 text-xs font-normal">(optional)</span>
+                                        </span>
+                                      }
+                                      name={[name, 'saleQuantity']}
+                                      tooltip="Maximum units that can be bought at the sale price. Once they are sold, the variant returns to its regular price. Leave empty for unlimited."
+                                    >
+                                      <InputNumber min={1} precision={0} style={{ width: '100%' }} placeholder="Unlimited" />
                                     </Form.Item>
                                   </>
                                 );
