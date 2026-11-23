@@ -174,11 +174,11 @@ export function StockTransferRequests() {
           <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
           {lines.map((line, index) => <div key={index} className="flex gap-2">
-            <Select className="flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
+            <Select className="min-w-0 flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
               {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock', classNames: { popup: { root: '[&_.ant-select-item-option-content]:whitespace-normal! [&_.ant-select-item-option-content]:text-clip!' } } } : { filterOption: false, onSearch: searchVariants })}
               value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
-            <InputNumber min={1} max={(isFactory && variantOptions.find(o => o.value === line.variantId)?.available) || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
-            <Button icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />
+            <InputNumber className="w-24 shrink-0" min={1} max={(isFactory && variantOptions.find(o => o.value === line.variantId)?.available) || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
+            <Button className="shrink-0" icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />
           </div>)}
           <Button type="dashed" block icon={<PlusOutlined />} onClick={() => setLines(current => [...current, { quantity: 1 }])}>Add line</Button>
           <Input.TextArea placeholder="Reason (optional)" maxLength={500} value={reason} onChange={event => setReason(event.target.value)} />
