@@ -13,7 +13,6 @@ import {
   Select,
   AutoComplete,
   Input,
-  InputNumber,
   Button,
   Drawer,
   Modal,
@@ -166,6 +165,8 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
     });
   };
 
+  const countCodes = (value?: string) => (value ?? '').split(/[\s,]+/).filter(Boolean).length;
+
   const handleDispatch = async () => {
     if (!selectedTransfer) return;
     setActionLoading(true);
@@ -178,13 +179,9 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
         message.error('Enter the carrier and its actual tracking number');
         return;
       }
-      const manifest = selectedTransfer.items.map(item => ({ variantId: Number(item.variantId), quantity: manifestLines[Number(item.variantId)]?.quantity || 0,
+      const manifest = selectedTransfer.items.map(item => ({ variantId: Number(item.variantId), quantity: Number(item.quantity),
         boxUids: (manifestLines[Number(item.variantId)]?.boxUids || '').split(/[\s,]+/).filter(Boolean),
         cartonCodes: (manifestLines[Number(item.variantId)]?.cartonCodes || '').split(/[\s,]+/).filter(Boolean) }));
-      if (manifest.some((line, index) => line.quantity !== Number(selectedTransfer.items[index].quantity))) {
-        message.error('Enter the actual quantity for every manifest line.');
-        return;
-      }
       await logisticsService.dispatchTransfer(selectedTransfer.id, transportMode === 'INTERNAL'
         ? { transportMode, transportEmployeeId, manifest }
         : { transportMode, courierName: carrierName.trim(), trackingCode: trackingCodeInput.trim(), manifest });
@@ -671,19 +668,20 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
         okButtonProps={{ className: 'bg-[#004996]!' }}
       >
         <div className="flex flex-col gap-4 py-3">
-          <p className="m-0 text-sm">Count each line and scan every reserved package before handing goods to the responsible carrier.</p>
+          <p className="m-0 text-sm">Scan every reserved package, or whole cartons, until each line has exactly the requested number of boxes, then hand the goods to the responsible carrier.</p>
           {selectedTransfer?.items.map(item => {
             const variantId = Number(item.variantId);
             const line = manifestLines[variantId] || { quantity: 0, boxUids: '', cartonCodes: '' };
             return <div key={variantId} className="flex flex-col gap-3 rounded border border-slate-200 p-3">
               <div>{item.medicineName || `Variant #${variantId}`} — expected {item.quantity}</div>
               <ScanToolbar onCode={scanned => addScannedCode(variantId, scanned)} hint="Box QR codes go to the UID box, carton QR codes to the SSCC box." />
-              <InputNumber aria-label={`Count for variant ${variantId}`} min={0} max={Number(item.quantity)} precision={0} value={line.quantity}
-                onChange={value => setManifestLines(current => ({ ...current, [variantId]: { ...line, quantity: value || 0 } }))} />
+              <div className="text-xs text-slate-600">
+                Required: <b>{item.quantity}</b> boxes, set by the request and not editable. Scanned: {countCodes(line.boxUids)} boxes, {countCodes(line.cartonCodes)} cartons.
+              </div>
               <Input.TextArea aria-label={`Scanned UIDs for variant ${variantId}`} value={line.boxUids} placeholder="Scan package UIDs, separated by lines or commas"
                 onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, boxUids: event.target.value } }))} />
               <Input.TextArea aria-label={`Scanned carton codes for variant ${variantId}`} value={line.cartonCodes ?? ''} rows={2}
-                placeholder="Or scan SSCC carton codes: every box of a carton is added. Count them in the quantity above."
+                placeholder="Or scan SSCC carton codes: every box of a carton is added."
                 onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, cartonCodes: event.target.value } }))} />
             </div>;
           })}
