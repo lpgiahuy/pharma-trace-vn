@@ -26,7 +26,7 @@ database/
 │   └── 09_prescription_management.sql # Prescription review table, column, and indexes
 │   └── 14_articles_blog.sql        # Article categories, blog article columns and article comments
 │   └── 15_flash_sale_quota.sql     # Flash sale quota column and sold-count function
-├── seeds/                          # Development catalog and sample transactions
+├── seeds/                          # Catalog, login accounts and facilities only (no transactions); cleanup_keep_catalog_accounts.sql empties an existing local DB the same way
 │   └── 01_seed_data.sql
 └── tests/
     ├── development_seed_test.sql   # Fresh-database fixtures, sequences, and grants
@@ -180,7 +180,7 @@ Docker runs only the top-level `.sh` and `.sql` entrypoints, in filename order. 
 2. `00_master_init.sql` loads `schemas/01` through `schemas/08` (33 base tables).
 3. `security/access/app_permissions.sql` grants base table access and configures default privileges for tables created by `postgres`.
 4. `schemas/09_prescription_management.sql` creates the prescription review table and adds the order review column.
-5. `seeds/01_seed_data.sql` imports all development data in a transaction with foreign-key and CHECK constraints enabled, restores exported sequence values, and advances any sequence that would collide with imported IDs.
+5. `seeds/01_seed_data.sql` imports the catalog, login accounts and facilities (no orders, stock or other transactions; customer points and tier are defaults) in a transaction with foreign-key and CHECK constraints enabled, restores exported sequence values, and advances any sequence that would collide with imported IDs.
 6. `security/prescription/prescription_rls.sql` revokes inherited review-table privileges, grants the permitted review operations, and applies prescription policies.
 7. `security/auth/auth_rls.sql` prepares auth roles, column grants and policies. It does not enable account RLS unless explicitly invoked with `auth_rls_activate=true`. Master never runs the rollback script.
 8. `security/wishlist/wishlist_rls.sql` restricts `app_user` to SELECT/INSERT/DELETE and enables/forces customer ownership policies on `customer_wishlists`.
