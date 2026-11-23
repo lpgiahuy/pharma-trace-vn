@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { randomInt, randomUUID } from 'crypto';
 import { authActor } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
@@ -6,11 +7,20 @@ import { CryptoUtil } from '../../../common/utils/crypto.util';
 import { FACTORY_INTAKE, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { warehouseDatabase, warehouseError } from '../warehouse-errors';
-import { CreateFactoryBatchDto, FactoryFacilityQueryDto, VoidFactoryBatchDto } from './dto/factory-batch.dto';
+import { CreateFactoryBatchDto, FactoryFacilityQueryDto, ProductionReportQueryDto, VoidFactoryBatchDto } from './dto/factory-batch.dto';
 
 interface CartonPayload {
   sscc: string;
   boxes: { uid: string; signature: string }[];
+}
+
+export interface ProductionReport {
+  from: string;
+  to: string;
+  groupBy: 'day' | 'month';
+  totals: { batches: number; boxes: number; voidedBatches: number; recalledBatches: number; heldBatches: number };
+  periods: { period: string; batches: number; boxes: number }[];
+  medicines: { medicineId: number | null; medicineName: string | null; batches: number; boxes: number }[];
 }
 
 export interface FactoryBatchSummary {
@@ -64,6 +74,38 @@ export class FactoryBatchService {
       const [row] = await tx.$queryRaw<{ id: number }[]>`SELECT public.void_factory_batch(${batchId}::integer, ${dto.reason.trim()}::text) AS id`;
       return { id: row.id };
     }));
+  }
+
+  /**
+   * What the factory produced between two production dates, per day or month and per medicine. Voided batches are not
+   * production: they are counted apart. Recalled and held batches still count as produced.
+   */
+  async productionReport(user: CurrentUserPayload, query: ProductionReportQueryDto): Promise<ProductionReport> {
+    const facilityId = warehouseScope(user, query, FACTORY_INTAKE);
+    const groupBy = query.groupBy ?? 'month';
+    const to = query.to ?? new Date().toISOString().slice(0, 10);
+    const from = query.from ?? new Date(Date.parse(`${to}T00:00:00Z`) - (groupBy === 'day' ? 29 : 365) * 86_400_000).toISOString().slice(0, 10);
+    if (from > to) throw warehouseError('FB_REPORT_RANGE_INVALID');
+    const scope = Prisma.sql`b.production_date BETWEEN ${from}::date AND ${to}::date
+      AND (${facilityId}::integer IS NULL OR b.manufacturer_source_facility_id = ${facilityId}::integer)`;
+    return this.prisma.withWarehouseRead(authActor(user), async tx => {
+      const [totals] = await tx.$queryRaw<ProductionReport['totals'][]>`
+        SELECT count(*) FILTER (WHERE b.status <> 'VOIDED')::integer AS batches,
+          coalesce(sum(b.initial_quantity) FILTER (WHERE b.status <> 'VOIDED'), 0)::integer AS boxes,
+          count(*) FILTER (WHERE b.status = 'VOIDED')::integer AS "voidedBatches",
+          count(*) FILTER (WHERE b.status = 'RECALLED')::integer AS "recalledBatches",
+          count(*) FILTER (WHERE b.status = 'ON_HOLD')::integer AS "heldBatches"
+        FROM public.batches b WHERE ${scope}`;
+      const periods = await tx.$queryRaw<ProductionReport['periods']>`
+        SELECT to_char(date_trunc(${groupBy}::text, b.production_date::timestamp), 'YYYY-MM-DD') AS period,
+          count(*)::integer AS batches, sum(b.initial_quantity)::integer AS boxes
+        FROM public.batches b WHERE ${scope} AND b.status <> 'VOIDED' GROUP BY 1 ORDER BY 1`;
+      const medicines = await tx.$queryRaw<ProductionReport['medicines']>`
+        SELECT b.medicine_id AS "medicineId", m.medicine_name::text AS "medicineName", count(*)::integer AS batches, sum(b.initial_quantity)::integer AS boxes
+        FROM public.batches b LEFT JOIN public.medicines m ON m.id = b.medicine_id
+        WHERE ${scope} AND b.status <> 'VOIDED' GROUP BY 1, 2 ORDER BY boxes DESC, 2`;
+      return { from, to, groupBy, totals, periods, medicines };
+    });
   }
 
   async labels(user: CurrentUserPayload, batchId: number, query: FactoryFacilityQueryDto): Promise<string> {

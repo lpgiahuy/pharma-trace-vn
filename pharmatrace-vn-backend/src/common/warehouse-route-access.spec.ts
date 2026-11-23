@@ -7,7 +7,9 @@ import { AdminOrderController } from '../modules/order/admin-order.controller';
 import { AdminReturnsController } from '../modules/returns/admin-returns.controller';
 import { GoodsReceiptController } from '../modules/procurement/goods-receipt.controller';
 import { PurchaseOrderController } from '../modules/procurement/purchase-order.controller';
-import { FactoryBatchController } from '../modules/warehouse/factory/factory-batch.controller';
+import { DisposalController } from '../modules/warehouse/disposal/disposal.controller';
+import { WarehouseInventoryController } from '../modules/warehouse/inventory/warehouse-inventory.controller';
+import { FactoryBatchController, FactoryReportController } from '../modules/warehouse/factory/factory-batch.controller';
 import { FulfillmentController } from '../modules/warehouse/fulfillment/fulfillment.controller';
 import { WarehouseController } from '../modules/warehouse/warehouse.controller';
 
@@ -103,6 +105,18 @@ describe('Warehouse route access', () => {
 
   it('opens factory batch intake, voiding and labels to factory staff and SUPER_ADMIN only', () => {
     const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryBatchController) as string[]);
+    expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
+  });
+
+  it('lets factory staff hold and release batches and draft disposals, but not approve or complete them', () => {
+    for (const method of ['hold', 'release']) expect(rolesOf(WarehouseInventoryController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+    // Staff routes inherit the controller roles; manager routes override them.
+    expect(new Set(Reflect.getMetadata(ROLES_KEY, DisposalController) as string[]).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+    for (const method of ['approve', 'complete', 'cancel']) expect(rolesOf(DisposalController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
+  });
+
+  it('opens the production report to factory staff and SUPER_ADMIN only', () => {
+    const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryReportController) as string[]);
     expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
   });
 });

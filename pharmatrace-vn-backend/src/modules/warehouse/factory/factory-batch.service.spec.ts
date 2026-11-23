@@ -178,3 +178,56 @@ describe('FactoryBatchService.void', () => {
     expect(await errorCode(service.void(staff, 31, { reason: 'x' }))).toBe(code);
   });
 });
+
+describe('FactoryBatchService.productionReport', () => {
+  const totals = { batches: 2, boxes: 300, voidedBatches: 1, recalledBatches: 0, heldBatches: 0 };
+  const periods = [{ period: '2026-10-01', batches: 1, boxes: 100 }, { period: '2026-11-01', batches: 1, boxes: 200 }];
+  const medicines = [{ medicineId: 3, medicineName: 'Panadol', batches: 2, boxes: 300 }];
+  function reportSetup() {
+    const result = setup();
+    result.tx.$queryRaw.mockReset().mockResolvedValueOnce([totals]).mockResolvedValueOnce(periods).mockResolvedValueOnce(medicines);
+    return result;
+  }
+
+  it('reports the totals, periods and medicines of the factory of the token', async () => {
+    const { tx, service } = reportSetup();
+    await expect(service.productionReport(staff, { from: '2026-10-01', to: '2026-11-30', groupBy: 'month' })).resolves.toEqual({
+      from: '2026-10-01', to: '2026-11-30', groupBy: 'month', totals, periods, medicines,
+    });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
+    // The factory is bound into every query; groupBy is bound into the period query.
+    const bound = JSON.stringify(tx.$queryRaw.mock.calls.map(call => call.slice(1)));
+    expect(bound).toContain('2026-10-01');
+    expect(tx.$queryRaw.mock.calls[1].slice(1)).toContain('month');
+    expect((tx.$queryRaw.mock.calls[0][1] as Prisma.Sql).values).toEqual(['2026-10-01', '2026-11-30', 4, 4]);
+  });
+
+  it('defaults to the last year by month', async () => {
+    const { service } = reportSetup();
+    const report = await service.productionReport(staff, { to: '2026-11-30' });
+    expect(report).toMatchObject({ groupBy: 'month', from: '2025-11-30', to: '2026-11-30' });
+  });
+
+  it('defaults to the last 30 days when grouped by day', async () => {
+    const { service } = reportSetup();
+    expect(await service.productionReport(staff, { to: '2026-11-30', groupBy: 'day' })).toMatchObject({ from: '2026-11-01' });
+  });
+
+  it('rejects a reversed range before touching the database', async () => {
+    const { prisma, service } = reportSetup();
+    expect(await errorCode(service.productionReport(staff, { from: '2026-12-01', to: '2026-11-01' }))).toBe('FB_REPORT_RANGE_INVALID');
+    expect(prisma.withWarehouseRead).not.toHaveBeenCalled();
+  });
+
+  it('rejects another factory for factory staff and warehouse staff', async () => {
+    const { service } = reportSetup();
+    expect(await errorCode(service.productionReport(staff, { facilityId: 5 }))).toBe('WAREHOUSE_FACILITY_FORBIDDEN');
+    expect(await errorCode(service.productionReport(warehouseStaff, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
+  });
+
+  it('lets SUPER_ADMIN report on all factories or one', async () => {
+    const { tx, service } = reportSetup();
+    await service.productionReport(admin, { from: '2026-01-01', to: '2026-02-01' });
+    expect((tx.$queryRaw.mock.calls[0][1] as Prisma.Sql).values).toEqual(['2026-01-01', '2026-02-01', null, null]);
+  });
+});

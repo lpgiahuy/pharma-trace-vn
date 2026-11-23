@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -11,6 +11,22 @@ export class FactoryFacilityQueryDto {
   @IsInt()
   @Min(1)
   facilityId?: number;
+}
+
+export const PRODUCTION_GROUPS = ['day', 'month'] as const;
+
+export class ProductionReportQueryDto extends FactoryFacilityQueryDto {
+  @ApiPropertyOptional({ example: '2026-01-01', description: 'First production date (default: one year before `to`, or 30 days when grouped by day)' })
+  @IsOptional() @IsDateString({ strict: true }) @Matches(DATE_ONLY, { message: 'from must be a date in YYYY-MM-DD format' })
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31', description: 'Last production date (default: today)' })
+  @IsOptional() @IsDateString({ strict: true }) @Matches(DATE_ONLY, { message: 'to must be a date in YYYY-MM-DD format' })
+  to?: string;
+
+  @ApiPropertyOptional({ enum: PRODUCTION_GROUPS, default: 'month' })
+  @IsOptional() @IsIn(PRODUCTION_GROUPS)
+  groupBy?: (typeof PRODUCTION_GROUPS)[number];
 }
 
 export class CreateFactoryBatchDto extends FactoryFacilityQueryDto {
