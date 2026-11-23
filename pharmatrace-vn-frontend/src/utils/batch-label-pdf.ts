@@ -22,9 +22,18 @@ export function parseLabelCsv(csv: string): LabelRow[] {
   });
 }
 
-/** The link in the QR code. It carries only the box UID: the secret code stays under the scratch layer. */
-export function traceLink(origin: string, uid: string): string {
-  return `${origin}/trace#uid=${uid}`;
+/**
+ * The link in a QR code. The outer box label carries only the box UID, so anyone can read the history. The label under
+ * the scratch layer also carries the secret code, so scanning it verifies the box as genuine. The data sits in the URL
+ * fragment, which the browser never sends to a server.
+ */
+export function traceLink(origin: string, uid: string, secret?: string): string {
+  return `${origin}/trace#uid=${uid}${secret ? `&code=${secret}` : ''}`;
+}
+
+/** Drops a trailing "(15 Blisters x 12 Tablets)" so the medicine name fits three lines of a label. */
+export function shortMedicineName(name: string): string {
+  return name.replace(/\s*\([^)]*\)\s*$/, '').trim() || name;
 }
 
 interface Sheet { title: string; labels: { draw: (x: number, y: number) => void }[] }
@@ -33,7 +42,8 @@ interface Sheet { title: string; labels: { draw: (x: number, y: number) => void 
  * A printable PDF for one batch, three sections on 70 x 37 mm label sheets (3 x 7 per A4 page):
  * 1. one label per carton with the SSCC as a QR code,
  * 2. one label per box with the QR code to stick on the box,
- * 3. one label per box with the secret code to print under the scratch layer, in the same order as section 2.
+ * 3. one label per box for under the scratch layer: a QR code that verifies the box and the secret code as text for typing,
+ *    in the same order as section 2.
  */
 export async function buildBatchLabelPdf(batch: LabelBatch, rows: LabelRow[], origin: string): Promise<Blob> {
   const [{ jsPDF }, QRCode] = await Promise.all([import('jspdf'), import('qrcode')]);
@@ -73,7 +83,7 @@ export async function buildBatchLabelPdf(batch: LabelBatch, rows: LabelRow[], or
       labels: rows.map(row => ({
         draw: (x, y) => {
           drawQr(traceLink(origin, row.uid), x + 3, y + 5, 27);
-          pdf.setFont('helvetica', 'bold').setFontSize(7).text(pdf.splitTextToSize(batch.medicineName, 34).slice(0, 3), x + 34, y + 8);
+          pdf.setFont('helvetica', 'bold').setFontSize(7).text(pdf.splitTextToSize(shortMedicineName(batch.medicineName), 34).slice(0, 3), x + 34, y + 8);
           pdf.setFont('helvetica', 'normal').setFontSize(7);
           pdf.text(`Batch ${batch.batchNumber}`, x + 34, y + 21, { maxWidth: 34 });
           pdf.text(`Exp ${expiry}`, x + 34, y + 25);
@@ -86,11 +96,13 @@ export async function buildBatchLabelPdf(batch: LabelBatch, rows: LabelRow[], or
       title: `Secret codes (under the scratch layer) - batch ${batch.batchNumber}`,
       labels: rows.map(row => ({
         draw: (x, y) => {
-          pdf.setFont('helvetica', 'bold').setFontSize(8).text('SECRET CODE', x + 4, y + 8);
-          pdf.setFont('courier', 'normal').setFontSize(7.5);
-          pdf.text(row.secret.slice(0, 32), x + 4, y + 16);
-          pdf.text(row.secret.slice(32, 64), x + 4, y + 21);
-          pdf.setFont('helvetica', 'normal').setFontSize(6).text(`Box ID ${row.uid.slice(0, 8)}`, x + 4, y + 29);
+          drawQr(traceLink(origin, row.uid, row.secret), x + 3, y + 5, 27);
+          pdf.setFont('helvetica', 'bold').setFontSize(8).text('SECRET CODE', x + 34, y + 9);
+          pdf.setFont('courier', 'normal').setFontSize(6.5);
+          for (let line = 0; line < 4; line++) pdf.text(row.secret.slice(line * 16, line * 16 + 16), x + 34, y + 14 + line * 3.6);
+          pdf.setFont('helvetica', 'normal').setFontSize(6);
+          pdf.text('Scan to verify, or type the', x + 34, y + 30);
+          pdf.text(`4 lines. Box ID ${row.uid.slice(0, 8)}`, x + 34, y + 33);
         },
       })),
     },
