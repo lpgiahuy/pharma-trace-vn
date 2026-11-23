@@ -21,6 +21,7 @@ export interface PurchaseOrderDetail extends Omit<PurchaseOrderListItem, '_count
   approved_at: string | null;
   cancel_reason: string | null;
   closed_reason: string | null;
+  rejected_reason: string | null;
   employees: { id: number; full_name: string } | null;
   approved_by: { id: number; full_name: string } | null;
   purchase_order_items: {
@@ -68,12 +69,18 @@ export interface PurchaseOrderInput {
 
 export interface GoodsReceiptLineInput {
   poItemId: number;
-  batchNumber: string;
-  productionDate: string;
-  expiryDate: string;
-  boxUids: string[];
-  rejectedBoxUids: string[];
+  batchNumber?: string;
+  productionDate?: string;
+  expiryDate?: string;
+  boxUids?: string[];
+  rejectedBoxUids?: string[];
+  /** Outside manufacturer: boxes counted in good / damaged condition; the system issues their UIDs. */
+  acceptedQuantity?: number;
+  rejectedQuantity?: number;
   rejectReason?: string;
+  /** Receive every box the factory shipped on this line except the rejected and missing ones. */
+  shipped?: boolean;
+  missingBoxUids?: string[];
 }
 
 export interface GoodsReceiptDetail {
@@ -119,6 +126,9 @@ export const purchaseOrderService = {
   create: (input: PurchaseOrderInput) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(BASE, input),
   update: (id: number, input: PurchaseOrderInput) => apiClient.patch<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}`, input),
   approve: (id: number) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/approve`),
+  ship: (id: number, input: { note?: string; lines: { poItemId: number; boxUids: string[]; ssccCodes: string[] }[] }) =>
+    apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/ship`, input),
+  reject: (id: number, reason: string) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/reject`, { reason }),
   cancel: (id: number, reason: string) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/cancel`, { reason }),
   close: (id: number, reason: string) => apiClient.post<unknown, Envelope<PurchaseOrderDetail>>(`${BASE}/${id}/close`, { reason }),
   receive: (id: number, input: { receiptCode: string; note?: string; lines: GoodsReceiptLineInput[] }) =>

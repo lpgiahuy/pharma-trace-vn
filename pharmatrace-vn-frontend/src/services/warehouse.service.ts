@@ -40,6 +40,8 @@ export interface BatchItem {
   expiryDate: string;
   status: string | null;
   boxesInStock: number;
+  /** This warehouse received the batch from an outside manufacturer, so it prints the labels. */
+  labelsHere?: boolean;
 }
 
 export interface BatchDetail extends BatchItem {

@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { App, Button, Input } from 'antd';
-import { BoxCodesInput } from '@/components/returns/BoxCodesInput';
+import { App, Button, Input, InputNumber } from 'antd';
 import { purchaseOrderService, type PurchaseOrderDetail } from '@/services/purchaseOrder.service';
 import { workflowErrorMessage } from '@/utils/workflow-error';
 
@@ -13,31 +12,31 @@ interface Draft {
   batchNumber: string;
   productionDate: string;
   expiryDate: string;
-  accepted: string;
-  rejected: string;
+  accepted: number;
+  rejected: number;
   reason: string;
   certificate?: File;
 }
 
-const EMPTY: Draft = { batchNumber: '', productionDate: '', expiryDate: '', accepted: '', rejected: '', reason: '' };
-
-const uids = (text: string) => text.split('\n').filter(Boolean);
+const EMPTY: Draft = { batchNumber: '', productionDate: '', expiryDate: '', accepted: 0, rejected: 0, reason: '' };
 
 const newReceiptCode = () =>
   `GR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
 function lineError(item: Item, draft: Draft): string | undefined {
-  const accepted = uids(draft.accepted).length;
-  const rejected = uids(draft.rejected).length;
-  if (!accepted && !rejected) return undefined;
+  if (!draft.accepted && !draft.rejected) return undefined;
   const remaining = item.quantity - item.received_quantity;
-  if (accepted + rejected > remaining) return `Only ${remaining} left to receive on this line.`;
+  if (draft.accepted + draft.rejected > remaining) return `Only ${remaining} left to receive on this line.`;
   if (!draft.batchNumber.trim() || !draft.productionDate || !draft.expiryDate) return 'Enter the batch number, MFG and EXP dates.';
   if (draft.productionDate >= draft.expiryDate) return 'MFG date must be before EXP date.';
-  if (rejected && !draft.reason.trim()) return 'Enter why the boxes were rejected.';
+  if (draft.rejected && !draft.reason.trim()) return 'Enter why the boxes were rejected.';
   return undefined;
 }
 
+/**
+ * Receives goods from an outside manufacturer. Its boxes carry no codes of ours, so the warehouse counts them per
+ * line instead of scanning them; the system issues a UID for every counted box (listed on the receipt for labelling).
+ */
 export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
   const router = useRouter();
   const { message } = App.useApp();
@@ -50,7 +49,7 @@ export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
   const draftOf = (item: Item) => drafts[item.id] ?? EMPTY;
   const patch = (item: Item, change: Partial<Draft>) =>
     setDrafts(current => ({ ...current, [item.id]: { ...(current[item.id] ?? EMPTY), ...change } }));
-  const filled = open.filter(item => uids(draftOf(item).accepted).length + uids(draftOf(item).rejected).length > 0);
+  const filled = open.filter(item => draftOf(item).accepted + draftOf(item).rejected > 0);
   const blocked = !filled.length || open.some(item => lineError(item, draftOf(item)));
 
   async function submit() {
@@ -66,8 +65,8 @@ export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
             batchNumber: draft.batchNumber.trim(),
             productionDate: draft.productionDate,
             expiryDate: draft.expiryDate,
-            boxUids: uids(draft.accepted),
-            rejectedBoxUids: uids(draft.rejected),
+            acceptedQuantity: draft.accepted,
+            rejectedQuantity: draft.rejected,
             rejectReason: draft.reason.trim() || undefined,
           };
         }),
@@ -89,10 +88,12 @@ export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
 
   return (
     <div className="space-y-3">
-      {open.map((item, index) => {
+      <p className="m-0 text-sm text-slate-600">
+        This manufacturer is outside the system, so there is nothing to scan. Count the boxes that arrived and enter the batch details;
+        the system issues a code for every box.
+      </p>
+      {open.map(item => {
         const draft = draftOf(item);
-        const accepted = uids(draft.accepted).length;
-        const rejected = uids(draft.rejected).length;
         const remaining = item.quantity - item.received_quantity;
         const error = lineError(item, draft);
         return (
@@ -101,15 +102,26 @@ export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
               <p className="m-0 text-sm font-semibold text-slate-900">
                 {item.medicines.medicine_name} ({item.packaging_variants?.unit_name ?? '-'})
               </p>
-              <span className={`text-xs tabular-nums ${accepted + rejected > remaining ? 'text-red-700' : 'text-slate-600'}`} aria-live="polite">
-                {accepted} accepted · {rejected} rejected · {remaining} remaining of {item.quantity}
+              <span className={`text-xs tabular-nums ${draft.accepted + draft.rejected > remaining ? 'text-red-700' : 'text-slate-600'}`} aria-live="polite">
+                {draft.accepted} good · {draft.rejected} damaged · {remaining} remaining of {item.quantity}
               </span>
             </div>
 
-            <div>
-              <label htmlFor={`accepted-${item.id}`} className="mb-1 block text-xs font-medium text-slate-700">Accepted boxes</label>
-              <BoxCodesInput id={`accepted-${item.id}`} autoFocus={index === 0} value={draft.accepted} onChange={value => patch(item, { accepted: value })} />
+            <div className="grid gap-2 md:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+                Boxes in good condition
+                <InputNumber aria-label="Good boxes" className="w-full" min={0} max={remaining} precision={0} value={draft.accepted}
+                  onChange={value => patch(item, { accepted: value ?? 0 })} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+                Damaged boxes (go to quarantine)
+                <InputNumber aria-label="Damaged boxes" className="w-full" min={0} max={remaining} precision={0} value={draft.rejected}
+                  onChange={value => patch(item, { rejected: value ?? 0 })} />
+              </label>
             </div>
+            {draft.rejected > 0 && (
+              <Input aria-label="Reject reason" placeholder="Reject reason (required)" maxLength={300} value={draft.reason} onChange={event => patch(item, { reason: event.target.value })} />
+            )}
 
             <div className="grid gap-2 md:grid-cols-3">
               <Input aria-label="Batch number" placeholder="Batch number" maxLength={100} value={draft.batchNumber} onChange={event => patch(item, { batchNumber: event.target.value })} />
@@ -120,14 +132,6 @@ export function GoodsReceiptForm({ order }: { order: PurchaseOrderDetail }) {
               CO/CQ image
               <input type="file" accept="image/jpeg,image/png,image/webp" className="min-w-0 text-xs" onChange={event => patch(item, { certificate: event.target.files?.[0] })} />
             </label>
-
-            <div>
-              <label htmlFor={`rejected-${item.id}`} className="mb-1 block text-xs font-medium text-slate-700">Rejected boxes (go to quarantine)</label>
-              <BoxCodesInput id={`rejected-${item.id}`} value={draft.rejected} onChange={value => patch(item, { rejected: value })} />
-            </div>
-            {rejected > 0 && (
-              <Input aria-label="Reject reason" placeholder="Reject reason (required)" maxLength={300} value={draft.reason} onChange={event => patch(item, { reason: event.target.value })} />
-            )}
 
             {error && <p role="alert" className="m-0 text-xs text-red-700">{error}</p>}
           </section>

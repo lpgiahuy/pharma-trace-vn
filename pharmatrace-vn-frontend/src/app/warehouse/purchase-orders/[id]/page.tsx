@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Alert, App, Button, Descriptions, Input, Modal, Spin, Table, Timeline } from 'antd';
+import { DownOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Descriptions, Dropdown, Input, Modal, Spin, Table, Timeline } from 'antd';
+import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { GoodsReceiptForm } from '@/components/procurement/GoodsReceiptForm';
+import { ShipmentReceiptForm } from '@/components/procurement/ShipmentReceiptForm';
 import { PurchaseOrderStatusTag, supplierName } from '@/components/procurement/PurchaseOrderStatusTag';
+import { ShipOrderForm } from '@/components/procurement/ShipOrderForm';
 import { useHydrated } from '@/hooks/useHydrated';
 import { purchaseOrderService, type PurchaseOrderDetail } from '@/services/purchaseOrder.service';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -33,12 +37,14 @@ export default function PurchaseOrderDetailPage() {
   const [order, setOrder] = useState<PurchaseOrderDetail>();
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [ending, setEnding] = useState<'cancel' | 'close'>();
+  const [ending, setEnding] = useState<'cancel' | 'close' | 'reject'>();
   const [reason, setReason] = useState('');
   const [receiving, setReceiving] = useState(false);
+  const [shipping, setShipping] = useState(false);
   const getUser = useAuthStore(state => state.getUser);
   const role = useHydrated() ? String(getUser()?.role ?? '') : '';
   const manager = role === 'WAREHOUSE_MANAGER' || role === 'SUPER_ADMIN';
+  const supplierStaff = role === 'FACTORY_WAREHOUSE_STAFF';
 
   const load = useCallback(() => purchaseOrderService.detail(id).then(res => setOrder(res.data)).catch(() => setError(true)), [id]);
   useEffect(() => { load(); }, [load]);
@@ -58,31 +64,36 @@ export default function PurchaseOrderDetailPage() {
     }
   };
 
+  const menuItems: MenuProps['items'] = [];
+  if (manager && order?.status === 'PENDING') {
+    menuItems.push(
+      { key: 'edit', label: 'Edit', onClick: () => router.push(`/warehouse/purchase-orders/${id}/edit`) },
+      { key: 'approve', label: 'Approve', onClick: () => run(() => purchaseOrderService.approve(id), 'Purchase order approved') },
+    );
+  }
+  if (manager && (order?.status === 'PENDING' || order?.status === 'APPROVED' || order?.status === 'SHIPPED')) {
+    menuItems.push({ key: 'cancel', label: 'Cancel order', danger: true, onClick: () => { setReason(''); setEnding('cancel'); } });
+  }
+  if (manager && order?.status === 'PARTIALLY_RECEIVED') {
+    menuItems.push({ key: 'close', label: 'Close short order', danger: true, onClick: () => { setReason(''); setEnding('close'); } });
+  }
+
   if (error) return <Alert type="error" showIcon title="We could not load this purchase order." />;
   if (!order) return <Spin />;
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="m-0 text-lg font-bold text-slate-900">{order.po_code} <PurchaseOrderStatusTag status={order.status} /></h1>
-        {manager && (
-          <div className="flex gap-2">
-            {order.status === 'PENDING' && <Button onClick={() => router.push(`/warehouse/purchase-orders/${id}/edit`)}>Edit</Button>}
-            {order.status === 'PENDING' && (
-              <Button type="primary" loading={busy} onClick={() => run(() => purchaseOrderService.approve(id), 'Purchase order approved')}>Approve</Button>
-            )}
-            {(order.status === 'PENDING' || order.status === 'APPROVED') && (
-              <Button danger onClick={() => { setReason(''); setEnding('cancel'); }}>Cancel order</Button>
-            )}
-            {order.status === 'PARTIALLY_RECEIVED' && (
-              <Button danger onClick={() => { setReason(''); setEnding('close'); }}>Close short order</Button>
-            )}
-          </div>
+        {menuItems.length > 0 && (
+          <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+            <Button loading={busy}>Actions <DownOutlined /></Button>
+          </Dropdown>
         )}
       </div>
 
       <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
-        <Descriptions.Item label="Supplier">{supplierName(order)}</Descriptions.Item>
+        <Descriptions.Item label="Supplier">{supplierName(order)}{order.supplier ? ' (our factory)' : ' (outside manufacturer)'}</Descriptions.Item>
         <Descriptions.Item label="Receiving warehouse">{order.facility?.facility_name ?? '-'}</Descriptions.Item>
         <Descriptions.Item label="Total">{formatCurrency(order.total_amount)}</Descriptions.Item>
         <Descriptions.Item label="Expected delivery">{order.expected_at?.slice(0, 10) ?? '-'}</Descriptions.Item>
@@ -91,13 +102,32 @@ export default function PurchaseOrderDetailPage() {
         {order.note && <Descriptions.Item label="Note" span="filled">{order.note}</Descriptions.Item>}
         {order.cancel_reason && <Descriptions.Item label="Cancel reason" span="filled">{order.cancel_reason}</Descriptions.Item>}
         {order.closed_reason && <Descriptions.Item label="Closed reason" span="filled">{order.closed_reason}</Descriptions.Item>}
+        {order.rejected_reason && <Descriptions.Item label="Rejected by supplier" span="filled">{order.rejected_reason}</Descriptions.Item>}
       </Descriptions>
+
+      {/* The supplying factory answers an approved order: ship it or reject it. */}
+      {supplierStaff && order.status === 'APPROVED' && (
+        <Alert
+          type="info"
+          showIcon
+          title="This warehouse is waiting for your answer."
+          description="Scan the boxes you send for every line (they are reserved for this order), or reject the order with a reason. The warehouse can receive the goods only after you ship."
+          action={(
+            <div className="flex gap-2">
+              <Button type="primary" onClick={() => setShipping(open => !open)}>{shipping ? 'Hide shipment' : 'Ship order'}</Button>
+              <Button danger onClick={() => { setReason(''); setEnding('reject'); }}>Reject order</Button>
+            </div>
+          )}
+        />
+      )}
+      {supplierStaff && order.status === 'APPROVED' && shipping && <ShipOrderForm order={order} onShipped={() => { setShipping(false); void load(); }} />}
 
       <Table rowKey="id" dataSource={order.purchase_order_items} columns={COLUMNS} pagination={false} scroll={{ x: 640 }} />
 
-      {role !== 'FACTORY_WAREHOUSE_STAFF' && (order.status === 'APPROVED' || order.status === 'PARTIALLY_RECEIVED') && (receiving
-        ? <GoodsReceiptForm order={order} />
-        : <Button type="primary" onClick={() => setReceiving(true)}>Receive goods</Button>)}
+      {/* A factory supplier must ship first; a manufacturer has no account here, so its approved order is receivable. */}
+      {!supplierStaff && (order.status === 'SHIPPED' || order.status === 'PARTIALLY_RECEIVED' || (order.status === 'APPROVED' && !order.supplier)) && (receiving
+        ? (order.supplier ? <ShipmentReceiptForm order={order} /> : <GoodsReceiptForm order={order} />)
+        : <Button type="primary" className="self-start" onClick={() => setReceiving(true)}>Receive goods</Button>)}
 
       {order.goods_receipts.length > 0 && (
         <>
@@ -123,13 +153,15 @@ export default function PurchaseOrderDetailPage() {
 
       <Modal
         open={!!ending}
-        title={`${ending === 'close' ? 'Close' : 'Cancel'} ${order.po_code}`}
-        okText={ending === 'close' ? 'Close order' : 'Cancel order'}
+        title={`${{ close: 'Close', reject: 'Reject', cancel: 'Cancel' }[ending ?? 'cancel']} ${order.po_code}`}
+        okText={{ close: 'Close order', reject: 'Reject order', cancel: 'Cancel order' }[ending ?? 'cancel']}
         cancelText="Keep order"
         okButtonProps={{ danger: true, disabled: !reason.trim(), loading: busy }}
         onOk={() => ending === 'close'
           ? run(() => purchaseOrderService.close(id, reason.trim()), 'Purchase order closed')
-          : run(() => purchaseOrderService.cancel(id, reason.trim()), 'Purchase order cancelled')}
+          : ending === 'reject'
+            ? run(() => purchaseOrderService.reject(id, reason.trim()), 'Purchase order rejected')
+            : run(() => purchaseOrderService.cancel(id, reason.trim()), 'Purchase order cancelled')}
         onCancel={() => setEnding(undefined)}
       >
         <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={reason} onChange={event => setReason(event.target.value)} />

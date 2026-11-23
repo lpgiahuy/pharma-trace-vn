@@ -3,10 +3,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { App, Button, Input, Modal, Spin } from 'antd';
 import type { InputRef } from 'antd';
-import { BarcodeOutlined, CameraOutlined, CheckCircleOutlined, CloseOutlined, StopOutlined } from '@ant-design/icons';
+import { BarcodeOutlined, CameraOutlined, CheckCircleOutlined, CloseOutlined, StopOutlined, UploadOutlined } from '@ant-design/icons';
 import { orderService, getOrderItems, type Order, type AvailableBoxInfo } from '@/services/order.service';
 import { readPackageUid } from '@/utils/package-uid';
-import { PackageQrCamera } from './PackageQrCamera';
+import { PackageQrCamera, scanPackageImage } from './PackageQrCamera';
 import styles from './OrderPackingModal.module.css';
 
 interface OrderPackingModalProps {
@@ -31,6 +31,8 @@ export function OrderPackingModal({ open, onClose, orderId, orderData, onSuccess
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [decoding, setDecoding] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const targetId = orderId || orderData?.id;
@@ -94,6 +96,20 @@ export function OrderPackingModal({ open, onClose, orderId, orderData, onSuccess
     setInput('');
     setInputError('');
     setSubmitError('');
+  };
+
+  const handleImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setDecoding(true);
+    try {
+      addCodes(await scanPackageImage(file));
+    } catch {
+      setInputError('No QR code found in this image. Use a sharper, closer photo or enter the UID.');
+    } finally {
+      setDecoding(false);
+    }
   };
 
   const removeUid = (uid: string) => {
@@ -190,7 +206,13 @@ export function OrderPackingModal({ open, onClose, orderId, orderData, onSuccess
                 {complete ? <CheckCircleOutlined className={styles.readyIcon} aria-hidden /> : <CameraOutlined className={styles.cameraIcon} aria-hidden />}
                 <h3>{complete ? 'Package codes added' : 'Scan a package QR code'}</h3>
                 <p>{complete ? 'Review the packages below, then complete packing.' : 'Use your camera to read the code on each package.'}</p>
-                {!complete && <Button type="primary" icon={<CameraOutlined aria-hidden />} onClick={() => setCameraOpen(true)} size="large">Open camera</Button>}
+                {!complete && (
+                  <div className={styles.footerActions}>
+                    <Button type="primary" icon={<CameraOutlined aria-hidden />} onClick={() => setCameraOpen(true)} size="large">Open camera</Button>
+                    <Button icon={<UploadOutlined aria-hidden />} onClick={() => fileRef.current?.click()} loading={decoding} disabled={submitting} size="large">Upload image</Button>
+                    <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleImage} />
+                  </div>
+                )}
               </div>
             )}
 

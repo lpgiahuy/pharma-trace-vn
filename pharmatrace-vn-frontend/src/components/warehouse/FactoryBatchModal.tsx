@@ -123,7 +123,7 @@ export function FactoryBatchModal({ open, pickFactory, onClose, onCreated }: Pro
         : [<Button key="cancel" onClick={onClose}>Cancel</Button>, <Button key="ok" type="primary" loading={saving} onClick={submit}>Create batch</Button>]}
     >
       {created ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-4">
           <Alert type="success" showIcon title={`${created.batch.boxCount} boxes in ${created.batch.cartonCount} cartons were registered and added to factory stock.`} />
           <div className="flex flex-wrap gap-2">
             <Button type="primary" loading={pdfBusy} onClick={() => {

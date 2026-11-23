@@ -1,11 +1,12 @@
 import { Tag } from 'antd';
 
 const COLORS: Record<string, string> = {
-  PENDING: 'gold', APPROVED: 'blue', PARTIALLY_RECEIVED: 'cyan', RECEIVED: 'green', CLOSED: 'default', CANCELLED: 'red',
+  PENDING: 'gold', APPROVED: 'blue', SHIPPED: 'geekblue', REJECTED: 'volcano',PARTIALLY_RECEIVED: 'cyan', RECEIVED: 'green', CLOSED: 'default', CANCELLED: 'red',
 };
 
 export function PurchaseOrderStatusTag({ status }: { status: string | null }) {
-  return <Tag color={COLORS[status ?? ''] ?? 'default'}>{(status ?? 'UNKNOWN').replace(/_/g, ' ')}</Tag>;
+  // Only the text keeps the status colour; the tag background and border are dropped.
+  return <Tag color={COLORS[status ?? ''] ?? 'default'} style={{ background: 'transparent', border: 'none', paddingInline: 0 }}>{(status ?? 'UNKNOWN').replace(/_/g, ' ')}</Tag>;
 }
 
 /** Supplier shown on an order: a factory facility or an external manufacturer. */

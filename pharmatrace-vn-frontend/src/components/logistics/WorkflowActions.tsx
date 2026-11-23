@@ -74,7 +74,7 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
             </>;
             return <div key={item.variantId} className="mb-4 flex flex-col gap-3 rounded border border-slate-200 p-3">
               <div className="font-semibold">{item.medicineName || `Variant #${item.variantId}`} — expected {item.quantity}</div>
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-3 items-start gap-3 [&_.ant-input-number]:w-full">
                 <Form.Item name={['lines', index, 'good']} label="Good" rules={quantityRules} className="mb-0"><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
                 <Form.Item name={['lines', index, 'damaged']} label="Damaged" rules={quantityRules} className="mb-0"><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
                 {mode === 'receive' && <Form.Item name={['lines', index, 'missing']} label="Missing" rules={quantityRules} className="mb-0"><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>}

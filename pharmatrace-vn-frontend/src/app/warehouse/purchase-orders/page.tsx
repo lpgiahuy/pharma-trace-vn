@@ -11,7 +11,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { formatCurrency } from '@/utils';
 
 const PAGE_SIZE = 20;
-const STATUSES = ['PENDING', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];
+const STATUSES = ['PENDING', 'APPROVED', 'SHIPPED', 'REJECTED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];
 
 const COLUMNS: ColumnsType<PurchaseOrderListItem> = [
   { title: 'PO code', dataIndex: 'po_code' },
@@ -55,7 +55,7 @@ export default function PurchaseOrdersPage() {
         options={STATUSES.map(value => ({ value, label: value.replace(/_/g, ' ') }))}
         onChange={value => { setLoading(true); setPage(1); setStatus(value); }}
       />
-      {role === 'FACTORY_WAREHOUSE_STAFF' && <Alert type="info" showIcon title="These approved orders ask your factory for stock. Prepare the batches and cartons; the warehouse receives them by scanning, or you can send them from the Transfers tab." />}
+      {role === 'FACTORY_WAREHOUSE_STAFF' && <Alert type="info" showIcon title="These approved orders ask your factory for stock. Open an order to ship it or reject it; the warehouse can receive the goods only after you ship." />}
       {error && <Alert type="error" showIcon title="We could not load purchase orders. Please try again." />}
       <Table
         rowKey="id"

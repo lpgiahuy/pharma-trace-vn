@@ -100,6 +100,8 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
     try {
       const res = await logisticsService.getTransportStaff(selectedTransfer.id);
       setTransportStaff(res.data);
+      // A requested transfer is handed over by the manager who approved it: the server returns only that person.
+      if (selectedTransfer.transfer_type !== 'ORDER_FULFILLMENT' && res.data.length === 1) setTransportEmployeeId(res.data[0].id);
     } catch (error: unknown) {
       message.error(workflowErrorMessage(error, 'Unable to load source facility staff'));
     } finally { setStaffLoading(false); }
@@ -686,7 +688,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
           {transportMode === 'INTERNAL' ? <>
             <label className="block text-sm" htmlFor="transfer-employee">Responsible employee at source facility</label>
             <Select id="transfer-employee" className="w-full" value={transportEmployeeId} onChange={setTransportEmployeeId}
-              loading={staffLoading} showSearch optionFilterProp="label" placeholder="Choose an employee"
+              loading={staffLoading} disabled={selectedTransfer?.transfer_type !== 'ORDER_FULFILLMENT' && transportStaff.length === 1} showSearch optionFilterProp="label" placeholder="Choose an employee"
               options={transportStaff.map(employee => ({ value: employee.id, label: employee.full_name }))} />
           </> : <>
             <label className="block text-sm" htmlFor="transfer-carrier">Carrier</label>
