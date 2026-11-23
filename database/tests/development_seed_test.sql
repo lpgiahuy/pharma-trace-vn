@@ -13,18 +13,18 @@ DECLARE
 BEGIN
     FOR fixture IN SELECT * FROM (VALUES
         ('facilities', 15), ('employees', 5), ('customers', 11),
-        ('prescriptions', 4), ('orders', 47), ('articles', 2),
-        ('manufacturers', 422), ('medicines', 543), ('batches', 24),
-        ('packaging_variants', 624), ('cart_items', 9), ('categories', 38),
-        ('customer_wishlists', 15), ('medicine_boxes', 8631),
-        ('internal_transfers', 2), ('inventories', 25), ('inventory_logs', 3),
-        ('loyalty_point_logs', 11), ('medicine_categories', 670), ('reviews', 6),
-        ('moderation_audit_logs', 24), ('moderation_reports', 6),
-        ('order_items', 52), ('order_prescription_reviews', 2),
-        ('qr_scan_logs', 66), ('shipments', 5), ('vouchers', 3),
-        ('purchase_orders', 0), ('accounts_payable', 0), ('accounts_receivable', 0),
-        ('cashbook_logs', 0), ('sscc_cartons', 0), ('fraud_alerts', 0),
-        ('purchase_order_items', 0)
+        ('manufacturers', 422), ('medicines', 543),
+        ('packaging_variants', 624), ('categories', 38),
+        ('medicine_categories', 670),
+        ('prescriptions', 0), ('orders', 0), ('articles', 0), ('batches', 0),
+        ('cart_items', 0), ('customer_wishlists', 0), ('medicine_boxes', 0),
+        ('internal_transfers', 0), ('inventories', 0), ('inventory_logs', 0),
+        ('loyalty_point_logs', 0), ('reviews', 0), ('moderation_audit_logs', 0),
+        ('moderation_reports', 0), ('order_items', 0),
+        ('order_prescription_reviews', 0), ('qr_scan_logs', 0), ('shipments', 0),
+        ('vouchers', 0), ('purchase_orders', 0), ('accounts_payable', 0),
+        ('accounts_receivable', 0), ('cashbook_logs', 0), ('sscc_cartons', 0),
+        ('fraud_alerts', 0), ('purchase_order_items', 0)
     ) AS expected(table_name, row_count)
     LOOP
         EXECUTE format('SELECT count(*) FROM public.%I', fixture.table_name) INTO actual_count;
@@ -33,7 +33,7 @@ BEGIN
                 fixture.table_name, fixture.row_count, actual_count;
         END IF;
     END LOOP;
-    RAISE NOTICE 'PASS all 34 application table row counts';
+    RAISE NOTICE 'PASS all 34 application table row counts (catalog, accounts and facilities only)';
 
     IF (SELECT count(*) FROM public.facility_fulfillment_policy) <> 14
         OR (SELECT count(*) FROM public.medicine_transport_requirements) <> 543
@@ -54,21 +54,8 @@ BEGIN
         RAISE EXCEPTION 'Development seed must not restore migration history or backup tables';
     END IF;
 
-    IF (SELECT count(*) FROM public.loyalty_point_logs WHERE transaction_type = 'REDEEM') <> 4
-        OR (SELECT count(*) FROM public.loyalty_point_logs WHERE transaction_type = 'REDEEM_REVERSAL') <> 2 THEN
-        RAISE EXCEPTION 'Redemption/reversal seed semantics changed';
-    END IF;
-    RAISE NOTICE 'PASS excluded tables and loyalty transaction types';
+    RAISE NOTICE 'PASS excluded tables';
 
-    IF EXISTS (SELECT FROM public.orders
-        WHERE order_status NOT IN ('PENDING', 'WAITING_INTERNAL_TRANSFER', 'WAITING_TRANSFER',
-            'PROCESSING', 'SHIPPING', 'IN_TRANSIT', 'COMPLETED', 'DELIVERED',
-            'CANCELLED', 'CANCELED', 'RETURNED', 'PARTIALLY_RETURNED')
-            OR payment_status NOT IN ('UNPAID', 'PAID', 'REFUNDED')
-            OR payment_method NOT IN ('COD', 'BANK_TRANSFER', 'E_WALLET')) THEN
-        RAISE EXCEPTION 'Order and payment values must use uppercase English values';
-    END IF;
-    RAISE NOTICE 'PASS English order and payment values';
 
     FOR fixture IN
         SELECT table_name, column_name FROM information_schema.columns
@@ -84,10 +71,9 @@ BEGIN
     END LOOP;
     RAISE NOTICE 'PASS sequences cover all imported IDs';
 
-    IF EXISTS (SELECT 1 FROM public.customers WHERE email !~ '^customer[0-9]+@example\.test$')
-        OR EXISTS (SELECT 1 FROM public.employees WHERE email !~ '^employee[0-9]+@example\.test$')
-        OR EXISTS (SELECT 1 FROM public.prescriptions WHERE prescription_image_url NOT LIKE 'https://example.invalid/demo-prescriptions/%')
-        OR EXISTS (SELECT 1 FROM public.qr_scan_logs WHERE ip_address IS NOT NULL AND ip_address NOT LIKE '192.0.2.%') THEN
+    IF EXISTS (SELECT 1 FROM public.customers WHERE membership_tier <> 'BRONZE' OR reward_points <> 0)
+        OR EXISTS (SELECT 1 FROM public.customers WHERE email !~ '^customer[0-9]+@example\.test$')
+        OR EXISTS (SELECT 1 FROM public.employees WHERE email !~ '^employee[0-9]+@example\.test$') THEN
         RAISE EXCEPTION 'Unexpected personal contact, image, or IP values in development fixtures';
     END IF;
     RAISE NOTICE 'PASS synthetic contact/image/IP fixtures';
