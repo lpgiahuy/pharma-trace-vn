@@ -73,7 +73,7 @@ describe('GoodsReceiptService.receive', () => {
     await service.receive(staff, 5, {
       receiptCode: 'GR-20261118-0003',
       lines: [{ poItemId: 31, batchNumber: ' LOT-9 ', productionDate: '2026-01-01', expiryDate: '2028-01-01', acceptedQuantity: 3, rejectedQuantity: 1, rejectReason: 'Crushed' }],
-    } as GoodsReceiptDto);
+    });
     const [line] = JSON.parse((tx.$queryRaw.mock.calls[0].slice(1) as unknown[])[3] as string);
     expect(line.boxUids).toHaveLength(3);
     expect(line.rejectedBoxUids).toHaveLength(1);
@@ -83,12 +83,12 @@ describe('GoodsReceiptService.receive', () => {
     expect(CryptoUtil.verifyBoxSignature(uids[0], 'LOT-9', line.signatures[uids[0]])).toBe(true);
   });
 
-  it('rejects a line that both counts and scans boxes', async () => {
+  it('rejects a line that both counts and scans boxes', () => {
     const { service } = setup();
     expect(() => service.receive(staff, 5, {
       receiptCode: 'GR-20261118-0004',
       lines: [{ poItemId: 31, batchNumber: 'LOT-9', productionDate: '2026-01-01', expiryDate: '2028-01-01', acceptedQuantity: 2, boxUids: [box] }],
-    } as GoodsReceiptDto)).toThrow(expect.objectContaining({ code: 'GR_LINE_INVALID' }));
+    })).toThrow(expect.objectContaining({ code: 'GR_LINE_INVALID' }));
   });
 
   it('sends a shipped line with only its damaged and missing boxes and no batch details', async () => {
