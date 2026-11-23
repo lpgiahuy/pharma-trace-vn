@@ -175,7 +175,7 @@ export function StockTransferRequests() {
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
           {lines.map((line, index) => <div key={index} className="flex gap-2">
             <Select className="flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
-              {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock', popupMatchSelectWidth: 560 } : { filterOption: false, onSearch: searchVariants })}
+              {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock', classNames: { popup: { root: '[&_.ant-select-item-option-content]:whitespace-normal! [&_.ant-select-item-option-content]:text-clip!' } } } : { filterOption: false, onSearch: searchVariants })}
               value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
             <InputNumber min={1} max={(isFactory && variantOptions.find(o => o.value === line.variantId)?.available) || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
             <Button icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />

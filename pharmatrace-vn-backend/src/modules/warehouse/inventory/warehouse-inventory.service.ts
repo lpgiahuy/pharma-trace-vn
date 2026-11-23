@@ -69,7 +69,7 @@ function toInventoryItem(row: InventoryRow, quarantine: Map<string, number>, hel
     stock: row.stock_quantity,
     reserved: row.reserved_quantity ?? 0,
     available: availableStock(row),
-    held: held.get(`${row.facility_id}:${row.packaging_variants?.medicine.id}`) ?? 0,
+    held: held.get(`${row.facility_id}:${row.variant_id}`) ?? 0,
     quarantine: quarantine.get(`${row.facility_id}:${row.variant_id}`) ?? 0,
     updatedAt: row.updated_at,
   };
@@ -109,16 +109,21 @@ async function quarantineByKey(tx: Tx, variantIds: number[]): Promise<Map<string
   return new Map(rows.map(r => [`${r.facility_id}:${r.variant_id}`, r.quantity]));
 }
 
-/** In-stock boxes of batches that are ON_HOLD, per `facility:medicine`. */
+/**
+ * In-stock boxes of batches that are ON_HOLD, per `facility:variant`. Boxes carry no packaging, so a batch belongs to the
+ * variant it was first stocked as (its production or purchase log): a medicine sold as Box and Blister Pack keeps them apart.
+ */
 async function heldByKey(tx: Tx, rows: InventoryRow[]): Promise<Map<string, number>> {
   const facilityIds = [...new Set(rows.flatMap(r => (r.facility_id === null ? [] : [r.facility_id])))];
   if (facilityIds.length === 0) return new Map();
-  const found = await tx.$queryRaw<{ facility_id: number; medicine_id: number; held: number }[]>`
-    SELECT b.current_facility_id AS facility_id, lot.medicine_id, count(*)::integer AS held
+  const found = await tx.$queryRaw<{ facility_id: number; variant_id: number; held: number }[]>`
+    SELECT b.current_facility_id AS facility_id, origin.variant_id, count(*)::integer AS held
     FROM public.medicine_boxes b JOIN public.batches lot ON lot.id = b.batch_id
+    JOIN LATERAL (SELECT l.variant_id FROM public.inventory_logs l WHERE l.batch_id = lot.id
+      AND l.transaction_type IN ('PRODUCTION_IN', 'PURCHASE_IN') ORDER BY l.id LIMIT 1) origin ON true
     WHERE lot.status = 'ON_HOLD' AND b.status = ANY(${AVAILABLE_BOX_STATUSES}::text[]) AND b.current_facility_id = ANY(${facilityIds}::integer[])
     GROUP BY 1, 2`;
-  return new Map(found.map(f => [`${f.facility_id}:${f.medicine_id}`, f.held]));
+  return new Map(found.map(f => [`${f.facility_id}:${f.variant_id}`, f.held]));
 }
 
 @Injectable()

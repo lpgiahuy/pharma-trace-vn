@@ -57,7 +57,7 @@ describe('WarehouseInventoryService.inventory', () => {
 
   it('reports the in-stock boxes of batches on hold per product', async () => {
     const { service, tx } = setup({ inventories: [inventoryRow(7, 10, 0)] });
-    tx.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ facility_id: 7, medicine_id: 5, held: 4 }]);
+    tx.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ facility_id: 7, variant_id: 11, held: 4 }]);
     const [item] = (await service.inventory(staff, {})).items;
     expect(item).toMatchObject({ stock: 10, available: 10, held: 4 });
   });
