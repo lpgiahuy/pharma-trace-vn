@@ -4,7 +4,7 @@ import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/curr
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { WH_MANAGER, WH_READ } from '../../../common/warehouse-roles';
+import { BATCH_HOLD, WH_READ } from '../../../common/warehouse-roles';
 import { BatchStatusService } from './batch-status.service';
 import {
   BatchStatusReasonDto, WarehouseBatchQueryDto, WarehouseFacilityQueryDto, WarehouseInventoryLogQueryDto, WarehouseInventoryQueryDto,
@@ -70,14 +70,14 @@ export class WarehouseInventoryController {
   }
 
   @Patch('batches/:id/hold')
-  @Roles(...WH_MANAGER)
+  @Roles(...BATCH_HOLD)
   @ApiOperation({ summary: 'Put an active batch on hold so none of its boxes can be reserved, packed or dispatched' })
   async hold(@Param('id', ParseIntPipe) id: number, @Body() dto: BatchStatusReasonDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.batchStatus.hold(user, id, dto.reason) };
   }
 
   @Patch('batches/:id/release')
-  @Roles(...WH_MANAGER)
+  @Roles(...BATCH_HOLD)
   @ApiOperation({ summary: 'Release a batch on hold back to active' })
   async release(@Param('id', ParseIntPipe) id: number, @Body() dto: BatchStatusReasonDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.batchStatus.release(user, id, dto.reason) };

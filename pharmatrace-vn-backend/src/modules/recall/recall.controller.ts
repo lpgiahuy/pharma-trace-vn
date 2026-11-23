@@ -62,6 +62,13 @@ export class AdminRecallController {
 export class WarehouseRecallController {
   constructor(private readonly recalls: RecallService) {}
 
+  @Post()
+  @Roles('FACTORY_WAREHOUSE_STAFF')
+  @ApiOperation({ summary: 'Recall a batch your factory made: it is marked RECALLED and its stock is quarantined at every facility' })
+  async create(@Body() dto: CreateRecallDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.recalls.createForFactory(user, dto) };
+  }
+
   @Get()
   @ApiOperation({ summary: 'Recall tasks of your facility: stock to collect, collection transfers and orders to resolve' })
   async tasks(@Query() query: WarehouseFacilityQueryDto, @CurrentUser() user: CurrentUserPayload) {

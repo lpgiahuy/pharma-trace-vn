@@ -3,7 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AuthActor, authActor } from '../common/auth-identity';
-import { FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_READ, WH_TRANSFER } from '../common/warehouse-roles';
+import { BATCH_HOLD, FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_QUALITY, WH_READ, WH_TRANSFER } from '../common/warehouse-roles';
 import { REPORT_READ } from '../common/report-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
@@ -231,7 +231,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /** Batch hold and release by a warehouse manager (batch_status_event_insert policy). */
   async withBatchStatus<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !(WH_MANAGER as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid batch status scope');
+    if (actor.type !== 'employee' || !(BATCH_HOLD as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid batch status scope');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
         SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relowner <> r.oid
@@ -243,6 +243,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
       return run(tx);
     });
   }
@@ -294,7 +295,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /** Drug disposals of one warehouse: reads for WH_ALL, writes through the disposal functions. */
   async withDisposal<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !(WH_ALL as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid disposal scope');
+    if (actor.type !== 'employee' || !(WH_QUALITY as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid disposal scope');
     if (actor.role !== 'SUPER_ADMIN' && (!Number.isInteger(actor.facilityId) || Number(actor.facilityId) <= 0)) throw new ForbiddenException('Staff account is not assigned to a facility');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
