@@ -58,13 +58,16 @@ export function StockTransferRequests() {
     setLines([{ quantity: 1 }]);
     setReason('');
     setCreateOpen(true);
-    // A factory can only send what it holds: offer its in-stock products, not the whole catalog.
+    // A factory can only send what it holds: offer its in-stock products (minus boxes of batches on hold), not the whole catalog.
     if (isFactory) {
       setVariantOptions([]);
       warehouseService.inventory({ limit: 100 })
-        .then(res => setVariantOptions(res.items.filter(item => item.variantId !== null && item.available > 0).map(item => ({
-          value: item.variantId as number, label: `${item.medicineName} · ${item.unitName} (${item.available} available)`, available: item.available,
-        }))))
+        .then(res => setVariantOptions(res.items
+          .map(item => ({ item, sendable: item.available - (item.held ?? 0) }))
+          .filter(({ item, sendable }) => item.variantId !== null && sendable > 0)
+          .map(({ item, sendable }) => ({
+            value: item.variantId as number, label: `${item.medicineName} · ${item.unitName} (${sendable} available)`, available: sendable,
+          }))))
         .catch((error: unknown) => message.error(workflowErrorMessage(error, 'Unable to load factory stock')));
     }
     try {
@@ -172,7 +175,7 @@ export function StockTransferRequests() {
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
           {lines.map((line, index) => <div key={index} className="flex gap-2">
             <Select className="flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
-              {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock' } : { filterOption: false, onSearch: searchVariants })}
+              {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock', popupMatchSelectWidth: 560 } : { filterOption: false, onSearch: searchVariants })}
               value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
             <InputNumber min={1} max={(isFactory && variantOptions.find(o => o.value === line.variantId)?.available) || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
             <Button icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />

@@ -25,6 +25,8 @@ export interface InventoryItem {
   stock: number;
   reserved: number;
   available: number;
+  /** In-stock boxes of batches on hold; they cannot be reserved, packed or sent. */
+  held?: number;
   quarantine: number;
   updatedAt: string | null;
 }

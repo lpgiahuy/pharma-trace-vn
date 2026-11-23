@@ -55,6 +55,18 @@ describe('WarehouseInventoryService.inventory', () => {
     expect(tx.inventories.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { facility_id: 7 } }));
   });
 
+  it('reports the in-stock boxes of batches on hold per product', async () => {
+    const { service, tx } = setup({ inventories: [inventoryRow(7, 10, 0)] });
+    tx.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ facility_id: 7, medicine_id: 5, held: 4 }]);
+    const [item] = (await service.inventory(staff, {})).items;
+    expect(item).toMatchObject({ stock: 10, available: 10, held: 4 });
+  });
+
+  it('reports no held boxes when no batch is on hold', async () => {
+    const { service } = setup({ inventories: [inventoryRow(7, 10, 0)] });
+    expect((await service.inventory(staff, {})).items[0].held).toBe(0);
+  });
+
   it('lets factory staff read their own factory', async () => {
     const { service, tx } = setup();
     await service.inventory(factory, {});
