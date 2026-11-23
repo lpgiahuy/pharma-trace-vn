@@ -240,7 +240,7 @@ function BatchesPage() {
           Use this only for a batch registered by mistake. It is allowed while every box is still in factory stock and untouched.
           The batch is removed from stock, and the labels already printed stop verifying. This cannot be undone.
         </p>
-        <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={voidReason} onChange={event => setVoidReason(event.target.value)} />
+        <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} className="mb-6" value={voidReason} onChange={event => setVoidReason(event.target.value)} />
       </Modal>
       <Modal
         open={!!recallTarget}
@@ -257,7 +257,7 @@ function BatchesPage() {
           are done by the administrator. This cannot be undone.
         </p>
         <Select aria-label="Severity" className="mb-3 w-full" options={SEVERITIES} value={recallSeverity} onChange={setRecallSeverity} />
-        <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={recallReason} onChange={event => setRecallReason(event.target.value)} />
+        <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} className="mb-6" value={recallReason} onChange={event => setRecallReason(event.target.value)} />
         {recallTarget && <p className="mt-3 mb-0 text-xs text-slate-500">Recall code {recallTarget.code}</p>}
       </Modal>
       <BatchDrawer id={selected} onClose={() => setSelected(undefined)} />
@@ -280,6 +280,7 @@ function BatchesPage() {
           maxLength={500}
           showCount
           rows={3}
+          className="mb-6"
           value={reason}
           onChange={event => setReason(event.target.value)}
         />

@@ -138,7 +138,7 @@ export function FactoryBatchModal({ open, pickFactory, onClose, onCreated }: Pro
               Download labels (CSV)
             </Button>
           </div>
-          <p className="m-0 text-xs text-slate-500">The PDF has carton labels (SSCC QR), box labels (QR to scan) and the secret-code labels to print under the scratch layer. The CSV lists every box UID, its SSCC carton code and the secret code printed under the scratch layer. Treat it as confidential: anyone holding it can verify a box as authentic. You can download it again from the Labels column.</p>
+          <p className="m-0 text-xs text-slate-500">The PDF has carton labels (SSCC QR), box labels (QR to scan) and the secret-code labels to print under the scratch layer. The CSV lists every box UID, its SSCC carton code and the secret code printed under the scratch layer. Treat it as confidential: anyone holding it can verify a box as authentic. You can download it again from the Actions menu of the batch.</p>
         </div>
       ) : (
         <Form form={form} layout="vertical" requiredMark>
