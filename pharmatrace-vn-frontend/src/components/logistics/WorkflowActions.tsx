@@ -18,11 +18,10 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
   const [mode, setMode] = useState<'receive' | 'return' | 'halt' | null>(null);
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
-  const open = (value: typeof mode) => {
-    form.resetFields();
-    form.setFieldsValue({ lines: transfer.items.map(item => ({ good: item.quantity, damaged: 0, missing: 0 })) });
-    setMode(value);
-  };
+  // The form only exists while the modal is open, so its starting values are passed as initialValues instead of being
+  // set on the form instance before it is mounted.
+  const open = (value: typeof mode) => setMode(value);
+  const initialValues = { lines: transfer.items.map(item => ({ good: item.quantity, damaged: 0, missing: 0 })) };
   const save = async (values: { reason?: string; notes?: string; lines: Array<{ good: number; damaged: number; missing: number; goodUids?: string; damagedUids?: string }> }) => {
     setBusy(true);
     try {
@@ -50,7 +49,7 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
     {transfer.status === 'DISPATCHED' && atSource && <Button onClick={() => open('halt')}>Halt & return to source</Button>}
     {transfer.status === 'RETURN_REQUESTED' && atSource && <Button onClick={() => open('return')}>Inspect source return</Button>}
     <Modal title={mode === 'halt' ? 'Halt transfer' : 'Physical transfer inspection'} centered styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }} open={!!mode} onCancel={() => !busy && setMode(null)} onOk={() => form.submit()} confirmLoading={busy} destroyOnHidden>
-      <Form form={form} layout="vertical" onFinish={save}>
+      <Form form={form} layout="vertical" onFinish={save} initialValues={initialValues}>
         {mode === 'halt' ? <Form.Item name="reason" label="Reason" rules={[{ required: true, whitespace: true }]}><Input.TextArea /></Form.Item> : <>
           <p>For tracked packages with damage or shortages, scan every good and damaged UID. Remaining dispatched UIDs will be recorded as missing.</p>
           {transfer.items.map((item, index) => <fieldset key={item.variantId} className="border border-slate-200 p-3 mb-3 rounded">
