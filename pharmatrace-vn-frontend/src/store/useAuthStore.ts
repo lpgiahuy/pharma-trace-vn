@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '@/services/auth.service';
+import { useCartStore, CART_STORAGE_KEY } from '@/store/useCartStore';
 import {
   getPortalKey,
   getPortalUser,
@@ -57,6 +58,18 @@ interface AuthState {
   fetchProfile: () => Promise<void>;
 }
 
+const CHECKOUT_DRAFT_KEY = 'pharmatrace_checkout_draft_v1';
+
+/** Removes customer-owned client state (cart, selection, voucher, checkout draft with address/phone). */
+const clearCustomerPrivateState = () => {
+  useCartStore.getState().resetLocal();
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(CART_STORAGE_KEY);
+    sessionStorage.removeItem(CHECKOUT_DRAFT_KEY);
+  } catch { }
+};
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -96,6 +109,11 @@ export const useAuthStore = create<AuthState>()(
           const accessToken = result.accessToken || null;
           const refreshToken = (result as any).refreshToken || null;
           const expiresAt = (result as any).expiresAt || Date.now() + 3600000;
+
+          if (portal === 'customer') {
+            // A previous session may have expired without a logout; never inherit its private state.
+            clearCustomerPrivateState();
+          }
 
           setPortalAuth(portal, result.user, accessToken, refreshToken, expiresAt);
 
@@ -183,6 +201,10 @@ export const useAuthStore = create<AuthState>()(
         } catch { }
 
         clearPortalAuth(portal);
+
+        if (portal === 'customer') {
+          clearCustomerPrivateState();
+        }
 
         set({
           [sessionKey]: null,
