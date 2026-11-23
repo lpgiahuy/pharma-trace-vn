@@ -47,6 +47,8 @@ interface CartState {
   ) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
+  /** Drops local cart state only (no server call). Used when the session owner changes. */
+  resetLocal: () => void;
   applyVoucher: (voucher: AppliedVoucher) => void;
   removeVoucher: () => void;
 
@@ -80,7 +82,18 @@ const isCustomerLoggedIn = (): boolean => {
   );
 };
 
-const mapServerItemToCartItem = (s: ServerCartItem): CartItem => ({
+const getCustomerToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return (
+    localStorage.getItem('pharma_customer_access_token') ||
+    localStorage.getItem('pharma_access_token') ||
+    localStorage.getItem('access_token')
+  );
+};
+
+export const CART_STORAGE_KEY = 'pharmatrace_cart_v1';
+
+const mapServerItemToCartItem =(s: ServerCartItem): CartItem => ({
   id: `${s.productId}-${s.variantId}`,
   productId: s.productId,
   slug: s.slug,
@@ -238,10 +251,17 @@ export const useCartStore = create<CartState>()(
         }
       },
 
+      resetLocal: () => {
+        set({ items: [], selectedItemIds: [], appliedVoucher: null });
+      },
+
       fetchServerCart: async () => {
-        if (!isCustomerLoggedIn()) return;
+        const tokenAtStart = getCustomerToken();
+        if (!tokenAtStart) return;
         try {
           const res = await cartService.getCart();
+          // Ignore a late response if the session changed or ended meanwhile.
+          if (getCustomerToken() !== tokenAtStart) return;
           if (res?.data?.items) {
             const serverItems = res.data.items.map(mapServerItemToCartItem);
             set((state) => {
@@ -259,9 +279,11 @@ export const useCartStore = create<CartState>()(
       },
 
       syncWithServer: async () => {
-        if (!isCustomerLoggedIn()) return;
+        const tokenAtStart = getCustomerToken();
+        if (!tokenAtStart) return;
         try {
           const res = await cartService.getCart();
+          if (getCustomerToken() !== tokenAtStart) return;
           if (res?.data?.items) {
             const serverItems: CartItem[] = res.data.items.map(mapServerItemToCartItem);
             set((state) => {
@@ -380,7 +402,7 @@ export const useCartStore = create<CartState>()(
       },
     }),
     {
-      name: 'pharmatrace_cart_v1',
+      name: CART_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         items: state.items,
