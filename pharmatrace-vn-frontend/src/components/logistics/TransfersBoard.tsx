@@ -79,7 +79,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
   const [transportStaff, setTransportStaff] = useState<Array<{ id: number; full_name: string }>>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [manifestLines, setManifestLines] = useState<Record<number, { quantity: number; boxUids: string }>>({});
+  const [manifestLines, setManifestLines] = useState<Record<number, { quantity: number; boxUids: string; cartonCodes?: string }>>({});
 
   const user = mounted ? getUser() : null;
   const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
@@ -169,7 +169,8 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
         return;
       }
       const manifest = selectedTransfer.items.map(item => ({ variantId: Number(item.variantId), quantity: manifestLines[Number(item.variantId)]?.quantity || 0,
-        boxUids: (manifestLines[Number(item.variantId)]?.boxUids || '').split(/[\s,]+/).filter(Boolean) }));
+        boxUids: (manifestLines[Number(item.variantId)]?.boxUids || '').split(/[\s,]+/).filter(Boolean),
+        cartonCodes: (manifestLines[Number(item.variantId)]?.cartonCodes || '').split(/[\s,]+/).filter(Boolean) }));
       if (manifest.some((line, index) => line.quantity !== Number(selectedTransfer.items[index].quantity))) {
         message.error('Enter the actual quantity for every manifest line.');
         return;
@@ -661,13 +662,16 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
           <p className="text-sm">Count each line and scan every reserved package before handing goods to the responsible carrier.</p>
           {selectedTransfer?.items.map(item => {
             const variantId = Number(item.variantId);
-            const line = manifestLines[variantId] || { quantity: 0, boxUids: '' };
+            const line = manifestLines[variantId] || { quantity: 0, boxUids: '', cartonCodes: '' };
             return <div key={variantId} className="border border-slate-200 rounded p-2 space-y-2">
               <div>{item.medicineName || `Variant #${variantId}`} — expected {item.quantity}</div>
               <InputNumber aria-label={`Count for variant ${variantId}`} min={0} max={Number(item.quantity)} precision={0} value={line.quantity}
                 onChange={value => setManifestLines(current => ({ ...current, [variantId]: { ...line, quantity: value || 0 } }))} />
               <Input.TextArea aria-label={`Scanned UIDs for variant ${variantId}`} value={line.boxUids} placeholder="Scan package UIDs, separated by lines or commas"
                 onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, boxUids: event.target.value } }))} />
+              <Input.TextArea aria-label={`Scanned carton codes for variant ${variantId}`} value={line.cartonCodes ?? ''} rows={2}
+                placeholder="Or scan SSCC carton codes: every box of a carton is added. Count them in the quantity above."
+                onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, cartonCodes: event.target.value } }))} />
             </div>;
           })}
           <label className="block text-sm" htmlFor="transfer-transport-mode">Transport method</label>

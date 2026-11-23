@@ -220,6 +220,13 @@ export interface CreateStockTransferPayload {
   reason?: string;
 }
 
+export interface SendFactoryTransferPayload {
+  requestCode: string;
+  toFacilityId: number;
+  lines: Array<{ variantId: number; quantity: number }>;
+  reason?: string;
+}
+
 export type StockTransferAction = 'approve' | 'reject' | 'cancel';
 
 export interface DeliveryProofPayload {
@@ -321,7 +328,7 @@ export interface DispatchTransferPayload {
   transportEmployeeId?: number;
   courierName?: string;
   trackingCode?: string;
-  manifest: Array<{ variantId: number; quantity: number; boxUids: string[] }>;
+  manifest: Array<{ variantId: number; quantity: number; boxUids: string[]; cartonCodes?: string[] }>;
 }
 
 export const CARRIER_OPTIONS = ['GHN', 'GHTK', 'J&T', 'VIETTEL_POST', 'VNPOST', 'BEST', 'SPX', 'NINJA_VAN', 'FLASH'].map(value => ({ value, label: value }));
@@ -511,6 +518,10 @@ export const logisticsService = {
 
   createStockTransferRequest: (payload: CreateStockTransferPayload): Promise<SingleResponse<StockTransferRequest>> =>
     apiClient.post('/logistics/stock-transfers', payload),
+
+  /** Factory staff start a transfer to a warehouse; it is created already approved, with factory stock reserved. */
+  sendFactoryTransfer: (payload: SendFactoryTransferPayload): Promise<SingleResponse<StockTransferRequest>> =>
+    apiClient.post('/logistics/stock-transfers/send', payload),
 
   decideStockTransferRequest: (id: number, action: StockTransferAction, note?: string): Promise<SingleResponse<StockTransferRequest>> =>
     apiClient.post(`/logistics/stock-transfers/${id}/${action}`, { note }),

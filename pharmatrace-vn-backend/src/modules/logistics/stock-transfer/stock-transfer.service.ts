@@ -5,7 +5,7 @@ import { CurrentUserPayload } from '../../../common/decorators/current-user.deco
 import { WH_TRANSFER, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { WarehouseFacilityQueryDto } from '../../warehouse/inventory/dto/warehouse-inventory-query.dto';
-import { CreateStockTransferRequestDto } from './dto/stock-transfer.dto';
+import { CreateStockTransferRequestDto, SendFactoryTransferDto } from './dto/stock-transfer.dto';
 import { stockTransferDatabase } from './stock-transfer-errors';
 
 const FACILITY = { select: { id: true, facility_name: true, facility_type: true } } as const;
@@ -36,6 +36,15 @@ export class StockTransferService {
     return stockTransferDatabase(this.prisma.withActor(authActor(user), async tx => {
       const [row] = await tx.$queryRaw<{ id: number }[]>`SELECT public.create_stock_transfer_request(${dto.requestCode}, ${dto.fromFacilityId}::integer,
         ${user.facilityId ?? null}::integer, ${JSON.stringify(dto.lines)}::jsonb, ${dto.reason ?? null}::text) AS id`;
+      return tx.stock_transfer_requests.findUniqueOrThrow({ where: { id: row.id }, select: REQUEST_SELECT });
+    }));
+  }
+
+  /** Factory staff start a transfer to a warehouse: the request is created and approved in one step (send_factory_transfer). */
+  send(user: CurrentUserPayload, dto: SendFactoryTransferDto): Promise<StockTransferRequest> {
+    return stockTransferDatabase(this.prisma.withActor(authActor(user), async tx => {
+      const [row] = await tx.$queryRaw<{ id: number }[]>`SELECT public.send_factory_transfer(${dto.requestCode}, ${dto.toFacilityId}::integer,
+        ${JSON.stringify(dto.lines)}::jsonb, ${dto.reason ?? null}::text) AS id`;
       return tx.stock_transfer_requests.findUniqueOrThrow({ where: { id: row.id }, select: REQUEST_SELECT });
     }));
   }

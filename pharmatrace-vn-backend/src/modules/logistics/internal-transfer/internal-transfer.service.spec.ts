@@ -263,6 +263,19 @@ describe('InternalTransferService transport methods', () => {
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
+  it('expands scanned cartons into box UIDs before checking the manifest', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockImplementation((parts: TemplateStringsArray) => Promise.resolve(
+      parts.join('').includes('expand_dispatch_cartons') ? [{ uids: ['u-1', 'u-2'] }]
+        : parts.join('').includes('transfer_transport_staff') ? [{ id: 21, full_name: 'Source transporter' }]
+          : [{ order_status: 'WAITING_INTERNAL_TRANSFER', prescription_review_status: 'APPROVED' }]));
+    await service.adminDispatchInternalTransfer(8, { transportMode: 'INTERNAL', transportEmployeeId: 21, manifest: [{ variantId: 1, quantity: 3, boxUids: ['u-0'], cartonCodes: [' 100200300 '] }] }, actor);
+    const expand = tx.$queryRaw.mock.calls.find(call => (call[0] as TemplateStringsArray).join('').includes('expand_dispatch_cartons'))!;
+    expect(expand.slice(1)).toEqual([8, 1, ['100200300']]);
+    const sent = JSON.parse(tx.$executeRaw.mock.calls[0][2] as string) as unknown;
+    expect(sent).toEqual([{ variantId: 1, quantity: 3, boxUids: ['u-0', 'u-1', 'u-2'] }]);
+  });
+
   it('requires a source manifest before dispatch', async () => {
     const { tx, service } = setup();
     await expect(service.adminDispatchInternalTransfer(8, { transportMode: 'INTERNAL', transportEmployeeId: 21, manifest: [] }, actor)).rejects.toThrow(/manifest/i);

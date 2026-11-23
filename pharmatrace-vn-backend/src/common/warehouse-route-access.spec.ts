@@ -48,6 +48,10 @@ describe('Warehouse route access', () => {
     expect(rolesOf(StockTransferController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
   });
 
+  it('lets only factory staff start a transfer from a factory', () => {
+    expect([...rolesOf(StockTransferController, 'send')]).toEqual(['FACTORY_WAREHOUSE_STAFF']);
+  });
+
   it('does not let factory staff create stock transfer requests', () => {
     expect(rolesOf(StockTransferController, 'create').has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
   });

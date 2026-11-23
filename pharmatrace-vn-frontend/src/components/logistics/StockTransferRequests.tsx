@@ -33,6 +33,8 @@ export function StockTransferRequests() {
   const facilityId = user?.facilityId;
   const isManager = (role === 'WAREHOUSEMANAGER' || role === 'STOREMANAGER') && !!facilityId;
   // Factory staff have no manager role: they only answer requests that ask their factory for stock.
+  // The factory also starts transfers itself: it picks the receiving warehouse instead of a source.
+  const isFactory = role === 'FACTORYWAREHOUSESTAFF' && !!facilityId;
   const isDecider = isManager || (role === 'FACTORYWAREHOUSESTAFF' && !!facilityId);
 
   const load = useCallback(() => logisticsService.getStockTransferRequests(), []);
@@ -57,7 +59,7 @@ export function StockTransferRequests() {
     setCreateOpen(true);
     try {
       const res = await facilityService.getDropdownList();
-      setFacilities(res.data.filter(facility => facility.id !== facilityId));
+      setFacilities(res.data.filter(facility => facility.id !== facilityId && (!isFactory || String(facility.rawType ?? facility.type).toUpperCase().includes('WAREHOUSE'))));
     } catch (error: unknown) {
       message.error(workflowErrorMessage(error, 'Unable to load facilities'));
     }
@@ -77,13 +79,18 @@ export function StockTransferRequests() {
   const submitCreate = async () => {
     const filled = lines.filter((line): line is Required<Line> => !!line.variantId && line.quantity > 0);
     if (!sourceId || !filled.length) {
-      message.error('Choose the source facility and at least one medicine');
+      message.error(isFactory ? 'Choose the receiving warehouse and at least one medicine' : 'Choose the source facility and at least one medicine');
       return;
     }
     setBusy(true);
     try {
-      await logisticsService.createStockTransferRequest({ requestCode, fromFacilityId: sourceId, lines: filled, reason: reason.trim() || undefined });
-      message.success('Stock transfer request created');
+      if (isFactory) {
+        await logisticsService.sendFactoryTransfer({ requestCode, toFacilityId: sourceId, lines: filled, reason: reason.trim() || undefined });
+        message.success('Transfer created and stock reserved. Dispatch it from the Transfers tab.');
+      } else {
+        await logisticsService.createStockTransferRequest({ requestCode, fromFacilityId: sourceId, lines: filled, reason: reason.trim() || undefined });
+        message.success('Stock transfer request created');
+      }
       setCreateOpen(false);
       reload();
     } catch (error: unknown) {
@@ -145,13 +152,13 @@ export function StockTransferRequests() {
     <div className="space-y-3">
       <div className="flex justify-end gap-2">
         <Button icon={<ReloadOutlined />} onClick={reload} loading={loading}>Refresh</Button>
-        {isManager && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New request</Button>}
+        {(isManager || isFactory) && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{isFactory ? 'New transfer' : 'New request'}</Button>}
       </div>
       <Table rowKey="id" dataSource={result?.data || []} columns={columns} loading={loading} scroll={{ x: 900 }} pagination={{ pageSize: 20 }} />
 
-      <Modal title="Request stock" open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} confirmLoading={busy} okText="Submit request">
+      <Modal title={isFactory ? 'Send stock to a warehouse' : 'Request stock'} open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} confirmLoading={busy} okText={isFactory ? 'Create transfer' : 'Submit request'}>
         <div className="space-y-3 py-2">
-          <Select className="w-full" placeholder="Source facility" value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
+          <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
           {lines.map((line, index) => <div key={index} className="flex gap-2">
             <Select className="flex-1" placeholder="Search medicine" showSearch filterOption={false} onSearch={searchVariants}

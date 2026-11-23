@@ -8,6 +8,7 @@ const CATALOG = {
   ST_FORBIDDEN: [FORBIDDEN, 'Only a manager of the facility that needs the stock can request it.'],
   ST_CODE_TAKEN: [CONFLICT, 'This request code is already used by another facility.'],
   ST_SOURCE_INVALID: [UNPROCESSABLE_ENTITY, 'Choose another existing facility to send the stock.'],
+  ST_DESTINATION_INVALID: [UNPROCESSABLE_ENTITY, 'Choose an existing warehouse to receive the stock.'],
   ST_LINES_INVALID: [UNPROCESSABLE_ENTITY, 'Each line needs an existing product packaging, once, with a positive quantity.'],
   ST_NOT_FOUND: [NOT_FOUND, 'Stock transfer request not found at your facility.'],
   ST_SOURCE_MANAGER_REQUIRED: [FORBIDDEN, 'Only a manager of the sending facility can approve or reject this request.'],

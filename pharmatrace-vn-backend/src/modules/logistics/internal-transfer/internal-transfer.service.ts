@@ -157,7 +157,18 @@ export class InternalTransferService {
       if (!Array.isArray(dto.manifest) || dto.manifest.length === 0) {
         throw new BadRequestException('A complete scanned source manifest is required.');
       }
-      await tx.$executeRaw`SELECT public.prepare_dispatch_manifest(${transferId}, ${JSON.stringify(dto.manifest)}::jsonb)`;
+      // A scanned SSCC carton stands for all its boxes: expand it here so the manifest still lists every box UID.
+      const manifest: { variantId: number; quantity: number; boxUids: string[] }[] = [];
+      for (const line of dto.manifest) {
+        let boxUids = line.boxUids ?? [];
+        const cartonCodes = (line.cartonCodes ?? []).map(code => code.trim()).filter(Boolean);
+        if (cartonCodes.length) {
+          const [expanded] = await tx.$queryRaw<{ uids: string[] }[]>`SELECT public.expand_dispatch_cartons(${transferId}::integer, ${line.variantId}::integer, ${cartonCodes}::text[]) AS uids`;
+          boxUids = [...boxUids, ...(expanded?.uids ?? [])];
+        }
+        manifest.push({ variantId: line.variantId, quantity: line.quantity, boxUids });
+      }
+      await tx.$executeRaw`SELECT public.prepare_dispatch_manifest(${transferId}, ${JSON.stringify(manifest)}::jsonb)`;
 
       const dispatched = await tx.internal_transfers.updateMany({
         where: { id: transferId, status: 'REQUESTED' },

@@ -117,6 +117,7 @@
 \i /docker-entrypoint-initdb.d/security/order/order_resolution.sql
 \i /docker-entrypoint-initdb.d/security/returns/return_requests.sql
 \i /docker-entrypoint-initdb.d/security/logistics/stock_transfers.sql
+\i /docker-entrypoint-initdb.d/security/logistics/factory_transfer_send.sql
 \i /docker-entrypoint-initdb.d/security/inventory/warehouse_inventory_read.sql
 \i /docker-entrypoint-initdb.d/security/inventory/batch_sellability.sql
 \i /docker-entrypoint-initdb.d/security/procurement/purchase_orders.sql

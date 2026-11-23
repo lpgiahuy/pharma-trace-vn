@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { WH_ALL, WH_TRANSFER } from '../../../common/warehouse-roles';
 import { WarehouseFacilityQueryDto } from '../../warehouse/inventory/dto/warehouse-inventory-query.dto';
-import { CreateStockTransferRequestDto, StockTransferDecisionDto } from './dto/stock-transfer.dto';
+import { CreateStockTransferRequestDto, SendFactoryTransferDto, StockTransferDecisionDto } from './dto/stock-transfer.dto';
 import { StockTransferService } from './stock-transfer.service';
 
 const MANAGERS = ['WAREHOUSE_MANAGER', 'STORE_MANAGER'];
@@ -32,6 +32,13 @@ export class StockTransferController {
   @ApiOperation({ summary: 'Request stock for your facility from another facility' })
   async create(@Body() dto: CreateStockTransferRequestDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.stockTransfers.create(user, dto) };
+  }
+
+  @Post('send')
+  @Roles('FACTORY_WAREHOUSE_STAFF')
+  @ApiOperation({ summary: 'Factory staff send stock to a warehouse: creates an approved transfer and reserves factory stock' })
+  async send(@Body() dto: SendFactoryTransferDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.stockTransfers.send(user, dto) };
   }
 
   @Post(':id/approve')
