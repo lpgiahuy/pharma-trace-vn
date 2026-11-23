@@ -95,6 +95,42 @@ describe('WarehouseInventoryService.batch', () => {
   });
 });
 
+describe('WarehouseInventoryService batches of a factory', () => {
+  it('lists the batches the factory made even when no box is left there', async () => {
+    const { tx, service } = setup();
+    await service.batches(factory, {});
+    const where = tx.batches.count.mock.calls[0][0].where;
+    expect(where.AND[0].OR).toEqual([{ manufacturer_source_facility_id: 9 }, expect.objectContaining({ medicine_boxes: expect.anything() })]);
+  });
+
+  it('keeps the factory scope when searching', async () => {
+    const { tx, service } = setup();
+    await service.batches(factory, { search: 'LOT' });
+    const where = tx.batches.count.mock.calls[0][0].where;
+    expect(where.AND[0].OR).toHaveLength(2);
+    expect(where.OR).toHaveLength(2);
+  });
+
+  it('keeps listing only batches with boxes at a warehouse', async () => {
+    const { tx, service } = setup();
+    await service.batches(staff, {});
+    const where = tx.batches.count.mock.calls[0][0].where;
+    expect(where.AND[0].OR).toBeUndefined();
+    expect(where.AND[0].medicine_boxes).toBeDefined();
+  });
+
+  it('shows a batch the factory made although all its boxes were shipped', async () => {
+    const { service } = setup({ batch: { id: 21, batch_number: 'B-21', production_date: new Date(), expiry_date: new Date(), status: 'ACTIVE', medicines: null,
+      manufacturer_source_facility_id: 9, initial_quantity: 5, remaining_quantity: 5, certificate_co_cq: null, hold_reason: null, held_at: null } });
+    await expect(service.batch(factory, 21, {})).resolves.toMatchObject({ id: 21, boxes: [] });
+  });
+
+  it('still hides another factory batch with no boxes here', async () => {
+    const { service } = setup({ batch: { id: 21, manufacturer_source_facility_id: 3 } });
+    expect(await errorCode(service.batch(factory, 21, {}))).toBe('WAREHOUSE_BATCH_NOT_FOUND');
+  });
+});
+
 describe('WarehouseInventoryService.dashboard', () => {
   it('sums stock with the checkout formula and counts warehouse work', async () => {
     const { service, prisma } = setup({ inventories: [inventoryRow(7, 10, 3), inventoryRow(7, 2, 5)], quarantine: [{ units: 1 }] });
