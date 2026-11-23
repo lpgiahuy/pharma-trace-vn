@@ -43,13 +43,14 @@ import {
 } from '@/services/employee.service';
 import { facilityService } from '@/services/facility.service';
 import { apiClient } from '@/services/api.client';
-import { cn, getAvatarColor } from '@/utils';
+import { cn, formatRole, getAvatarColor } from '@/utils';
 
 const ROLES_OPTIONS = [
   { value: 'SUPER_ADMIN', label: 'Super Admin', color: 'red' },
   { value: 'STORE_MANAGER', label: 'Store Manager', color: 'orange' },
   { value: 'WAREHOUSE_MANAGER', label: 'Warehouse Manager', color: 'purple' },
   { value: 'WAREHOUSE_STAFF', label: 'Warehouse Staff', color: 'blue' },
+  { value: 'FACTORY_WAREHOUSE_STAFF', label: 'Factory Warehouse Staff', color: 'blue' },
   { value: 'PHARMACIST', label: 'Pharmacist', color: 'cyan' },
   { value: 'ACCOUNTANT', label: 'Accountant', color: 'blue' },
   { value: 'FINANCE_MANAGER', label: 'Finance Manager', color: 'gold' },
@@ -60,29 +61,10 @@ const STATUS_OPTIONS = [
   { value: 'INACTIVE', label: 'Disabled Account' },
 ];
 
-const ROLE_MAP: Record<string, { label: string; color: string }> = {
-  SUPER_ADMIN: { label: 'Super Admin', color: 'red' },
-  SUPERADMIN: { label: 'Super Admin', color: 'red' },
-  STORE_MANAGER: { label: 'Store Manager', color: 'orange' },
-  STOREMANAGER: { label: 'Store Manager', color: 'orange' },
-  WAREHOUSE_MANAGER: { label: 'Warehouse Manager', color: 'purple' },
-  WAREHOUSEMANAGER: { label: 'Warehouse Manager', color: 'purple' },
-  WAREHOUSE_STAFF: { label: 'Warehouse Staff', color: 'purple' },
-  WAREHOUSESTAFF: { label: 'Warehouse Staff', color: 'purple' },
-  FACTORY_WAREHOUSE_STAFF: { label: 'Factory Staff', color: 'purple' },
-  FACTORYWAREHOUSESTAFF: { label: 'Factory Staff', color: 'purple' },
-  PHARMACIST: { label: 'Pharmacist', color: 'cyan' },
-  ACCOUNTANT: { label: 'Accountant', color: 'blue' },
-  FINANCE_MANAGER: { label: 'Finance Manager', color: 'gold' },
-  FINANCEMANAGER: { label: 'Finance Manager', color: 'gold' },
-};
-
 const getRoleBadge = (roleStr: string) => {
-  const normalized = (roleStr || '').toUpperCase().replace(/[\s_-]/g, '');
-  const matched = ROLE_MAP[normalized] || ROLE_MAP[roleStr?.toUpperCase()];
   return (
     <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-[6px] border border-slate-200/60 inline-block">
-      {matched?.label || roleStr || 'Staff'}
+      {formatRole(roleStr)}
     </span>
   );
 };

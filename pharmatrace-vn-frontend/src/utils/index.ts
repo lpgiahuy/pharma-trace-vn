@@ -58,8 +58,11 @@ export const ROLE_LABELS: Record<string, string> = {
   WAREHOUSEMANAGER: 'Warehouse Manager',
   WAREHOUSE_STAFF: 'Warehouse Staff',
   WAREHOUSESTAFF: 'Warehouse Staff',
-  FACTORY_WAREHOUSE_STAFF: 'Factory Staff',
-  FACTORYWAREHOUSESTAFF: 'Factory Staff',
+  FACTORY_WAREHOUSE_STAFF: 'Factory Warehouse Staff',
+  FACTORYWAREHOUSESTAFF: 'Factory Warehouse Staff',
+  ACCOUNTANT: 'Accountant',
+  FINANCE_MANAGER: 'Finance Manager',
+  FINANCEMANAGER: 'Finance Manager',
   CUSTOMER: 'Customer',
 };
 
