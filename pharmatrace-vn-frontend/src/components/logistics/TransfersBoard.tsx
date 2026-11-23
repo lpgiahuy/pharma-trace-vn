@@ -593,7 +593,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
                   </div>
                 ))}
               </div>
-              {selectedTransfer.manifest ? <div className="text-xs text-slate-600 space-y-1"><p>Scanned by staff #{selectedTransfer.manifest.prepared_by} at {new Date(selectedTransfer.manifest.prepared_at).toLocaleString()}.</p>{selectedTransfer.manifest.lines.map(line => <p className="break-all" key={line.variantId}>Variant #{line.variantId}: {line.quantity} units{line.boxUids.length ? ` — ${line.boxUids.join(', ')}` : ' — untracked units'}</p>)}</div> : selectedTransfer.status !== 'REQUESTED' && <p className="text-xs text-slate-600">No source manifest was recorded for this transfer.</p>}
+              {selectedTransfer.manifest ? <div className="text-xs text-slate-600 space-y-1"><p>Scanned by staff #{selectedTransfer.manifest.prepared_by} at {new Date(selectedTransfer.manifest.prepared_at).toLocaleString()}.</p>{selectedTransfer.manifest.lines.map(line => <p className="break-all" key={line.variantId}>Variant #{line.variantId}: {line.quantity} units{line.boxUids.length ? ` — ${line.boxUids.length} boxes scanned` : ' — untracked units'}</p>)}</div> : selectedTransfer.status !== 'REQUESTED' && <p className="text-xs text-slate-600">No source manifest was recorded for this transfer.</p>}
             </div>
 
             {/* Action Buttons for allowed roles */}
