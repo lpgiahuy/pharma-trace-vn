@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { authActor } from '../../../common/auth-identity';
+import { authActor, normalizeRole } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
-import { WH_MANAGER, warehouseScope } from '../../../common/warehouse-roles';
+import { BATCH_HOLD, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { warehouseError } from '../warehouse-errors';
 
@@ -32,14 +32,20 @@ export class BatchStatusService {
     return expired;
   }
 
-  /** A manager may change only batches with boxes at their warehouse; SUPER_ADMIN may change any batch. */
+  /**
+   * A manager may change only batches with boxes at their warehouse; factory staff only batches their own factory made;
+   * SUPER_ADMIN may change any batch.
+   */
   private async change(user: CurrentUserPayload, id: number, from: string, to: string, reason: string): Promise<BatchStatusResult> {
-    const facilityId = warehouseScope(user, {}, WH_MANAGER);
+    const facilityId = warehouseScope(user, {}, BATCH_HOLD);
+    const atFactory = normalizeRole(user.role) === 'FACTORY_WAREHOUSE_STAFF';
     const actor = authActor(user);
     const note = reason.trim();
     return this.prisma.withBatchStatus(actor, async tx => {
       const [batch] = await tx.$queryRaw<{ status: string | null }[]>`SELECT status FROM public.batches WHERE id = ${id} FOR UPDATE`;
-      const atWarehouse = facilityId === null || await tx.medicine_boxes.count({ where: { batch_id: id, current_facility_id: facilityId } }) > 0;
+      const atWarehouse = facilityId === null
+        || (atFactory ? await tx.batches.count({ where: { id, manufacturer_source_facility_id: facilityId } }) > 0
+          : await tx.medicine_boxes.count({ where: { batch_id: id, current_facility_id: facilityId } }) > 0);
       if (!batch || !atWarehouse) throw warehouseError('WAREHOUSE_BATCH_NOT_FOUND');
       if (batch.status !== from) throw warehouseError(to === 'ON_HOLD' ? 'WAREHOUSE_BATCH_NOT_ACTIVE' : 'WAREHOUSE_BATCH_NOT_ON_HOLD');
       const held = to === 'ON_HOLD';

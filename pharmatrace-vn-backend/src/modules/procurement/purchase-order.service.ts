@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
-import { authActor } from '../../common/auth-identity';
+import { authActor, normalizeRole } from '../../common/auth-identity';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { WH_MANAGER, warehouseScope } from '../../common/warehouse-roles';
+import { WH_MANAGER, WH_READ, warehouseScope } from '../../common/warehouse-roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Page, pagination } from '../warehouse/inventory/warehouse-inventory.service';
 import { PurchaseOrderDto, PurchaseOrderQueryDto } from './dto/purchase-order.dto';
@@ -77,11 +77,13 @@ export class PurchaseOrderService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(user: CurrentUserPayload, query: PurchaseOrderQueryDto): Promise<Page<PurchaseOrderListItem>> {
-    const facilityId = warehouseScope(user, query);
+    const facilityId = warehouseScope(user, query, WH_READ);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
+    // A factory sees the orders addressed to it as supplier; every other role sees the orders addressed to its warehouse.
+    const asSupplier = normalizeRole(user.role) === 'FACTORY_WAREHOUSE_STAFF';
     const where: Prisma.purchase_ordersWhereInput = {
-      ...(facilityId === null ? {} : { facility_id: facilityId }),
+      ...(facilityId === null ? {} : asSupplier ? { supplier_id: facilityId } : { facility_id: facilityId }),
       ...(query.status ? { status: query.status } : {}),
     };
     return this.prisma.withPurchaseOrder(authActor(user), async tx => {

@@ -92,6 +92,20 @@ export class RecallService {
     }));
   }
 
+  /**
+   * Factory staff recall batches their own factory made. The database refuses any other batch. Collecting the stock and
+   * closing the recall stay with the super administrator, who sees the recall in the admin list.
+   */
+  createForFactory(user: CurrentUserPayload, dto: CreateRecallDto): Promise<{ id: number; recallCode: string }> {
+    if (!Number.isInteger(Number(user.facilityId)) || Number(user.facilityId) <= 0) throw recallError('RC_FACILITY_REQUIRED');
+    return recallDatabase(this.prisma.withActor(authActor(user), async tx => {
+      const [row] = await tx.$queryRaw<{ id: number }[]>`
+        SELECT public.create_batch_recall(${dto.recallCode}, ${dto.reason.trim()}, ${dto.severity}, ${dto.documentUrl ?? null}::text,
+          ${dto.batchIds}::integer[]) AS id`;
+      return { id: row.id, recallCode: dto.recallCode };
+    }));
+  }
+
   collect(user: CurrentUserPayload, id: number, dto: CollectRecallDto): Promise<RecallDetail> {
     return this.change(user, id, tx => tx.$queryRaw`SELECT public.collect_batch_recall(${id}::integer, ${dto.destinationFacilityId}::integer)`);
   }

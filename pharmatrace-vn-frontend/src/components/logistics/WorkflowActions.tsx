@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { App, Button, Form, Input, InputNumber, Modal, Popconfirm, Select } from 'antd';
 import { InternalTransfer, Shipment, logisticsService, DeliveryProofPayload, ReturnDispositionPayload, ReturnRefundPayload, ReconcileCodPayload, canCollectShipmentCod } from '@/services/logistics.service';
+import { ScanToolbar, appendCode, type ScannedCode } from '@/components/trace/ScanToolbar';
 import { codSubmissionMessage } from '@/utils/cod-workflow';
 import { formatCurrency, formatDateTime } from '@/utils';
 import { workflowErrorMessage } from '@/utils/workflow-error';
@@ -17,12 +18,11 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
   const [mode, setMode] = useState<'receive' | 'return' | 'halt' | null>(null);
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
-  const open = (value: typeof mode) => {
-    form.resetFields();
-    form.setFieldsValue({ lines: transfer.items.map(item => ({ good: item.quantity, damaged: 0, missing: 0 })) });
-    setMode(value);
-  };
-  const save = async (values: { reason?: string; notes?: string; lines: Array<{ good: number; damaged: number; missing: number; goodUids?: string; damagedUids?: string }> }) => {
+  // The form only exists while the modal is open, so its starting values are passed as initialValues instead of being
+  // set on the form instance before it is mounted.
+  const open = (value: typeof mode) => setMode(value);
+  const initialValues = { lines: transfer.items.map(item => ({ good: item.quantity, damaged: 0, missing: 0 })) };
+  const save = async (values: { reason?: string; notes?: string; lines: Array<{ good: number; damaged: number; missing: number; goodUids?: string; damagedUids?: string; missingUids?: string }> }) => {
     setBusy(true);
     try {
       if (mode === 'halt') await logisticsService.haltTransfer(transfer.id, { reason: values.reason! });
@@ -35,7 +35,9 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
           lines: values.lines.map((line, index) => ({ ...inspectionLine(line, index), goodQuantity: line.good })), notes: values.notes,
         });
         else await logisticsService.receiveTransfer(transfer.id, {
-          lines: values.lines.map((line, index) => ({ ...inspectionLine(line, index), receivedQuantity: line.good, missingQuantity: line.missing })), notes: values.notes,
+          lines: values.lines.map((line, index) => ({
+            ...inspectionLine(line, index), receivedQuantity: line.good, missingQuantity: line.missing, missingUids: uids(line.missingUids),
+          })), notes: values.notes,
         });
       }
       setMode(null);
@@ -48,20 +50,40 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
     {transfer.status === 'DISPATCHED' && atDestination && <Button onClick={() => open('receive')}>Inspect & receive</Button>}
     {transfer.status === 'DISPATCHED' && atSource && <Button onClick={() => open('halt')}>Halt & return to source</Button>}
     {transfer.status === 'RETURN_REQUESTED' && atSource && <Button onClick={() => open('return')}>Inspect source return</Button>}
-    <Modal title={mode === 'halt' ? 'Halt transfer' : 'Physical transfer inspection'} open={!!mode} onCancel={() => !busy && setMode(null)} onOk={() => form.submit()} confirmLoading={busy} destroyOnHidden>
-      <Form form={form} layout="vertical" onFinish={save}>
+    <Modal title={mode === 'halt' ? 'Halt transfer' : 'Physical transfer inspection'} centered styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }} open={!!mode} onCancel={() => !busy && setMode(null)} onOk={() => form.submit()} confirmLoading={busy} destroyOnHidden>
+      <Form form={form} layout="vertical" onFinish={save} initialValues={initialValues}
+        onValuesChange={(changed: { lines?: Array<{ damaged?: number; missing?: number } | undefined> }) => {
+          // Good is whatever is not damaged or missing, so the three quantities always add up to the expected one.
+          changed.lines?.forEach((change, index) => {
+            if (!change || (change.damaged === undefined && change.missing === undefined)) return;
+            const line = form.getFieldValue(['lines', index]) as { damaged?: number; missing?: number };
+            form.setFieldValue(['lines', index, 'good'], Math.max(0, Number(transfer.items[index].quantity) - (line.damaged || 0) - (line.missing || 0)));
+          });
+        }}>
         {mode === 'halt' ? <Form.Item name="reason" label="Reason" rules={[{ required: true, whitespace: true }]}><Input.TextArea /></Form.Item> : <>
-          <p>For tracked packages with damage or shortages, scan every good and damaged UID. Remaining dispatched UIDs will be recorded as missing.</p>
-          {transfer.items.map((item, index) => <fieldset key={item.variantId} className="border border-slate-200 p-3 mb-3 rounded">
-            <legend>{item.medicineName || `Variant #${item.variantId}`} — expected {item.quantity}</legend>
-            <div className="flex gap-2 flex-wrap">
-              <Form.Item name={['lines', index, 'good']} label="Good" rules={quantityRules}><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
-              <Form.Item name={['lines', index, 'damaged']} label="Damaged" rules={quantityRules}><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
-              {mode === 'receive' && <Form.Item name={['lines', index, 'missing']} label="Missing" rules={quantityRules}><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>}
-            </div>
-            <Form.Item name={['lines', index, 'goodUids']} label="Good UIDs (comma or newline separated)"><Input.TextArea /></Form.Item>
-            <Form.Item name={['lines', index, 'damagedUids']} label="Damaged UIDs"><Input.TextArea /></Form.Item>
-          </fieldset>)}
+          <p className="mt-0">{mode === 'receive'
+            ? 'A clean delivery needs no scanning: leave Damaged and Missing at 0 and confirm. If some boxes are damaged or missing, enter their number and scan only those boxes. Every other box counts as good.'
+            : 'For tracked packages with damage, scan every good and damaged UID.'}</p>
+          {transfer.items.map((item, index) => {
+            const scanInto = (field: string) => (scanned: ScannedCode) => scanned.kind === 'uid'
+              ? form.setFieldValue(['lines', index, field], appendCode(form.getFieldValue(['lines', index, field]), scanned.code))
+              : message.warning('Receiving is scanned box by box: scan the box labels, not the carton label.');
+            const uidField = (field: string, label: string) => <>
+              <ScanToolbar onCode={scanInto(field)} />
+              <Form.Item name={['lines', index, field]} label={label} className="mt-3"><Input.TextArea rows={2} /></Form.Item>
+            </>;
+            return <div key={item.variantId} className="mb-4 flex flex-col gap-3 rounded border border-slate-200 p-3">
+              <div className="font-semibold">{item.medicineName || `Variant #${item.variantId}`} — expected {item.quantity}</div>
+              <div className="flex flex-wrap gap-3">
+                <Form.Item name={['lines', index, 'good']} label="Good" rules={quantityRules} className="mb-0"><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
+                <Form.Item name={['lines', index, 'damaged']} label="Damaged" rules={quantityRules} className="mb-0"><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
+                {mode === 'receive' && <Form.Item name={['lines', index, 'missing']} label="Missing" rules={quantityRules} className="mb-0"><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>}
+              </div>
+              {mode === 'return' && uidField('goodUids', 'Good UIDs (comma or newline separated)')}
+              {uidField('damagedUids', 'Damaged UIDs (scan only the damaged boxes)')}
+              {mode === 'receive' && uidField('missingUids', 'Missing UIDs (scan only if boxes did not arrive)')}
+            </div>;
+          })}
           <Form.Item name="notes" label="Inspection notes"><Input.TextArea /></Form.Item>
         </>}
       </Form>

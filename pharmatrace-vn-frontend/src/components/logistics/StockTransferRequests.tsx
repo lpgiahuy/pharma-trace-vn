@@ -1,21 +1,22 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { App, Button, Input, InputNumber, Modal, Select, Table, Tag } from 'antd';
+import { App, Button, Dropdown, Input, InputNumber, Modal, Select, Table, Tag } from 'antd';
+import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, DownOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useHydrated } from '@/hooks/useHydrated';
 import { useLogisticsList } from '@/hooks/useLogisticsList';
 import { facilityService } from '@/services/facility.service';
-import { productService } from '@/services/product.service';
 import { logisticsService, type StockTransferAction, type StockTransferRequest } from '@/services/logistics.service';
+import { warehouseService } from '@/services/warehouse.service';
 import type { Facility } from '@/types/facility.types';
 import { useAuthStore } from '@/store/useAuthStore';
 import { formatDateTime } from '@/utils';
 import { workflowErrorMessage } from '@/utils/workflow-error';
 
 type Line = { variantId?: number; quantity: number };
-type Option = { value: number; label: string };
+type Option = { value: number; label: string; available?: number };
 
 const STATUS_COLORS: Record<StockTransferRequest['status'], string> = {
   REQUESTED: 'gold', APPROVED: 'green', REJECTED: 'red', CANCELLED: 'default',
@@ -32,6 +33,10 @@ export function StockTransferRequests() {
   const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
   const facilityId = user?.facilityId;
   const isManager = (role === 'WAREHOUSEMANAGER' || role === 'STOREMANAGER') && !!facilityId;
+  // Factory staff have no manager role: they only answer requests that ask their factory for stock.
+  // The factory also starts transfers itself: it picks the receiving warehouse instead of a source.
+  const isFactory = role === 'FACTORYWAREHOUSESTAFF' && !!facilityId;
+  const isDecider = isManager || (role === 'FACTORYWAREHOUSESTAFF' && !!facilityId);
 
   const load = useCallback(() => logisticsService.getStockTransferRequests(), []);
   const { result, loading, reload } = useLogisticsList(load, 'Unable to load stock transfer requests');
@@ -50,23 +55,41 @@ export function StockTransferRequests() {
   const openCreate = async () => {
     setRequestCode(newRequestCode());
     setSourceId(undefined);
+    setVariantOptions([]);
     setLines([{ quantity: 1 }]);
     setReason('');
     setCreateOpen(true);
+    // A factory can only send what it holds: offer its in-stock products (minus boxes of batches on hold), not the whole catalog.
+    if (isFactory) {
+      setVariantOptions([]);
+      warehouseService.inventory({ limit: 100 })
+        .then(res => setVariantOptions(res.items
+          .map(item => ({ item, sendable: item.available - (item.held ?? 0) }))
+          .filter(({ item, sendable }) => item.variantId !== null && sendable > 0)
+          .map(({ item, sendable }) => ({
+            value: item.variantId as number, label: `${item.medicineName} · ${item.unitName} (${sendable} available)`, available: sendable,
+          }))))
+        .catch((error: unknown) => message.error(workflowErrorMessage(error, 'Unable to load factory stock')));
+    }
     try {
       const res = await facilityService.getDropdownList();
-      setFacilities(res.data.filter(facility => facility.id !== facilityId));
+      setFacilities(res.data.filter(facility => facility.id !== facilityId && (!isFactory || String(facility.rawType ?? facility.type).toUpperCase().includes('WAREHOUSE'))));
     } catch (error: unknown) {
       message.error(workflowErrorMessage(error, 'Unable to load facilities'));
     }
   };
 
-  const searchVariants = async (search: string) => {
-    if (!search.trim()) return;
-    const res = await productService.getProducts({ search, limit: 20 });
-    const found = res.data.flatMap(product => (product.packagingOptions || [])
-      .map(option => ({ value: option.id, label: `${product.medicineName} · ${option.unitName}` })));
-    setVariantOptions(current => [...current.filter(o => !found.some(f => f.value === o.value)), ...found]);
+  // A request can only ask for what the source holds: load its free stock when the source is chosen.
+  const chooseSource = (id: number) => {
+    setSourceId(id);
+    if (isFactory) return;
+    setVariantOptions([]);
+    setLines([{ quantity: 1 }]);
+    logisticsService.getTransferSourceStock(id)
+      .then(res => setVariantOptions(res.data.map(item => ({
+        value: item.variantId, label: `${item.medicineName} · ${item.unitName} (${item.available} available)`, available: item.available,
+      }))))
+      .catch((error: unknown) => message.error(workflowErrorMessage(error, 'Unable to load the stock of that facility')));
   };
 
   const setLine = (index: number, change: Partial<Line>) =>
@@ -75,13 +98,18 @@ export function StockTransferRequests() {
   const submitCreate = async () => {
     const filled = lines.filter((line): line is Required<Line> => !!line.variantId && line.quantity > 0);
     if (!sourceId || !filled.length) {
-      message.error('Choose the source facility and at least one medicine');
+      message.error(isFactory ? 'Choose the receiving warehouse and at least one medicine' : 'Choose the source facility and at least one medicine');
       return;
     }
     setBusy(true);
     try {
-      await logisticsService.createStockTransferRequest({ requestCode, fromFacilityId: sourceId, lines: filled, reason: reason.trim() || undefined });
-      message.success('Stock transfer request created');
+      if (isFactory) {
+        await logisticsService.sendFactoryTransfer({ requestCode, toFacilityId: sourceId, lines: filled, reason: reason.trim() || undefined });
+        message.success('Transfer created and stock reserved. Dispatch it from the Transfers tab.');
+      } else {
+        await logisticsService.createStockTransferRequest({ requestCode, fromFacilityId: sourceId, lines: filled, reason: reason.trim() || undefined });
+        message.success('Stock transfer request created');
+      }
       setCreateOpen(false);
       reload();
     } catch (error: unknown) {
@@ -126,16 +154,19 @@ export function StockTransferRequests() {
     { title: 'Transfer', key: 'transfer', render: (_, row) => row.transfer
       ? <span className="text-xs"><span className="font-mono">{row.transfer.transfer_code}</span> ({row.transfer.status})</span> : '—' },
     { title: 'Action', key: 'action', render: (_, row) => {
-      const atSource = isManager && row.from_facility.id === facilityId;
-      const canCancel = isManager && (atSource || row.to_facility.id === facilityId)
+      const atSource = isDecider && row.from_facility.id === facilityId;
+      const canCancel = isDecider && (atSource || row.to_facility.id === facilityId)
         && (row.status === 'REQUESTED' || (row.status === 'APPROVED' && row.transfer?.status === 'REQUESTED'));
-      return <div className="flex gap-1">
-        {atSource && row.status === 'REQUESTED' && <>
-          <Button size="small" type="primary" onClick={() => openDecision(row, 'approve')}>Approve</Button>
-          <Button size="small" danger onClick={() => openDecision(row, 'reject')}>Reject</Button>
-        </>}
-        {canCancel && <Button size="small" onClick={() => openDecision(row, 'cancel')}>Cancel</Button>}
-      </div>;
+      const items: NonNullable<MenuProps['items']> = [];
+      if (atSource && row.status === 'REQUESTED') {
+        items.push(
+          { key: 'approve', label: 'Approve', onClick: () => openDecision(row, 'approve') },
+          { key: 'reject', label: 'Reject', danger: true, onClick: () => openDecision(row, 'reject') },
+        );
+      }
+      if (canCancel) items.push({ key: 'cancel', label: 'Cancel request', onClick: () => openDecision(row, 'cancel') });
+      if (!items.length) return null;
+      return <Dropdown menu={{ items }} trigger={['click']}><Button size="small">Actions <DownOutlined /></Button></Dropdown>;
     } },
   ];
 
@@ -143,19 +174,21 @@ export function StockTransferRequests() {
     <div className="space-y-3">
       <div className="flex justify-end gap-2">
         <Button icon={<ReloadOutlined />} onClick={reload} loading={loading}>Refresh</Button>
-        {isManager && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New request</Button>}
+        {(isManager || isFactory) && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{isFactory ? 'New transfer' : 'New request'}</Button>}
       </div>
       <Table rowKey="id" dataSource={result?.data || []} columns={columns} loading={loading} scroll={{ x: 900 }} pagination={{ pageSize: 20 }} />
 
-      <Modal title="Request stock" open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} confirmLoading={busy} okText="Submit request">
-        <div className="space-y-3 py-2">
-          <Select className="w-full" placeholder="Source facility" value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
+      <Modal title={isFactory ? 'Send stock to a warehouse' : 'Request stock'} open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} confirmLoading={busy} okText={isFactory ? 'Create transfer' : 'Submit request'}>
+        <div className="flex flex-col gap-4 py-3">
+          <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={chooseSource} showSearch optionFilterProp="label"
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
-          {lines.map((line, index) => <div key={index} className="flex gap-2">
-            <Select className="flex-1" placeholder="Search medicine" showSearch filterOption={false} onSearch={searchVariants}
-              value={line.variantId} onChange={variantId => setLine(index, { variantId })} options={variantOptions} />
-            <InputNumber min={1} max={100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
-            <Button icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />
+          {lines.map((line, index) => <div key={index} className="flex items-center gap-3">
+            <Select className="min-w-0 flex-1" placeholder={isFactory || sourceId ? 'Choose a medicine in stock' : 'Choose the source facility first'} showSearch
+              disabled={!isFactory && !sourceId} optionFilterProp="label" notFoundContent="No medicine in stock"
+              classNames={{ popup: { root: '[&_.ant-select-item-option-content]:whitespace-normal! [&_.ant-select-item-option-content]:text-clip!' } }}
+              value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
+            <InputNumber className="w-24 shrink-0" min={1} max={variantOptions.find(o => o.value === line.variantId)?.available || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
+            <Button className="shrink-0" icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />
           </div>)}
           <Button type="dashed" block icon={<PlusOutlined />} onClick={() => setLines(current => [...current, { quantity: 1 }])}>Add line</Button>
           <Input.TextArea placeholder="Reason (optional)" maxLength={500} value={reason} onChange={event => setReason(event.target.value)} />

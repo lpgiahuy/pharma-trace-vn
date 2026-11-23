@@ -4,7 +4,7 @@ import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { WH_ALL, WH_MANAGER } from '../../common/warehouse-roles';
+import { WH_ALL, WH_MANAGER, WH_READ } from '../../common/warehouse-roles';
 import { ClosePurchaseOrderDto } from './dto/goods-receipt.dto';
 import { CancelPurchaseOrderDto, PurchaseOrderDto, PurchaseOrderOptionsQueryDto, PurchaseOrderQueryDto } from './dto/purchase-order.dto';
 import { PurchaseOrderService } from './purchase-order.service';
@@ -18,7 +18,8 @@ export class PurchaseOrderController {
   constructor(private readonly purchaseOrders: PurchaseOrderService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Purchase orders addressed to your warehouse' })
+  @Roles(...WH_READ)
+  @ApiOperation({ summary: 'Purchase orders addressed to your warehouse, or asking your factory for stock' })
   async list(@Query() query: PurchaseOrderQueryDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, ...await this.purchaseOrders.list(user, query) };
   }
@@ -30,6 +31,7 @@ export class PurchaseOrderController {
   }
 
   @Get(':id')
+  @Roles(...WH_READ)
   @ApiOperation({ summary: 'One purchase order with its lines and event history' })
   async detail(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.purchaseOrders.detail(user, id) };

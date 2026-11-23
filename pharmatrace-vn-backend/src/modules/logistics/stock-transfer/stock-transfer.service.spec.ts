@@ -4,6 +4,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { StockTransferService } from './stock-transfer.service';
 
 const pharmacyManager = { type: 'employee', id: 7, role: 'STORE_MANAGER', facilityId: 5 };
+const factoryStaff = { type: 'employee', id: 9, role: 'FACTORY_WAREHOUSE_STAFF', facilityId: 2 };
 const warehouseStaff = { type: 'employee', id: 8, role: 'WAREHOUSE_STAFF', facilityId: 3 };
 
 function setup(queryRaw: jest.Mock = jest.fn().mockResolvedValue([{ id: 11 }])) {
@@ -32,6 +33,38 @@ describe('StockTransferService', () => {
     expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ id: 7, facilityId: 5 }), expect.any(Function));
     const values = tx.$queryRaw.mock.calls[0].slice(1);
     expect(values).toEqual(['STQ-000001', 3, 5, '[{"variantId":2,"quantity":20}]', null]);
+  });
+
+  it('lists what the source can send through transfer_source_stock', async () => {
+    const rows = [{ variantId: 13, medicineName: 'Panadol', unitName: 'Box', available: 1000 }];
+    const { service, tx, prisma } = setup(jest.fn().mockResolvedValue(rows));
+    await expect(service.sourceStock(pharmacyManager, 3)).resolves.toEqual(rows);
+    expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ id: 7, facilityId: 5 }), expect.any(Function));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([3]);
+  });
+
+  it('maps a database refusal when the caller may not ask for stock', async () => {
+    const { service } = setup(jest.fn().mockRejectedValue(databaseError('ST_FORBIDDEN')));
+    await expect(service.sourceStock(warehouseStaff, 3)).rejects.toMatchObject({ code: 'ST_FORBIDDEN' });
+  });
+
+  it('lets factory staff send stock to a warehouse through send_factory_transfer', async () => {
+    const { service, tx, prisma } = setup();
+    await expect(service.send(factoryStaff, { requestCode: 'FTS-000001', toFacilityId: 3, lines: [{ variantId: 2, quantity: 20 }], reason: 'Weekly supply' }))
+      .resolves.toMatchObject({ id: 11 });
+    expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ id: 9, facilityId: 2, role: 'FACTORY_WAREHOUSE_STAFF' }), expect.any(Function));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['FTS-000001', 3, '[{"variantId":2,"quantity":20}]', 'Weekly supply']);
+  });
+
+  it.each([
+    ['ST_FORBIDDEN', 403],
+    ['ST_DESTINATION_INVALID', 422],
+    ['ST_STOCK_INSUFFICIENT', 409],
+  ])('maps %s raised while sending to HTTP %s', async (code, status) => {
+    const { service } = setup(jest.fn().mockRejectedValue(databaseError(`ERROR: ${code}`)));
+    const error = await service.send(factoryStaff, { requestCode: 'FTS-000002', toFacilityId: 3, lines: [{ variantId: 2, quantity: 1 }] }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code });
+    expect((error as AppException).getStatus()).toBe(status);
   });
 
   it.each([

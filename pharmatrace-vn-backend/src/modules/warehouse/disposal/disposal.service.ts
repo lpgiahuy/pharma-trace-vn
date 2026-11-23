@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import sharp from 'sharp';
 import { authActor } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
-import { warehouseScope } from '../../../common/warehouse-roles';
+import { WH_QUALITY, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CloudinaryService } from '../../cloudinary/cloudinary.service';
 import { Page, pagination } from '../inventory/warehouse-inventory.service';
@@ -93,7 +93,7 @@ export class DisposalService {
   }
 
   async list(user: CurrentUserPayload, query: DisposalQueryDto): Promise<Page<DisposalListItem>> {
-    const facilityId = warehouseScope(user, query);
+    const facilityId = warehouseScope(user, query, WH_QUALITY);
     const status = query.status ?? null;
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -159,7 +159,7 @@ export class DisposalService {
   }
 
   private facility(user: CurrentUserPayload, query: { facilityId?: number }): number {
-    const facilityId = warehouseScope(user, query);
+    const facilityId = warehouseScope(user, query, WH_QUALITY);
     if (facilityId === null) throw warehouseError('DP_FACILITY_REQUIRED');
     return facilityId;
   }

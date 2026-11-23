@@ -24,6 +24,26 @@ export class CreateStockTransferRequestDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) reason?: string;
 }
 
+export class SendFactoryTransferDto {
+  @ApiProperty({ example: 'FTS-20261119-7F3A2C', description: 'Client-generated code; resending the same code returns the existing transfer' })
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9_-]{5,39}$/, { message: 'requestCode must be 6-40 letters, digits, dashes or underscores' })
+  requestCode: string;
+  @ApiProperty({ example: 3, description: 'Warehouse that receives the stock' })
+  @IsInt() @Min(1)
+  toFacilityId: number;
+  @ApiProperty({ type: [StockTransferLineDto] })
+  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(100)
+  @ValidateNested({ each: true }) @Type(() => StockTransferLineDto)
+  lines: StockTransferLineDto[];
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) reason?: string;
+}
+
 export class StockTransferDecisionDto {
   @ApiPropertyOptional({ description: 'Required to reject or cancel' }) @IsOptional() @IsString() @MaxLength(500) note?: string;
+}
+
+export class SourceStockQueryDto {
+  @ApiProperty({ example: 3, description: 'Facility whose free stock to list' })
+  @Type(() => Number) @IsInt() @Min(1)
+  facilityId: number;
 }
