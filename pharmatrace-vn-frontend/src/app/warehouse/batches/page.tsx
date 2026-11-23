@@ -2,17 +2,23 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Alert, App, Button, Descriptions, Drawer, Input, Modal, Table, Tabs, Tag } from 'antd';
+import { Alert, App, Button, Descriptions, Drawer, Input, Modal, Select, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useHydrated } from '@/hooks/useHydrated';
-import { FactoryBatchModal, downloadBatchLabels } from '@/components/warehouse/FactoryBatchModal';
+import { FactoryBatchModal, downloadBatchLabels, downloadBatchLabelsPdf } from '@/components/warehouse/FactoryBatchModal';
 import { warehouseService, type BatchDetail, type BatchItem } from '@/services/warehouse.service';
 import { useAuthStore } from '@/store/useAuthStore';
 import { workflowErrorMessage } from '@/utils/workflow-error';
 
 const PAGE_SIZE = 20;
 const formatDate = (value: string) => new Date(value).toLocaleDateString();
-const STATUS_COLORS: Record<string, string> = { ACTIVE: 'green', ON_HOLD: 'orange', RECALLED: 'red', EXPIRED: 'default' };
+const STATUS_COLORS: Record<string, string> = { ACTIVE: 'green', ON_HOLD: 'orange', RECALLED: 'red', EXPIRED: 'default', VOIDED: 'default' };
+const SEVERITIES = [
+  { value: 'LEVEL_1', label: 'Level 1 - serious risk to health' },
+  { value: 'LEVEL_2', label: 'Level 2 - moderate risk' },
+  { value: 'LEVEL_3', label: 'Level 3 - low risk' },
+];
+const newRecallCode = () => `RCL-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const statusTag = (status: string | null) => <Tag color={STATUS_COLORS[status ?? ''] ?? 'default'}>{status ?? 'UNKNOWN'}</Tag>;
 
 const COLUMNS: ColumnsType<BatchItem> = [
@@ -68,23 +74,37 @@ function BatchesPage() {
   const getUser = useAuthStore(state => state.getUser);
   const role = useHydrated() ? String(getUser()?.role ?? '') : '';
   const manager = role === 'WAREHOUSE_MANAGER' || role === 'SUPER_ADMIN';
+  const factoryStaff = role === 'FACTORY_WAREHOUSE_STAFF';
   // Only the factory registers batches (the backend also limits this to FACTORY facilities); SUPER_ADMIN picks the factory.
   const canCreate = role === 'FACTORY_WAREHOUSE_STAFF' || role === 'SUPER_ADMIN';
   const [createOpen, setCreateOpen] = useState(false);
   const [voidTarget, setVoidTarget] = useState<BatchItem>();
   const [voidReason, setVoidReason] = useState('');
+  const [recallTarget, setRecallTarget] = useState<{ batch: BatchItem; code: string }>();
+  const [recallSeverity, setRecallSeverity] = useState('LEVEL_2');
+  const [recallReason, setRecallReason] = useState('');
+  const [pdfBatch, setPdfBatch] = useState<number>();
 
   const labelsColumn: ColumnsType<BatchItem>[number] = {
     title: 'Labels',
     render: (_, batch) => (
-      <Button size="small" onClick={event => {
-        event.stopPropagation();
-        downloadBatchLabels(batch.id).catch(err => message.error(workflowErrorMessage(err, 'We could not download the labels.')));
-      }}>CSV</Button>
+      <div className="flex gap-1">
+        <Button size="small" loading={pdfBatch === batch.id} onClick={event => {
+          event.stopPropagation();
+          setPdfBatch(batch.id);
+          downloadBatchLabelsPdf(batch.id, batch)
+            .catch(err => message.error(workflowErrorMessage(err, 'We could not build the label PDF.')))
+            .finally(() => setPdfBatch(undefined));
+        }}>PDF</Button>
+        <Button size="small" onClick={event => {
+          event.stopPropagation();
+          downloadBatchLabels(batch.id).catch(err => message.error(workflowErrorMessage(err, 'We could not download the labels.')));
+        }}>CSV</Button>
+      </div>
     ),
   };
 
-  const columns: ColumnsType<BatchItem> = manager ? [...COLUMNS, {
+  const columns: ColumnsType<BatchItem> = manager || factoryStaff ? [...COLUMNS, {
     title: 'Action',
     render: (_, batch) => (batch.status === 'ACTIVE' || batch.status === 'ON_HOLD') && (
       <Button size="small" danger={batch.status === 'ACTIVE'} onClick={event => {
@@ -97,16 +117,45 @@ function BatchesPage() {
     ),
   }] : COLUMNS;
   const voidColumn: ColumnsType<BatchItem>[number] = {
-    title: 'Void',
+    title: 'Cancel batch',
     render: (_, batch) => batch.status === 'ACTIVE' && (
       <Button size="small" danger onClick={event => {
         event.stopPropagation();
         setVoidReason('');
         setVoidTarget(batch);
-      }}>Void</Button>
+      }}>Cancel batch</Button>
     ),
   };
-  const tableColumns = canCreate ? [...columns, labelsColumn, voidColumn] : columns;
+  const recallColumn: ColumnsType<BatchItem>[number] = {
+    title: 'Recall',
+    render: (_, batch) => (batch.status === 'ACTIVE' || batch.status === 'ON_HOLD' || batch.status === 'EXPIRED') && (
+      <Button size="small" danger onClick={event => {
+        event.stopPropagation();
+        setRecallReason('');
+        setRecallSeverity('LEVEL_2');
+        setRecallTarget({ batch, code: newRecallCode() });
+      }}>Recall</Button>
+    ),
+  };
+  const tableColumns = canCreate ? [...columns, labelsColumn, ...(factoryStaff ? [recallColumn] : []), voidColumn] : columns;
+
+  const submitRecall = async () => {
+    if (!recallTarget) return;
+    setSaving(true);
+    try {
+      await warehouseService.createFactoryRecall({
+        recallCode: recallTarget.code, reason: recallReason.trim(), severity: recallSeverity, batchIds: [recallTarget.batch.id],
+      });
+      message.success(`Batch ${recallTarget.batch.batchNumber} recalled`);
+      setRecallTarget(undefined);
+      setLoading(true);
+      setReload(value => value + 1);
+    } catch (err) {
+      message.error(workflowErrorMessage(err, 'We could not recall the batch.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const submit = async () => {
     if (!action) return;
@@ -130,12 +179,12 @@ function BatchesPage() {
     setSaving(true);
     try {
       await warehouseService.voidFactoryBatch(voidTarget.id, voidReason.trim());
-      message.success(`Batch ${voidTarget.batchNumber} voided`);
+      message.success(`Batch ${voidTarget.batchNumber} cancelled`);
       setVoidTarget(undefined);
       setLoading(true);
       setReload(value => value + 1);
     } catch (err) {
-      message.error(workflowErrorMessage(err, 'We could not void the batch.'));
+      message.error(workflowErrorMessage(err, 'We could not cancel the batch.'));
     } finally {
       setSaving(false);
     }
@@ -179,8 +228,9 @@ function BatchesPage() {
       <FactoryBatchModal open={createOpen} pickFactory={role === 'SUPER_ADMIN'} onClose={() => setCreateOpen(false)} onCreated={() => { setLoading(true); setReload(value => value + 1); }} />
       <Modal
         open={!!voidTarget}
-        title={voidTarget && `Void batch ${voidTarget.batchNumber}`}
-        okText="Void batch"
+        title={voidTarget && `Cancel batch ${voidTarget.batchNumber}`}
+        okText="Cancel this batch"
+        cancelText="Keep batch"
         okButtonProps={{ danger: true, disabled: !voidReason.trim(), loading: saving }}
         onOk={submitVoid}
         onCancel={() => setVoidTarget(undefined)}
@@ -190,6 +240,24 @@ function BatchesPage() {
           The batch is removed from stock, and the labels already printed stop verifying. This cannot be undone.
         </p>
         <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={voidReason} onChange={event => setVoidReason(event.target.value)} />
+      </Modal>
+      <Modal
+        open={!!recallTarget}
+        title={recallTarget && `Recall batch ${recallTarget.batch.batchNumber}`}
+        okText="Recall batch"
+        cancelText="Keep batch"
+        okButtonProps={{ danger: true, disabled: !recallReason.trim(), loading: saving }}
+        onOk={submitRecall}
+        onCancel={() => setRecallTarget(undefined)}
+      >
+        <p>
+          A recall stops the batch everywhere: it is marked RECALLED and every box still in stock, at the factory and at any warehouse or pharmacy,
+          is moved to quarantine. Boxes already delivered to customers are listed for the administrator. Collecting the stock and closing the recall
+          are done by the administrator. This cannot be undone.
+        </p>
+        <Select aria-label="Severity" className="mb-3 w-full" options={SEVERITIES} value={recallSeverity} onChange={setRecallSeverity} />
+        <Input.TextArea aria-label="Reason" placeholder="Reason (required)" maxLength={500} showCount rows={3} value={recallReason} onChange={event => setRecallReason(event.target.value)} />
+        {recallTarget && <p className="mt-3 mb-0 text-xs text-slate-500">Recall code {recallTarget.code}</p>}
       </Modal>
       <BatchDrawer id={selected} onClose={() => setSelected(undefined)} />
       <Modal

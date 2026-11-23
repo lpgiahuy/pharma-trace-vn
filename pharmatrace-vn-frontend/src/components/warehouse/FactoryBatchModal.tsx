@@ -5,6 +5,7 @@ import { App, Alert, Button, Form, Input, InputNumber, Modal, Select, Tag } from
 import { facilityService } from '@/services/facility.service';
 import { productService } from '@/services/product.service';
 import { warehouseService, type FactoryBatchSummary } from '@/services/warehouse.service';
+import { MAX_PDF_LABELS, buildBatchLabelPdf, parseLabelCsv, type LabelBatch } from '@/utils/batch-label-pdf';
 import { workflowErrorMessage } from '@/utils/workflow-error';
 
 interface VariantOption { value: number; label: string; unit: string; name: string }
@@ -31,6 +32,22 @@ export async function downloadBatchLabels(batchId: number, facilityId?: number) 
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Saves a printable PDF with the carton labels, the box QR labels and the secret-code labels of a batch.
+ * Throws a readable Error when the batch is too large for the browser; use the CSV then.
+ */
+export async function downloadBatchLabelsPdf(batchId: number, batch: LabelBatch, facilityId?: number) {
+  const rows = parseLabelCsv(await (await warehouseService.batchLabels(batchId, facilityId)).text());
+  if (rows.length > MAX_PDF_LABELS) throw new Error(`This batch has ${rows.length} boxes. Use the CSV for batches above ${MAX_PDF_LABELS} boxes.`);
+  const blob = await buildBatchLabelPdf(batch, rows, window.location.origin);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `batch-${batch.batchNumber}-labels.pdf`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 interface Props {
   open: boolean;
   /** SUPER_ADMIN has no factory of its own and must pick one. */
@@ -47,7 +64,8 @@ export function FactoryBatchModal({ open, pickFactory, onClose, onCreated }: Pro
   const [saving, setSaving] = useState(false);
   const latestSearch = useRef(0);
   const chosen = useRef<VariantOption | undefined>(undefined);
-  const [created, setCreated] = useState<{ batch: FactoryBatchSummary; facilityId?: number }>();
+  const [created, setCreated] = useState<{ batch: FactoryBatchSummary; facilityId?: number; label: LabelBatch }>();
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -83,7 +101,7 @@ export function FactoryBatchModal({ open, pickFactory, onClose, onCreated }: Pro
     setSaving(true);
     try {
       const res = await warehouseService.createFactoryBatch({ ...values, certificateCoCq: values.certificateCoCq?.trim() || undefined });
-      setCreated({ batch: res.data, facilityId: values.facilityId });
+      setCreated({ batch: res.data, facilityId: values.facilityId, label: { batchNumber: res.data.batchNumber, medicineName: chosen.current?.name ?? '', expiryDate: values.expiryDate } });
       message.success(`Batch ${res.data.batchNumber} created`);
       onCreated();
     } catch (error) {
@@ -107,10 +125,20 @@ export function FactoryBatchModal({ open, pickFactory, onClose, onCreated }: Pro
       {created ? (
         <div className="space-y-3">
           <Alert type="success" showIcon title={`${created.batch.boxCount} boxes in ${created.batch.cartonCount} cartons were registered and added to factory stock.`} />
-          <Button onClick={() => downloadBatchLabels(created.batch.id, created.facilityId).catch(error => message.error(workflowErrorMessage(error, 'We could not download the labels.')))}>
-            Download labels (CSV)
-          </Button>
-          <p className="m-0 text-xs text-slate-500">The file lists every box UID, its SSCC carton code and the secret code printed under the scratch layer. Treat it as confidential: anyone holding it can verify a box as authentic. You can download it again from the Labels column.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="primary" loading={pdfBusy} onClick={() => {
+              setPdfBusy(true);
+              downloadBatchLabelsPdf(created.batch.id, created.label, created.facilityId)
+                .catch(error => message.error(workflowErrorMessage(error, 'We could not build the label PDF.')))
+                .finally(() => setPdfBusy(false));
+            }}>
+              Download labels (PDF)
+            </Button>
+            <Button onClick={() => downloadBatchLabels(created.batch.id, created.facilityId).catch(error => message.error(workflowErrorMessage(error, 'We could not download the labels.')))}>
+              Download labels (CSV)
+            </Button>
+          </div>
+          <p className="m-0 text-xs text-slate-500">The PDF has carton labels (SSCC QR), box labels (QR to scan) and the secret-code labels to print under the scratch layer. The CSV lists every box UID, its SSCC carton code and the secret code printed under the scratch layer. Treat it as confidential: anyone holding it can verify a box as authentic. You can download it again from the Labels column.</p>
         </div>
       ) : (
         <Form form={form} layout="vertical" requiredMark>

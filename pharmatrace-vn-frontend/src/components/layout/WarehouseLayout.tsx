@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Layout, Menu, Dropdown, Grid } from 'antd';
 import type { MenuProps } from 'antd';
-import { AlertOutlined, DashboardOutlined, DatabaseOutlined, DeleteOutlined, ExperimentOutlined, FileTextOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, SendOutlined, RollbackOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ScanOutlined } from '@ant-design/icons';
+import { AlertOutlined, DashboardOutlined, DatabaseOutlined, DeleteOutlined, ExperimentOutlined, FileTextOutlined, ShoppingOutlined, SwapOutlined, CarOutlined, SendOutlined, RollbackOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ScanOutlined, BarChartOutlined } from '@ant-design/icons';
 import { LogOut, User, Warehouse } from 'lucide-react';
 import { useHydrated } from '@/hooks/useHydrated';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -27,9 +27,12 @@ const NAV_ITEMS = [
   { key: '/warehouse/recalls', icon: <AlertOutlined />, label: 'Recalls' },
   { key: '/warehouse/disposals', icon: <DeleteOutlined />, label: 'Disposals' },
   { key: '/warehouse/traceability', icon: <ScanOutlined />, label: 'Traceability' },
+  { key: '/warehouse/production', icon: <BarChartOutlined />, label: 'Production report' },
 ];
 
-const FACTORY_NAV_KEYS = ['/warehouse', '/warehouse/inventory', '/warehouse/batches', '/warehouse/transfers', '/warehouse/purchase-orders'];
+const FACTORY_NAV_KEYS = ['/warehouse', '/warehouse/inventory', '/warehouse/batches', '/warehouse/production', '/warehouse/transfers', '/warehouse/purchase-orders', '/warehouse/disposals'];
+// Only a factory produces, so the production report is hidden from every other warehouse role.
+const FACTORY_ONLY_NAV_KEYS = ['/warehouse/production'];
 
 export function WarehouseLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -50,7 +53,9 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
 
   if (!allowed) return null;
 
-  const navItems = user.role === 'FACTORY_WAREHOUSE_STAFF' ? NAV_ITEMS.filter((item) => FACTORY_NAV_KEYS.includes(item.key)) : NAV_ITEMS;
+  const navItems = user.role === 'FACTORY_WAREHOUSE_STAFF'
+    ? NAV_ITEMS.filter((item) => FACTORY_NAV_KEYS.includes(item.key))
+    : NAV_ITEMS.filter((item) => !FACTORY_ONLY_NAV_KEYS.includes(item.key));
   const selectedKey = navItems.filter((item) => item.key === '/warehouse' ? pathname === item.key : pathname.startsWith(item.key))
     .at(-1)?.key ?? '';
 

@@ -150,6 +150,15 @@ export interface FactoryBatchInput {
   certificateCoCq?: string;
 }
 
+export interface ProductionReport {
+  from: string;
+  to: string;
+  groupBy: 'day' | 'month';
+  totals: { batches: number; boxes: number; voidedBatches: number; recalledBatches: number; heldBatches: number };
+  periods: { period: string; batches: number; boxes: number }[];
+  medicines: { medicineId: number | null; medicineName: string | null; batches: number; boxes: number }[];
+}
+
 export interface FactoryBatchSummary { id: number; batchNumber: string; boxCount: number; cartonCount: number }
 
 interface PageQuery { page?: number; limit?: number }
@@ -172,6 +181,10 @@ export const warehouseService = {
     apiClient.get<unknown, Blob>(`/warehouse/batches/${id}/labels`, { params: facilityId ? { facilityId } : undefined, responseType: 'blob' }),
   voidFactoryBatch: (id: number, reason: string) =>
     apiClient.post<unknown, Envelope<{ id: number }>>(`/warehouse/batches/${id}/void`, { reason }),
+  createFactoryRecall: (input: { recallCode: string; reason: string; severity: string; batchIds: number[] }) =>
+    apiClient.post<unknown, Envelope<{ id: number; recallCode: string }>>('/warehouse/recalls', input),
+  productionReport: (params: { from?: string; to?: string; groupBy?: 'day' | 'month' }) =>
+    apiClient.get<unknown, Envelope<ProductionReport>>('/warehouse/factory-reports/production', { params }),
   holdBatch: (id: number, reason: string) =>
     apiClient.patch<unknown, Envelope<{ id: number; status: string }>>(`/warehouse/batches/${id}/hold`, { reason }),
   releaseBatch: (id: number, reason: string) =>
