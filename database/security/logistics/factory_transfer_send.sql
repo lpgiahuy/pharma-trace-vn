@@ -62,7 +62,7 @@ CREATE OR REPLACE FUNCTION public.expand_dispatch_cartons(target integer, line_v
 RETURNS uuid[] LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
 DECLARE
   t public.internal_transfers%ROWTYPE; item jsonb; carton public.sscc_cartons%ROWTYPE; code text; found_uids uuid[]; uids uuid[] := '{}';
-  box_variant integer;
+  box_variant integer; expected integer;
 BEGIN
   IF current_setting('app.order_operation', true) IS DISTINCT FROM 'dispatch'
     OR current_setting('app.current_user_type', true) IS DISTINCT FROM 'employee'
@@ -85,9 +85,20 @@ BEGIN
     IF NOT FOUND OR carton.current_facility_id IS DISTINCT FROM t.from_facility_id OR carton.status = 'VOIDED' THEN
       RAISE EXCEPTION 'Carton % is not at the source facility', code USING ERRCODE = '22023';
     END IF;
-    SELECT array_agg(b.uid ORDER BY b.uid) INTO found_uids FROM public.medicine_boxes b
-      WHERE b.carton_id = carton.id AND b.current_facility_id = t.from_facility_id AND b.status = 'IN_STOCK';
-    IF coalesce(cardinality(found_uids), 0) = 0 OR cardinality(found_uids) <> carton.box_count THEN
+    IF t.transfer_type = 'RECALL_COLLECTION' THEN
+      -- A recall collection reserves its boxes when it is created and leaves sold or packed boxes behind, so a carton
+      -- is complete when every box this collection took from it is still reserved here, not when it holds box_count.
+      SELECT count(*), array_agg(b.uid ORDER BY b.uid) FILTER (WHERE b.status = 'RESERVED' AND b.current_facility_id = t.from_facility_id)
+        INTO expected, found_uids
+        FROM public.medicine_boxes b
+        WHERE b.carton_id = carton.id AND b.uid IN (
+          SELECT unnest(e.box_uids) FROM public.batch_recall_events e WHERE e.transfer_id = t.id AND e.action = 'COLLECT');
+    ELSE
+      SELECT array_agg(b.uid ORDER BY b.uid) INTO found_uids FROM public.medicine_boxes b
+        WHERE b.carton_id = carton.id AND b.current_facility_id = t.from_facility_id AND b.status = 'IN_STOCK';
+      expected := carton.box_count;
+    END IF;
+    IF coalesce(cardinality(found_uids), 0) = 0 OR cardinality(found_uids) <> expected THEN
       RAISE EXCEPTION 'Carton % is incomplete or has boxes that are reserved, moved or unavailable', code USING ERRCODE = '22023';
     END IF;
     -- Every box of the carton must be the medicine and packaging of this line.
