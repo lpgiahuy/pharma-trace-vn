@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { App, Button, Form, Input, InputNumber, Modal, Popconfirm, Select } from 'antd';
 import { InternalTransfer, Shipment, logisticsService, DeliveryProofPayload, ReturnDispositionPayload, ReturnRefundPayload, ReconcileCodPayload, canCollectShipmentCod } from '@/services/logistics.service';
+import { ScanToolbar, appendCode } from '@/components/trace/ScanToolbar';
 import { codSubmissionMessage } from '@/utils/cod-workflow';
 import { formatCurrency, formatDateTime } from '@/utils';
 import { workflowErrorMessage } from '@/utils/workflow-error';
@@ -48,7 +49,7 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
     {transfer.status === 'DISPATCHED' && atDestination && <Button onClick={() => open('receive')}>Inspect & receive</Button>}
     {transfer.status === 'DISPATCHED' && atSource && <Button onClick={() => open('halt')}>Halt & return to source</Button>}
     {transfer.status === 'RETURN_REQUESTED' && atSource && <Button onClick={() => open('return')}>Inspect source return</Button>}
-    <Modal title={mode === 'halt' ? 'Halt transfer' : 'Physical transfer inspection'} open={!!mode} onCancel={() => !busy && setMode(null)} onOk={() => form.submit()} confirmLoading={busy} destroyOnHidden>
+    <Modal title={mode === 'halt' ? 'Halt transfer' : 'Physical transfer inspection'} centered styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }} open={!!mode} onCancel={() => !busy && setMode(null)} onOk={() => form.submit()} confirmLoading={busy} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={save}>
         {mode === 'halt' ? <Form.Item name="reason" label="Reason" rules={[{ required: true, whitespace: true }]}><Input.TextArea /></Form.Item> : <>
           <p>For tracked packages with damage or shortages, scan every good and damaged UID. Remaining dispatched UIDs will be recorded as missing.</p>
@@ -59,7 +60,15 @@ export function TransferInspection({ transfer, atSource, atDestination, onSaved 
               <Form.Item name={['lines', index, 'damaged']} label="Damaged" rules={quantityRules}><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>
               {mode === 'receive' && <Form.Item name={['lines', index, 'missing']} label="Missing" rules={quantityRules}><InputNumber min={0} max={item.quantity} precision={0} /></Form.Item>}
             </div>
+            <div className="mb-4"><ScanToolbar hint="Scanned box labels are added to Good UIDs."
+              onCode={scanned => scanned.kind === 'uid'
+                ? form.setFieldValue(['lines', index, 'goodUids'], appendCode(form.getFieldValue(['lines', index, 'goodUids']), scanned.code))
+                : message.warning('Receiving is scanned box by box: scan the box labels, not the carton label.')} /></div>
             <Form.Item name={['lines', index, 'goodUids']} label="Good UIDs (comma or newline separated)"><Input.TextArea /></Form.Item>
+            <div className="mb-4"><ScanToolbar hint="Scanned box labels are added to Damaged UIDs."
+              onCode={scanned => scanned.kind === 'uid'
+                ? form.setFieldValue(['lines', index, 'damagedUids'], appendCode(form.getFieldValue(['lines', index, 'damagedUids']), scanned.code))
+                : message.warning('Receiving is scanned box by box: scan the box labels, not the carton label.')} /></div>
             <Form.Item name={['lines', index, 'damagedUids']} label="Damaged UIDs"><Input.TextArea /></Form.Item>
           </fieldset>)}
           <Form.Item name="notes" label="Inspection notes"><Input.TextArea /></Form.Item>

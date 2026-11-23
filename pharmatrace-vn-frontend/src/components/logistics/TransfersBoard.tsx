@@ -7,7 +7,7 @@ import { useHydrated } from '@/hooks/useHydrated';
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { TransferDiscrepancyResolution } from '@/components/logistics/TransferDiscrepancyResolution';
-import { QrScanner, scanQrImage } from '@/components/trace/QrScanner';
+import { ScanToolbar, appendCode, type ScannedCode } from '@/components/trace/ScanToolbar';
 import {
   Table,
   Select,
@@ -80,7 +80,6 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
   const [transportStaff, setTransportStaff] = useState<Array<{ id: number; full_name: string }>>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [cameraVariant, setCameraVariant] = useState<number>();
   const [manifestLines, setManifestLines] = useState<Record<number, { quantity: number; boxUids: string; cartonCodes?: string }>>({});
 
   const user = mounted ? getUser() : null;
@@ -158,27 +157,13 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
     return () => clearTimeout(timer);
   }, [loadTransferDetail]);
 
-  /**
-   * Adds a scanned QR text to a manifest line. A box label carries a link with the box UID, a carton label carries the
-   * 18-digit SSCC; anything else is refused. A code already on the line is not added twice.
-   */
-  const addScannedCode = (variantId: number, text: string) => {
-    const uid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(text)?.[0].toLowerCase();
-    const sscc = /^\s*(\d{18})\s*$/.exec(text)?.[1];
-    if (!uid && !sscc) { message.warning('This QR code is not a box or carton label.'); return; }
-    const field = uid ? 'boxUids' : 'cartonCodes';
-    const code = (uid ?? sscc) as string;
+  /** Puts a scanned label in the UID box (box label) or the SSCC box (carton label) of a manifest line. */
+  const addScannedCode = (variantId: number, scanned: ScannedCode) => {
+    const field = scanned.kind === 'uid' ? 'boxUids' : 'cartonCodes';
     setManifestLines(current => {
       const line = current[variantId] || { quantity: 0, boxUids: '', cartonCodes: '' };
-      const existing = (line[field] ?? '').split(/[\s,]+/).filter(Boolean);
-      return existing.includes(code) ? current : { ...current, [variantId]: { ...line, [field]: [...existing, code].join('\n') } };
+      return { ...current, [variantId]: { ...line, [field]: appendCode(line[field], scanned.code) } };
     });
-  };
-
-  const scanImages = async (variantId: number, files: FileList | null) => {
-    for (const file of Array.from(files ?? [])) {
-      try { addScannedCode(variantId, await scanQrImage(file)); } catch { message.error(`No QR code found in ${file.name}.`); }
-    }
   };
 
   const handleDispatch = async () => {
@@ -672,6 +657,8 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
       {/* Dispatch Modal with Tracking Code */}
       <Modal
         title="Dispatch Stock Transfer"
+        centered
+        styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
         open={dispatchModalOpen}
         onOk={handleDispatch}
         onCancel={() => {
@@ -690,16 +677,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
             const line = manifestLines[variantId] || { quantity: 0, boxUids: '', cartonCodes: '' };
             return <div key={variantId} className="flex flex-col gap-3 rounded border border-slate-200 p-3">
               <div>{item.medicineName || `Variant #${variantId}`} — expected {item.quantity}</div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="small" onClick={() => setCameraVariant(cameraVariant === variantId ? undefined : variantId)}>
-                  {cameraVariant === variantId ? 'Close camera' : 'Scan with camera'}
-                </Button>
-                <Button size="small" onClick={() => document.getElementById(`scan-images-${variantId}`)?.click()}>Upload QR images</Button>
-                <input id={`scan-images-${variantId}`} type="file" accept="image/*" multiple hidden aria-label={`QR images for variant ${variantId}`}
-                  onChange={event => { void scanImages(variantId, event.target.files); event.target.value = ''; }} />
-                <span className="text-xs text-slate-500">Box QR codes go to the UID box, carton QR codes to the SSCC box.</span>
-              </div>
-              {cameraVariant === variantId && <QrScanner onRead={text => { addScannedCode(variantId, text); setCameraVariant(undefined); }} />}
+              <ScanToolbar onCode={scanned => addScannedCode(variantId, scanned)} hint="Box QR codes go to the UID box, carton QR codes to the SSCC box." />
               <InputNumber aria-label={`Count for variant ${variantId}`} min={0} max={Number(item.quantity)} precision={0} value={line.quantity}
                 onChange={value => setManifestLines(current => ({ ...current, [variantId]: { ...line, quantity: value || 0 } }))} />
               <Input.TextArea aria-label={`Scanned UIDs for variant ${variantId}`} value={line.boxUids} placeholder="Scan package UIDs, separated by lines or commas"
