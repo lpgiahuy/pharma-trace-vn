@@ -82,6 +82,16 @@ export class ProductQueryDto {
   @IsBoolean()
   inStock?: boolean;
 
+  @ApiPropertyOptional({ description: 'Only products with a discount that is active right now (flash sale)' })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true || value === 1 || value === '1') return true;
+    if (value === 'false' || value === false || value === 0 || value === '0') return false;
+    return undefined;
+  })
+  @IsBoolean()
+  onSale?: boolean;
+
   @ApiPropertyOptional({ description: 'Filter by status (ACTIVE, INACTIVE, etc.)' })
   @IsOptional()
   @IsString()

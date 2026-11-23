@@ -182,6 +182,21 @@ export class ProductService {
       andConditions.push({ is_prescription: query.isPrescription });
     }
 
+    if (query?.onSale === true) {
+      // Mirrors getVariantPrice(): a variant is on sale when it is discounted and
+      // the current time is inside its sale window.
+      const now = new Date();
+      andConditions.push({
+        packaging_variants: {
+          some: {
+            sale_start_date: { lte: now },
+            sale_end_date: { gte: now },
+            OR: [{ discount_percent: { gt: 0 } }, { original_price: { not: null } }],
+          },
+        },
+      });
+    }
+
     if (query?.inStock !== undefined) {
       if (query.inStock === true) {
         andConditions.push({
