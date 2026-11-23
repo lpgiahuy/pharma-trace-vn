@@ -14,6 +14,7 @@ function toComment(c: CommentRow) {
     id: c.id,
     articleId: c.article_id,
     parentId: c.parent_id,
+    customerId: c.customer_id,
     authorName: c.author_name,
     isStaff: c.employee_id !== null,
     content: c.content,
