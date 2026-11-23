@@ -20,6 +20,7 @@ import {
   AlertOutlined,
   BankOutlined,
   SafetyCertificateOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { canViewFinance } from '@/utils/finance-report';
 
@@ -185,6 +186,16 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           key: '/admin/reviews',
           icon: <CommentOutlined style={{ fontSize: 16 }} />,
           label: 'Review Moderation',
+        },
+        {
+          key: '/admin/articles',
+          icon: <FileTextOutlined style={{ fontSize: 16 }} />,
+          label: 'Blog Articles',
+        },
+        {
+          key: '/admin/article-comments',
+          icon: <CommentOutlined style={{ fontSize: 16 }} />,
+          label: 'Blog Comments',
         },
         {
           key: '/admin/vouchers',
