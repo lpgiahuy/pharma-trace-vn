@@ -171,4 +171,42 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.decide_stock_transfer_request(integer, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.decide_stock_transfer_request(integer, text, text) TO app_user;
+
+-- Same as logistics_rls.sql, except a transfer made from a stock transfer request is handed over by the
+-- manager who approved it: that employee is the only choice. Order transfers still pick any source employee.
+CREATE OR REPLACE FUNCTION public.transfer_transport_staff(target_transfer integer)
+RETURNS TABLE(id integer, full_name varchar)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+ SELECT e.id, e.full_name FROM public.employees e
+ JOIN public.internal_transfers t ON t.from_facility_id = e.facility_id
+ WHERE t.id = target_transfer AND e.status = 'ACTIVE'
+ AND (t.request_id IS NULL OR e.id = (SELECT r.decided_by FROM public.stock_transfer_requests r WHERE r.id = t.request_id))
+ AND current_setting('app.order_operation', true) IN ('transfer_read', 'dispatch')
+ AND current_setting('app.current_user_type', true) = 'employee'
+ AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_TRANSFER'))
+ AND public.order_staff(t.from_facility_id)
+ ORDER BY e.full_name, e.id
+$$;
+REVOKE ALL ON FUNCTION public.transfer_transport_staff(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.transfer_transport_staff(integer) TO app_user;
+
+-- Who asked for the stock and who approved it. The transfer itself only exists from the approval, so its first
+-- history event names the approver; this lets the transfer detail show the real requester. The caller has already
+-- checked that the user may see the transfer; this only exposes the two names and times of that one request.
+CREATE OR REPLACE FUNCTION public.transfer_request_trail(target_transfer integer)
+RETURNS TABLE(action varchar, actor_id integer, actor_name varchar, actor_role varchar, created_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+ SELECT ev.action, emp.id, emp.full_name, emp.role, ev.created_at
+ FROM public.internal_transfers t
+ JOIN public.stock_transfer_request_events ev ON ev.request_id = t.request_id AND ev.action IN ('CREATE', 'APPROVE')
+ JOIN public.employees emp ON emp.id = ev.actor_id
+ WHERE t.id = target_transfer
+ AND current_setting('app.current_user_type', true) = 'employee'
+ AND current_setting('app.order_operation', true) = 'transfer_read'
+ AND (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_TRANSFER'))
+ AND (public.order_staff(t.from_facility_id) OR public.order_staff(t.to_facility_id))
+ ORDER BY ev.created_at, ev.id
+$$;
+REVOKE ALL ON FUNCTION public.transfer_request_trail(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.transfer_request_trail(integer) TO app_user;
 COMMIT;

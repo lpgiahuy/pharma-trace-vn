@@ -104,8 +104,23 @@ BEGIN
     jsonb_build_array(jsonb_build_object('variantId', current_setting('test.variant')::integer, 'quantity', 2, 'boxUids', to_jsonb(uids[1:1])))));
   PERFORM public.prepare_dispatch_manifest(current_setting('test.transfer')::integer,
     jsonb_build_array(jsonb_build_object('variantId', current_setting('test.variant')::integer, 'quantity', 2, 'boxUids', to_jsonb(uids))));
-  UPDATE public.internal_transfers SET status = 'DISPATCHED', transport_mode = 'INTERNAL', transport_employee_id = current_setting('test.ws')::integer,
-    transport_employee_name = 'ST warehouse staff', dispatched_at = now() WHERE id = current_setting('test.transfer')::integer;
+  -- The trail names the store manager who asked and the warehouse manager who approved.
+  PERFORM pg_temp.st_as('WAREHOUSE_STAFF', 'ws', 'w', 'transfer_read');
+  IF (SELECT array_agg(action || ':' || actor_id ORDER BY action) FROM public.transfer_request_trail(current_setting('test.transfer')::integer))
+    IS DISTINCT FROM ARRAY['APPROVE:' || current_setting('test.wm'), 'CREATE:' || current_setting('test.pm')] THEN
+    RAISE EXCEPTION 'Request trail does not name the requester and the approver';
+  END IF;
+  PERFORM pg_temp.st_as('WAREHOUSE_STAFF', 'ws', 'w', 'dispatch');
+  -- A requested transfer is handed over by the manager who approved it, and nobody else.
+  IF (SELECT array_agg(id) FROM public.transfer_transport_staff(current_setting('test.transfer')::integer)) IS DISTINCT FROM ARRAY[current_setting('test.wm')::integer] THEN
+    RAISE EXCEPTION 'Only the approving manager may be the responsible employee';
+  END IF;
+  PERFORM pg_temp.st_expect('Invalid source transport employee', format(
+    'UPDATE public.internal_transfers SET status = ''DISPATCHED'', transport_mode = ''INTERNAL'', transport_employee_id = %s, transport_employee_name = ''ST warehouse staff'', dispatched_at = now() WHERE id = %s',
+    current_setting('test.ws'), current_setting('test.transfer')));
+  UPDATE public.internal_transfers t SET status = 'DISPATCHED', transport_mode = 'INTERNAL', transport_employee_id = s.id,
+    transport_employee_name = s.full_name, dispatched_at = now()
+    FROM public.transfer_transport_staff(current_setting('test.transfer')::integer) s WHERE t.id = current_setting('test.transfer')::integer;
   IF (SELECT box_uids FROM public.transfer_custody WHERE transfer_id = current_setting('test.transfer')::integer) IS DISTINCT FROM uids THEN
     RAISE EXCEPTION 'Custody does not hold the scanned boxes';
   END IF;

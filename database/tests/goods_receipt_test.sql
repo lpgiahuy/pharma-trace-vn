@@ -64,8 +64,13 @@ BEGIN
     IF SQLERRM NOT LIKE 'GR_OVER_RECEIPT%' THEN RAISE; END IF;
   END;
 
+  -- New boxes keep the secret code the API issued with them, so the receiving warehouse can print their labels
   PERFORM public.record_goods_receipt(po, 'GR-TEST-0002', NULL, jsonb_build_array(jsonb_build_object(
-    'poItemId', item, 'batchNumber', 'GR-LOT-1', 'productionDate', '2026-01-01', 'expiryDate', '2028-01-01', 'boxUids', rest)));
+    'poItemId', item, 'batchNumber', 'GR-LOT-1', 'productionDate', '2026-01-01', 'expiryDate', '2028-01-01', 'boxUids', rest,
+    'signatures', (SELECT jsonb_object_agg(u, 'secret-' || u) FROM jsonb_array_elements_text(rest) AS t(u)))));
+  IF (SELECT count(*) FROM public.medicine_boxes WHERE uid::text = ANY (ARRAY(SELECT jsonb_array_elements_text(rest))) AND signature = 'secret-' || uid::text) <> 40 THEN
+    RAISE EXCEPTION 'The secret codes of the new boxes were not stored';
+  END IF;
 
   SELECT stock_quantity INTO stock FROM public.inventories WHERE facility_id = facility AND variant_id = variant;
   SELECT quantity INTO quarantine FROM public.quarantine_balances WHERE facility_id = facility AND variant_id = variant;

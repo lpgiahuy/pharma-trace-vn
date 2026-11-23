@@ -143,10 +143,53 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.stock_in_on_hand(integer, integer, integer, integer, integer, text, text, text, integer) FROM PUBLIC;
 
+-- Turns a receipt line flagged {"shipped": true, poItemId, rejectedBoxUids[], missingBoxUids[], rejectReason?} into one
+-- ordinary line per batch: every box still reserved for that order line is accepted, except the rejected ones (they go to
+-- quarantine) and the missing ones (they stay reserved until the order is closed). Other lines pass through unchanged.
+CREATE OR REPLACE FUNCTION public.expand_shipped_receipt_lines(target_po integer, receipt_lines jsonb) RETURNS jsonb
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+  entry jsonb; result jsonb := '[]'; remaining uuid[]; rej uuid[]; miss uuid[]; grp record;
+BEGIN
+  FOR entry IN SELECT value FROM jsonb_array_elements(receipt_lines) LOOP
+    IF jsonb_typeof(entry) = 'object' AND entry->'shipped' = 'true'::jsonb THEN
+      IF jsonb_typeof(entry->'poItemId') <> 'number' THEN RAISE EXCEPTION 'GR_LINE_INVALID' USING ERRCODE = '22023'; END IF;
+      SELECT array_agg(p.box_uid) INTO remaining FROM public.purchase_order_boxes p
+        WHERE p.po_id = target_po AND p.po_item_id = (entry->>'poItemId')::integer;
+      IF coalesce(cardinality(remaining), 0) = 0 THEN RAISE EXCEPTION 'GR_LINE_EMPTY' USING ERRCODE = '22023'; END IF;
+      rej := public.goods_receipt_uuid_list(entry->'rejectedBoxUids');
+      miss := public.goods_receipt_uuid_list(entry->'missingBoxUids');
+      IF cardinality(rej) <> (SELECT count(DISTINCT u) FROM unnest(rej) u) OR cardinality(miss) <> (SELECT count(DISTINCT u) FROM unnest(miss) u)
+        OR rej && miss THEN
+        RAISE EXCEPTION 'GR_BOX_DUPLICATE' USING ERRCODE = '22023';
+      END IF;
+      IF NOT (rej <@ remaining AND miss <@ remaining) THEN RAISE EXCEPTION 'GR_BOX_UNAVAILABLE' USING ERRCODE = '22023'; END IF;
+      FOR grp IN SELECT bt.batch_number, bt.production_date, bt.expiry_date,
+          array_agg(b.uid ORDER BY b.uid) FILTER (WHERE NOT (b.uid = ANY (rej)) AND NOT (b.uid = ANY (miss))) AS good,
+          array_agg(b.uid ORDER BY b.uid) FILTER (WHERE b.uid = ANY (rej)) AS bad
+        FROM public.medicine_boxes b JOIN public.batches bt ON bt.id = b.batch_id
+        WHERE b.uid = ANY (remaining) GROUP BY bt.batch_number, bt.production_date, bt.expiry_date ORDER BY bt.batch_number LOOP
+        IF coalesce(cardinality(grp.good), 0) + coalesce(cardinality(grp.bad), 0) = 0 THEN CONTINUE; END IF;
+        result := result || jsonb_build_array(jsonb_build_object(
+          'poItemId', entry->'poItemId', 'batchNumber', grp.batch_number,
+          'productionDate', to_char(grp.production_date, 'YYYY-MM-DD'), 'expiryDate', to_char(grp.expiry_date, 'YYYY-MM-DD'),
+          'boxUids', to_jsonb(coalesce(grp.good, '{}'::uuid[])), 'rejectedBoxUids', to_jsonb(coalesce(grp.bad, '{}'::uuid[])),
+          'rejectReason', entry->'rejectReason'));
+      END LOOP;
+    ELSE
+      result := result || jsonb_build_array(entry);
+    END IF;
+  END LOOP;
+  RETURN result;
+END $$;
+REVOKE ALL ON FUNCTION public.expand_shipped_receipt_lines(integer, jsonb) FROM PUBLIC;
+
 -- Receives goods for one purchase order in a single transaction. The order row lock serializes receipts of the
 -- same order; a repeated receipt code returns the receipt it already created.
 -- lines: [{ poItemId, batchNumber, productionDate, expiryDate, certificateCoCq?, boxUids[], ssccCodes[],
 --          rejectedBoxUids[], rejectReason? }]
+-- An outside manufacturer's boxes are new to the system: the API issues their UIDs and also sends signatures
+-- { "<uid>": "<secret code>" } so the receiving warehouse, the first unit to hold them, can print the QR and secret-code labels.
 CREATE OR REPLACE FUNCTION public.record_goods_receipt(target_po integer, receipt_ref text, receipt_note text, receipt_lines jsonb)
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
 DECLARE
@@ -161,7 +204,7 @@ DECLARE
   lot_number text; produced date; expires date; reason text; supplier text; next_status text;
   accepted uuid[]; rejected uuid[]; scanned uuid[]; seen uuid[] := '{}'; carton_ids integer[];
   units integer; balance integer; amount numeric := 0;
-  from_factory boolean; found_boxes integer;
+  from_factory boolean; found_boxes integer; expanded jsonb;
 BEGIN
   IF actor IS NULL OR NOT public.app_role_in_group('WH_ALL') THEN
     RAISE EXCEPTION 'GR_FORBIDDEN' USING ERRCODE = '42501';
@@ -184,7 +227,8 @@ BEGIN
     RETURN previous_receipt.id;
   END IF;
 
-  IF po.status NOT IN ('APPROVED','PARTIALLY_RECEIVED') THEN
+  -- A factory supplier must ship the order first; a manufacturer has no account here, so its approved order is receivable.
+  IF po.status NOT IN (CASE WHEN from_factory THEN 'SHIPPED' ELSE 'APPROVED' END, 'PARTIALLY_RECEIVED') THEN
     RAISE EXCEPTION 'GR_PO_NOT_RECEIVABLE' USING ERRCODE = '22023';
   END IF;
   IF receipt_lines IS NULL OR jsonb_typeof(receipt_lines) <> 'array' OR jsonb_array_length(receipt_lines) NOT BETWEEN 1 AND 100 THEN
@@ -194,12 +238,15 @@ BEGIN
     RAISE EXCEPTION 'GR_NOTE_INVALID' USING ERRCODE = '22023';
   END IF;
   PERFORM 1 FROM public.purchase_order_items WHERE po_id = target_po ORDER BY id FOR UPDATE;
+  -- A line flagged "shipped" receives every box the factory shipped on it, except the rejected and missing ones.
+  expanded := CASE WHEN from_factory THEN public.expand_shipped_receipt_lines(target_po, receipt_lines) ELSE receipt_lines END;
+  IF jsonb_array_length(expanded) = 0 THEN RAISE EXCEPTION 'GR_LINES_REQUIRED' USING ERRCODE = '22023'; END IF;
 
   INSERT INTO public.goods_receipts(receipt_code, po_id, facility_id, received_by_id, note)
     VALUES (receipt_ref, target_po, po.facility_id, actor, nullif(btrim(receipt_note), ''))
     RETURNING id INTO receipt;
 
-  FOR entry IN SELECT value FROM jsonb_array_elements(receipt_lines) LOOP
+  FOR entry IN SELECT value FROM jsonb_array_elements(expanded) LOOP
     IF jsonb_typeof(entry) <> 'object' OR jsonb_typeof(entry->'poItemId') <> 'number' THEN
       RAISE EXCEPTION 'GR_LINE_INVALID' USING ERRCODE = '22023';
     END IF;
@@ -250,8 +297,9 @@ BEGIN
       IF (CASE WHEN from_factory THEN carton.current_facility_id IS DISTINCT FROM po.supplier_id ELSE carton.current_facility_id IS NOT NULL END) THEN
         RAISE EXCEPTION 'GR_CARTON_UNAVAILABLE %', carton.sscc_code USING ERRCODE = '22023';
       END IF;
-      IF from_factory AND (SELECT count(*) FROM public.medicine_boxes b WHERE b.carton_id = carton.id
-          AND b.current_facility_id = po.supplier_id AND b.status = 'IN_STOCK') <> carton.box_count THEN
+      -- A factory ships whole cartons only through the boxes it scanned and reserved for this order.
+      IF from_factory AND (SELECT count(*) FROM public.medicine_boxes b JOIN public.purchase_order_boxes p ON p.box_uid = b.uid AND p.po_id = target_po
+          WHERE b.carton_id = carton.id AND b.current_facility_id = po.supplier_id AND b.status = 'RESERVED') <> carton.box_count THEN
         RAISE EXCEPTION 'GR_CARTON_UNAVAILABLE %', carton.sscc_code USING ERRCODE = '22023';
       END IF;
       carton_ids := carton_ids || carton.id;
@@ -284,7 +332,9 @@ BEGIN
       IF box.batch_id IS DISTINCT FROM lot.id THEN
         RAISE EXCEPTION 'GR_BOX_WRONG_BATCH %', box.uid USING ERRCODE = '22023';
       END IF;
-      IF (CASE WHEN from_factory THEN box.current_facility_id IS DISTINCT FROM po.supplier_id OR box.status IS DISTINCT FROM 'IN_STOCK'
+      -- A factory box must be one the factory scanned for this very order line when it shipped.
+      IF (CASE WHEN from_factory THEN box.current_facility_id IS DISTINCT FROM po.supplier_id OR box.status IS DISTINCT FROM 'RESERVED'
+            OR NOT EXISTS (SELECT FROM public.purchase_order_boxes p WHERE p.box_uid = box.uid AND p.po_id = target_po AND p.po_item_id = item.id)
           ELSE box.current_facility_id IS NOT NULL OR coalesce(box.status, 'MANUFACTURED') NOT IN ('MANUFACTURED','IN_STOCK') END) THEN
         RAISE EXCEPTION 'GR_BOX_UNAVAILABLE %', box.uid USING ERRCODE = '22023';
       END IF;
@@ -301,17 +351,20 @@ BEGIN
     UPDATE public.medicine_boxes SET current_facility_id = po.facility_id,
         status = CASE WHEN uid = ANY (rejected) THEN 'QUARANTINED' ELSE 'IN_STOCK' END
       WHERE uid = ANY (scanned);
-    INSERT INTO public.medicine_boxes(uid, batch_id, current_facility_id, status)
-      SELECT s.uid, lot.id, po.facility_id, CASE WHEN s.uid = ANY (rejected) THEN 'QUARANTINED' ELSE 'IN_STOCK' END
+    INSERT INTO public.medicine_boxes(uid, batch_id, current_facility_id, status, signature)
+      SELECT s.uid, lot.id, po.facility_id, CASE WHEN s.uid = ANY (rejected) THEN 'QUARANTINED' ELSE 'IN_STOCK' END,
+        CASE WHEN jsonb_typeof(entry->'signatures') = 'object' THEN entry->'signatures'->>(s.uid::text) END
       FROM unnest(scanned) AS s(uid) WHERE NOT EXISTS (SELECT FROM public.medicine_boxes b WHERE b.uid = s.uid);
     UPDATE public.sscc_cartons SET current_facility_id = po.facility_id WHERE id = ANY (carton_ids);
     IF from_factory THEN
       -- The boxes were counted when the factory registered the batch; they now leave the factory's stock.
-      UPDATE public.inventories SET stock_quantity = stock_quantity - units, updated_at = now()
+      -- The shipment reserved them at the factory, so the reservation goes away together with the stock.
+      UPDATE public.inventories SET stock_quantity = stock_quantity - units, reserved_quantity = coalesce(reserved_quantity, 0) - units, updated_at = now()
         WHERE facility_id = po.supplier_id AND variant_id = item.variant_id
-          AND stock_quantity - coalesce(reserved_quantity, 0) >= units
+          AND stock_quantity >= units AND coalesce(reserved_quantity, 0) >= units
         RETURNING stock_quantity INTO balance;
       IF NOT FOUND THEN RAISE EXCEPTION 'GR_SUPPLIER_STOCK_INSUFFICIENT' USING ERRCODE = '22023'; END IF;
+      DELETE FROM public.purchase_order_boxes WHERE po_id = target_po AND box_uid = ANY (scanned);
       INSERT INTO public.inventory_logs(facility_id, medicine_id, variant_id, batch_id, stock_bucket, transaction_type,
           quantity_changed, previous_quantity, new_quantity, reference_code, note, performed_by_id)
         VALUES (po.supplier_id, item.medicine_id, item.variant_id, lot.id, 'ON_HAND', 'PO_SHIPMENT_OUT',

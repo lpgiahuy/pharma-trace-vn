@@ -897,7 +897,7 @@ Both scripts can be re-applied.
 `security/procurement/purchase_orders.sql` adds the purchase order lifecycle (create, edit while `PENDING`, approve, cancel). Receiving goods and payables come later.
 
 - `purchase_orders` gains `facility_id` (the receiving warehouse), `supplier_manufacturer_id`, `approved_by_id`, `approved_at`, `cancel_reason`, `closed_reason` and `expected_at`. A check requires exactly one of `supplier_id` (a `FACTORY` facility) and `supplier_manufacturer_id`.
-- Statuses are `PENDING`, `APPROVED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED` and `CANCELLED`.
+- Statuses are `PENDING`, `APPROVED`, `SHIPPED`, `REJECTED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CLOSED` and `CANCELLED`. The supplying factory answers an `APPROVED` order: `supplier_ship_purchase_order()` takes the scanned boxes or cartons (exactly the ordered quantity per line), reserves them at the factory in `purchase_order_boxes` and sets `SHIPPED`; `supplier_respond_purchase_order()` rejects with a reason (`REJECTED`). A factory order can be received only once `SHIPPED`, and only with the boxes that were shipped on that line; cancelling or closing the order releases the boxes that were not received; an order to an outside manufacturer is receivable from `APPROVED`.
 - `received_at` no longer defaults to the creation time. It stays empty until goods are received, and the script clears it on existing orders that are not `RECEIVED`.
 - `purchase_order_items.received_quantity` starts at 0 and may not exceed `quantity`.
 - `purchase_order_events` is an append-only history of status changes with the employee and the reason.
