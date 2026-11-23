@@ -22,6 +22,7 @@
 -- 4. Development seed (all referenced tables must exist)
 \i /docker-entrypoint-initdb.d/schemas/13_fulfillment_policy.sql
 \i /docker-entrypoint-initdb.d/schemas/14_articles_blog.sql
+\i /docker-entrypoint-initdb.d/schemas/15_flash_sale_quota.sql
 \i /docker-entrypoint-initdb.d/seeds/01_seed_data.sql
 
 -- 5. Prescription review security

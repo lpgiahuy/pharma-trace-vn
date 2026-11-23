@@ -8,6 +8,7 @@ import { createHash, randomBytes } from "crypto";
 import { Prisma, vouchers } from '@prisma/client';
 import { PrismaService } from "../../prisma/prisma.service";
 import { getVariantPrice } from '../../common/variant-price';
+import { attachSaleSold } from '../../common/sale-quota';
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { OrderQueryDto } from "./dto/order-query.dto";
 import { CancelOrderDto } from "./dto/cancel-order.dto";
@@ -62,6 +63,13 @@ export class OrderService {
       },
     });
 
+    await attachSaleSold(this.prisma, variants);
+
+    const quantityByVariant = new Map<number, number>();
+    for (const item of dto.items) {
+      quantityByVariant.set(item.variantId, (quantityByVariant.get(item.variantId) ?? 0) + item.quantity);
+    }
+
     const itemsToOrder: ItemToOrder[] = [];
     const pricingTime = new Date();
 
@@ -78,7 +86,15 @@ export class OrderService {
         );
       }
 
-      const unitPrice = getVariantPrice(variant, pricingTime).price;
+      // A variant with a sale quota only sells at the sale price while the whole line fits in what
+      // is left of the quota; a larger line is charged at the regular price.
+      const pricing = getVariantPrice(variant, pricingTime);
+      const exceedsSaleQuota = pricing.isSaleActive
+        && pricing.saleRemaining != null
+        && (quantityByVariant.get(variant.id) ?? itemDto.quantity) > pricing.saleRemaining;
+      const unitPrice = exceedsSaleQuota
+        ? Number(variant.original_price ?? variant.price)
+        : pricing.price;
       const totalPrice = unitPrice * itemDto.quantity;
       const existingItem = itemsToOrder.find((item) => item.variantId === variant.id);
       if (existingItem) {

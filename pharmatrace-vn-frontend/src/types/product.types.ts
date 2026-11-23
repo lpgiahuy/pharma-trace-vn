@@ -59,6 +59,13 @@ export interface Product {
     discountPercent?: number;
     saleStartDate?: string | null;
     saleEndDate?: string | null;
+    isSaleActive?: boolean;
+    /** Units that can be sold at the sale price (null = unlimited), how many are left and how many are sold. */
+    saleQuantity?: number | null;
+    saleRemaining?: number | null;
+    saleSold?: number | null;
+    /** Available units (stock minus reserved). */
+    stock?: number;
   }[];
   totalReviews?: number;
   reviewsList?: ProductReview[];
@@ -76,6 +83,7 @@ export interface ProductQuery {
   countryOfOrigin?: string;
   isPrescription?: boolean;
   inStock?: boolean;
+  onSale?: boolean;
   status?: string;
   sortBy?: 'id' | 'price' | 'name' | 'createdAt';
   sortOrder?: 'asc' | 'desc';
@@ -118,5 +126,6 @@ export interface ProductPayload {
     isBaseUnit?: boolean;
     saleStartDate?: string | Date;
     saleEndDate?: string | Date;
+    saleQuantity?: number | null;
   }[];
 }
