@@ -25,6 +25,7 @@ database/
 │   ├── 08_finance_ar_ap.sql        # Cashbook logs, accounts receivable (AR), accounts payable (AP)
 │   └── 09_prescription_management.sql # Prescription review table, column, and indexes
 │   └── 14_articles_blog.sql        # Article categories, blog article columns and article comments
+│   └── 15_flash_sale_quota.sql     # Flash sale quota column and sold-count function
 ├── seeds/                          # Development catalog and sample transactions
 │   └── 01_seed_data.sql
 └── tests/

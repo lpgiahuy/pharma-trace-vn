@@ -13,6 +13,7 @@ import { CurrentUserPayload } from '../../common/decorators/current-user.decorat
 import { authActor } from '../../common/auth-identity';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { getVariantPrice } from '../../common/variant-price';
+import { attachSaleSold } from '../../common/sale-quota';
 
 export function formatProduct(item: any) {
   let realStock = 0;
@@ -57,6 +58,9 @@ export function formatProduct(item: any) {
         saleStartDate: pv.sale_start_date ? new Date(pv.sale_start_date).toISOString() : null,
         saleEndDate: pv.sale_end_date ? new Date(pv.sale_end_date).toISOString() : null,
         isSaleActive: pricing.isSaleActive,
+        saleQuantity: pricing.saleQuantity,
+        saleRemaining: pricing.saleRemaining,
+        saleSold: pv.sale_quantity != null ? (pv.sale_sold ?? 0) : null,
       };
     })
     : []);
@@ -374,6 +378,8 @@ export class ProductService {
       }),
     ]);
 
+    await attachSaleSold(this.prisma, items.flatMap((i: any) => i.packaging_variants ?? []));
+
     return {
       items: items.map(formatProduct),
       pagination: {
@@ -473,6 +479,8 @@ export class ProductService {
     if (!item) {
       throw new NotFoundException(`Medicine "${idOrSlug}" not found`);
     }
+
+    await attachSaleSold(this.prisma, (item as any).packaging_variants ?? []);
 
     const formatted = formatProduct(item);
 
@@ -579,6 +587,7 @@ export class ProductService {
                 is_base_unit: pv.isBaseUnit ?? false,
                 sale_start_date: pv.saleStartDate ? new Date(pv.saleStartDate) : null,
                 sale_end_date: pv.saleEndDate ? new Date(pv.saleEndDate) : null,
+                sale_quantity: pv.saleQuantity ?? null,
               })),
             },
           }),
@@ -682,6 +691,7 @@ export class ProductService {
             is_base_unit: pv.isBaseUnit ?? false,
             sale_start_date: pv.saleStartDate ? new Date(pv.saleStartDate) : null,
             sale_end_date: pv.saleEndDate ? new Date(pv.saleEndDate) : null,
+                sale_quantity: pv.saleQuantity ?? null,
           };
           const match = byUnit.get(data.unit_name.toLowerCase());
           if (match && !keptIds.has(match.id)) {

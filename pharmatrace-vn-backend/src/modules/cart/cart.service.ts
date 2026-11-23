@@ -10,6 +10,7 @@ import { SwitchCartVariantDto } from './dto/switch-cart-variant.dto';
 import { SyncCartDto } from './dto/sync-cart.dto';
 import { Prisma } from '@prisma/client';
 import { getVariantPrice } from '../../common/variant-price';
+import { attachSaleSold } from '../../common/sale-quota';
 
 export interface FormattedCartItem {
   id: string; // `${productId}-${variantId}` for UI consistency
@@ -154,6 +155,11 @@ export class CartService {
       },
       orderBy: { created_at: 'desc' },
     });
+
+    await attachSaleSold(
+      tx,
+      records.flatMap((r: any) => [r.packaging_variants, ...(r.packaging_variants?.medicine?.packaging_variants ?? [])]).filter(Boolean),
+    );
 
     const items: FormattedCartItem[] = [];
     for (const record of records) {

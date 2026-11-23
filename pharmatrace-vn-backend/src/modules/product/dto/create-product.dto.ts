@@ -176,5 +176,7 @@ export class CreateProductDto {
     isBaseUnit?: boolean;
     saleStartDate?: string | Date;
     saleEndDate?: string | Date;
+    /** Max units sold at the sale price; omit or null for unlimited. */
+    saleQuantity?: number | null;
   }[];
 }
