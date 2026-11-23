@@ -519,6 +519,10 @@ export const logisticsService = {
   createStockTransferRequest: (payload: CreateStockTransferPayload): Promise<SingleResponse<StockTransferRequest>> =>
     apiClient.post('/logistics/stock-transfers', payload),
 
+  /** Products another facility holds and the quantity free to move, for the request form. */
+  getTransferSourceStock: (facilityId: number): Promise<SingleResponse<{ variantId: number; medicineName: string; unitName: string; available: number }[]>> =>
+    apiClient.get('/logistics/stock-transfers/source-stock', { params: { facilityId } }),
+
   /** Factory staff start a transfer to a warehouse; it is created already approved, with factory stock reserved. */
   sendFactoryTransfer: (payload: SendFactoryTransferPayload): Promise<SingleResponse<StockTransferRequest>> =>
     apiClient.post('/logistics/stock-transfers/send', payload),

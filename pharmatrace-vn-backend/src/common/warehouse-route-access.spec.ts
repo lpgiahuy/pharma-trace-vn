@@ -115,6 +115,10 @@ describe('Warehouse route access', () => {
     for (const method of ['approve', 'complete', 'cancel']) expect(rolesOf(DisposalController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
   });
 
+  it('lets only managers read the stock of a source facility for a request', () => {
+    expect([...rolesOf(StockTransferController, 'sourceStock')].sort()).toEqual(['STORE_MANAGER', 'WAREHOUSE_MANAGER']);
+  });
+
   it('opens the production report to factory staff and SUPER_ADMIN only', () => {
     const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryReportController) as string[]);
     expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);

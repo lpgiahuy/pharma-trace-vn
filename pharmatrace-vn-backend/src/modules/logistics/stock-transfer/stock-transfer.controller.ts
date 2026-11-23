@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { WH_ALL, WH_TRANSFER } from '../../../common/warehouse-roles';
 import { WarehouseFacilityQueryDto } from '../../warehouse/inventory/dto/warehouse-inventory-query.dto';
-import { CreateStockTransferRequestDto, SendFactoryTransferDto, StockTransferDecisionDto } from './dto/stock-transfer.dto';
+import { CreateStockTransferRequestDto, SendFactoryTransferDto, SourceStockQueryDto, StockTransferDecisionDto } from './dto/stock-transfer.dto';
 import { StockTransferService } from './stock-transfer.service';
 
 const MANAGERS = ['WAREHOUSE_MANAGER', 'STORE_MANAGER'];
@@ -25,6 +25,13 @@ export class StockTransferController {
   @ApiOperation({ summary: 'List stock transfer requests from or to your facility' })
   async list(@CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.stockTransfers.list(user) };
+  }
+
+  @Get('source-stock')
+  @Roles(...MANAGERS)
+  @ApiOperation({ summary: 'Products another facility holds and the quantity free to move, for the request form' })
+  async sourceStock(@Query() query: SourceStockQueryDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.stockTransfers.sourceStock(user, query.facilityId) };
   }
 
   @Post()

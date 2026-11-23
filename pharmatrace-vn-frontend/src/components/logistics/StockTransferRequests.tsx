@@ -7,7 +7,6 @@ import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useHydrated } from '@/hooks/useHydrated';
 import { useLogisticsList } from '@/hooks/useLogisticsList';
 import { facilityService } from '@/services/facility.service';
-import { productService } from '@/services/product.service';
 import { logisticsService, type StockTransferAction, type StockTransferRequest } from '@/services/logistics.service';
 import { warehouseService } from '@/services/warehouse.service';
 import type { Facility } from '@/types/facility.types';
@@ -55,6 +54,7 @@ export function StockTransferRequests() {
   const openCreate = async () => {
     setRequestCode(newRequestCode());
     setSourceId(undefined);
+    setVariantOptions([]);
     setLines([{ quantity: 1 }]);
     setReason('');
     setCreateOpen(true);
@@ -78,12 +78,17 @@ export function StockTransferRequests() {
     }
   };
 
-  const searchVariants = async (search: string) => {
-    if (!search.trim()) return;
-    const res = await productService.getProducts({ search, limit: 20 });
-    const found = res.data.flatMap(product => (product.packagingOptions || [])
-      .map(option => ({ value: option.id, label: `${product.medicineName} · ${option.unitName}` })));
-    setVariantOptions(current => [...current.filter(o => !found.some(f => f.value === o.value)), ...found]);
+  // A request can only ask for what the source holds: load its free stock when the source is chosen.
+  const chooseSource = (id: number) => {
+    setSourceId(id);
+    if (isFactory) return;
+    setVariantOptions([]);
+    setLines([{ quantity: 1 }]);
+    logisticsService.getTransferSourceStock(id)
+      .then(res => setVariantOptions(res.data.map(item => ({
+        value: item.variantId, label: `${item.medicineName} · ${item.unitName} (${item.available} available)`, available: item.available,
+      }))))
+      .catch((error: unknown) => message.error(workflowErrorMessage(error, 'Unable to load the stock of that facility')));
   };
 
   const setLine = (index: number, change: Partial<Line>) =>
@@ -171,13 +176,14 @@ export function StockTransferRequests() {
 
       <Modal title={isFactory ? 'Send stock to a warehouse' : 'Request stock'} open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} confirmLoading={busy} okText={isFactory ? 'Create transfer' : 'Submit request'}>
         <div className="flex flex-col gap-4 py-3">
-          <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={setSourceId} showSearch optionFilterProp="label"
+          <Select className="w-full" placeholder={isFactory ? 'Receiving warehouse' : 'Source facility'} value={sourceId} onChange={chooseSource} showSearch optionFilterProp="label"
             options={facilities.map(facility => ({ value: facility.id, label: facility.name }))} />
           {lines.map((line, index) => <div key={index} className="flex items-center gap-3">
-            <Select className="min-w-0 flex-1" placeholder={isFactory ? 'Choose a medicine in stock' : 'Search medicine'} showSearch
-              {...(isFactory ? { optionFilterProp: 'label', notFoundContent: 'No medicine in stock', classNames: { popup: { root: '[&_.ant-select-item-option-content]:whitespace-normal! [&_.ant-select-item-option-content]:text-clip!' } } } : { filterOption: false, onSearch: searchVariants })}
+            <Select className="min-w-0 flex-1" placeholder={isFactory || sourceId ? 'Choose a medicine in stock' : 'Choose the source facility first'} showSearch
+              disabled={!isFactory && !sourceId} optionFilterProp="label" notFoundContent="No medicine in stock"
+              classNames={{ popup: { root: '[&_.ant-select-item-option-content]:whitespace-normal! [&_.ant-select-item-option-content]:text-clip!' } }}
               value={line.variantId} onChange={variantId => setLine(index, { variantId, quantity: Math.min(line.quantity, variantOptions.find(o => o.value === variantId)?.available ?? 100000) })} options={variantOptions} />
-            <InputNumber className="w-24 shrink-0" min={1} max={(isFactory && variantOptions.find(o => o.value === line.variantId)?.available) || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
+            <InputNumber className="w-24 shrink-0" min={1} max={variantOptions.find(o => o.value === line.variantId)?.available || 100000} precision={0} value={line.quantity} onChange={quantity => setLine(index, { quantity: quantity || 0 })} />
             <Button className="shrink-0" icon={<DeleteOutlined />} disabled={lines.length === 1} onClick={() => setLines(current => current.filter((_, i) => i !== index))} />
           </div>)}
           <Button type="dashed" block icon={<PlusOutlined />} onClick={() => setLines(current => [...current, { quantity: 1 }])}>Add line</Button>

@@ -49,6 +49,13 @@ export class StockTransferService {
     }));
   }
 
+  /** Products another facility holds and the quantity free to move, for the request form (transfer_source_stock). */
+  sourceStock(user: CurrentUserPayload, sourceFacilityId: number): Promise<{ variantId: number; medicineName: string; unitName: string; available: number }[]> {
+    return stockTransferDatabase(this.prisma.withActor(authActor(user), tx => tx.$queryRaw`
+      SELECT variant_id AS "variantId", medicine_name AS "medicineName", unit_name AS "unitName", available
+      FROM public.transfer_source_stock(${sourceFacilityId}::integer)`));
+  }
+
   decide(user: CurrentUserPayload, id: number, decision: StockTransferDecision, note?: string): Promise<StockTransferRequest> {
     return stockTransferDatabase(this.prisma.withActor(authActor(user), async tx => {
       await tx.$queryRaw`SELECT public.decide_stock_transfer_request(${id}::integer, ${decision}::text, ${note ?? null}::text)`;

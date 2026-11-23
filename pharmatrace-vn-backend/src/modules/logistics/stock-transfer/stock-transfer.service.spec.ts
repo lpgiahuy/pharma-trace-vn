@@ -35,6 +35,19 @@ describe('StockTransferService', () => {
     expect(values).toEqual(['STQ-000001', 3, 5, '[{"variantId":2,"quantity":20}]', null]);
   });
 
+  it('lists what the source can send through transfer_source_stock', async () => {
+    const rows = [{ variantId: 13, medicineName: 'Panadol', unitName: 'Box', available: 1000 }];
+    const { service, tx, prisma } = setup(jest.fn().mockResolvedValue(rows));
+    await expect(service.sourceStock(pharmacyManager, 3)).resolves.toEqual(rows);
+    expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ id: 7, facilityId: 5 }), expect.any(Function));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([3]);
+  });
+
+  it('maps a database refusal when the caller may not ask for stock', async () => {
+    const { service } = setup(jest.fn().mockRejectedValue(databaseError('ST_FORBIDDEN')));
+    await expect(service.sourceStock(warehouseStaff, 3)).rejects.toMatchObject({ code: 'ST_FORBIDDEN' });
+  });
+
   it('lets factory staff send stock to a warehouse through send_factory_transfer', async () => {
     const { service, tx, prisma } = setup();
     await expect(service.send(factoryStaff, { requestCode: 'FTS-000001', toFacilityId: 3, lines: [{ variantId: 2, quantity: 20 }], reason: 'Weekly supply' }))

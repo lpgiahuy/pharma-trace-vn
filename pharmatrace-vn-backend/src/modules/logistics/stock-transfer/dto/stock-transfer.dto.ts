@@ -41,3 +41,9 @@ export class SendFactoryTransferDto {
 export class StockTransferDecisionDto {
   @ApiPropertyOptional({ description: 'Required to reject or cancel' }) @IsOptional() @IsString() @MaxLength(500) note?: string;
 }
+
+export class SourceStockQueryDto {
+  @ApiProperty({ example: 3, description: 'Facility whose free stock to list' })
+  @Type(() => Number) @IsInt() @Min(1)
+  facilityId: number;
+}
