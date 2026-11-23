@@ -21,7 +21,7 @@ import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current
 @ApiTags('Admin - Customer Management')
 @ApiBearerAuth('bearerAuth')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist')
+@Roles('SUPER_ADMIN', 'SuperAdmin')
 @Controller('admin/customers')
 export class CustomerController {
   constructor(private readonly customerService: CustomerService) {}
@@ -59,7 +59,6 @@ export class CustomerController {
   }
 
   @Patch(':id/status')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager')
   @ApiOperation({
     summary: 'Lock or unlock customer account',
     description: 'Updates customer account status to ACTIVE, INACTIVE, or BANNED (also supports action: "lock" | "unlock").',

@@ -524,7 +524,7 @@ export class ProductService {
 
   async create(dto: CreateProductDto, user: CurrentUserPayload) {
     this.validatePackagingVariants(dto.packagingVariants);
-    return this.prisma.withCatalogManagement(authActor(user), async tx => {
+    return this.prisma.withMedicineManagement(authActor(user), async tx => {
       const primaryId = dto.primaryCategoryId || dto.categoryId;
       const rawCatIds = Array.isArray(dto.categoryIds) ? dto.categoryIds : [];
       const allCatIds = Array.from(new Set([...rawCatIds, ...(primaryId ? [primaryId] : [])]));
@@ -610,7 +610,7 @@ export class ProductService {
     if (dto.packagingVariants !== undefined) {
       this.validatePackagingVariants(dto.packagingVariants);
     }
-    return this.prisma.withCatalogManagement(authActor(user), async tx => {
+    return this.prisma.withMedicineManagement(authActor(user), async tx => {
       await this.findOne(id);
 
       const primaryId = dto.primaryCategoryId || dto.categoryId;
@@ -748,7 +748,7 @@ export class ProductService {
   }
 
   async updateImageUrl(id: number, imageUrl: string, user: CurrentUserPayload) {
-    return this.prisma.withCatalogManagement(authActor(user), async tx => {
+    return this.prisma.withMedicineManagement(authActor(user), async tx => {
       await this.findOne(id);
       const updated = await tx.medicines.update({
         where: { id },
@@ -767,7 +767,7 @@ export class ProductService {
   }
 
   async delete(id: number, user: CurrentUserPayload) {
-    return this.prisma.withCatalogManagement(authActor(user), async tx => {
+    return this.prisma.withMedicineManagement(authActor(user), async tx => {
       const item = await this.findOne(id);
 
       const [hasOrderHistory, batchCount] = await Promise.all([

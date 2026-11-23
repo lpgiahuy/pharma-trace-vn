@@ -27,24 +27,28 @@ describe('Pharmacist permissions', () => {
     }
   });
 
-  it.each([
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- Inspect handler metadata without invoking the method.
-    [CustomerController, CustomerController.prototype.findAll],
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- Inspect handler metadata without invoking the method.
-    [VoucherController, VoucherController.prototype.findAll],
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- Inspect handler metadata without invoking the method.
-    [VoucherController, VoucherController.prototype.findOne],
-  ])('grants pharmacists customer and voucher access through %p', (controller, handler) => {
-    const user = { id: 1, type: 'employee', role: 'PHARMACIST' };
+  function pharmacistCanCall(controller: any, handler: any, role: string) {
+    const user = { id: 1, type: 'employee', role };
     const context = {
       getClass: () => controller, getHandler: () => handler,
       switchToHttp: () => ({ getRequest: () => ({ user }) }),
     } as unknown as ExecutionContext;
-    const guard = new RolesGuard(new Reflector());
-    expect(guard.canActivate(context)).toBe(true);
-    user.role = 'WAREHOUSE_STAFF';
-    expect(guard.canActivate(context)).toBe(false);
-    user.role = 'UNKNOWN_ROLE';
-    expect(guard.canActivate(context)).toBe(false);
+    return new RolesGuard(new Reflector()).canActivate(context);
+  }
+
+  it.each([
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Inspect handler metadata without invoking the method.
+    [VoucherController, VoucherController.prototype.findAll],
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Inspect handler metadata without invoking the method.
+    [VoucherController, VoucherController.prototype.findOne],
+  ])('grants pharmacists voucher access through %p', (controller, handler) => {
+    expect(pharmacistCanCall(controller, handler, 'PHARMACIST')).toBe(true);
+    expect(pharmacistCanCall(controller, handler, 'WAREHOUSE_STAFF')).toBe(false);
+    expect(pharmacistCanCall(controller, handler, 'UNKNOWN_ROLE')).toBe(false);
+  });
+
+  it('denies pharmacists customer management, which is SUPER_ADMIN only', () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Inspect handler metadata without invoking the method.
+    expect(pharmacistCanCall(CustomerController, CustomerController.prototype.findAll, 'PHARMACIST')).toBe(false);
   });
 });

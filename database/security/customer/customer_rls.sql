@@ -29,14 +29,15 @@ REVOKE ALL ON FUNCTION public.customer_staff(integer),public.customer_points_acc
 GRANT EXECUTE ON FUNCTION public.customer_staff(integer),public.customer_points_access(integer) TO app_user,auth_runtime;
 DROP POLICY IF EXISTS customer_staff_read ON public.customers;
 CREATE POLICY customer_staff_read ON public.customers FOR SELECT TO app_user USING (
- (current_setting('app.order_operation',true) IS NOT NULL AND public.customer_staff(id))
+ (current_setting('app.order_operation',true) IS NOT NULL AND public.customer_staff(id)
+  AND (current_setting('app.customer_operation',true) IS DISTINCT FROM 'manage' OR current_setting('app.current_user_role',true)='SUPER_ADMIN'))
  OR public.customer_points_access(id)
  OR (current_setting('app.review_scope',true)='moderator' AND current_setting('app.current_user_type',true)='employee' AND current_setting('app.current_user_role',true) IN ('SUPER_ADMIN','ADMIN') AND EXISTS (SELECT FROM public.reviews r WHERE r.customer_id=customers.id))
  OR (current_setting('app.review_scope',true)='staff' AND public.customer_staff(id) AND EXISTS (SELECT FROM public.reviews r WHERE r.customer_id=customers.id)));
 DROP POLICY IF EXISTS customer_status ON public.customers;
 CREATE POLICY customer_status ON public.customers FOR UPDATE TO app_user USING (
- current_setting('app.customer_operation',true)='manage' AND current_setting('app.current_user_role',true) IN ('SUPER_ADMIN','STORE_MANAGER') AND public.customer_staff(id)) WITH CHECK (
- current_setting('app.customer_operation',true)='manage' AND current_setting('app.current_user_role',true) IN ('SUPER_ADMIN','STORE_MANAGER') AND public.customer_staff(id));
+ current_setting('app.customer_operation',true)='manage' AND current_setting('app.current_user_role',true) ='SUPER_ADMIN' AND public.customer_staff(id)) WITH CHECK (
+ current_setting('app.customer_operation',true)='manage' AND current_setting('app.current_user_role',true) ='SUPER_ADMIN' AND public.customer_staff(id));
 DROP POLICY IF EXISTS customer_points ON public.customers;
 CREATE POLICY customer_points ON public.customers FOR UPDATE TO app_user USING (public.customer_points_access(id)) WITH CHECK (public.customer_points_access(id));
 CREATE OR REPLACE FUNCTION public.guard_customer_write() RETURNS trigger
