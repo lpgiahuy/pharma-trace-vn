@@ -21,6 +21,7 @@
 
 -- 4. Development seed (all referenced tables must exist)
 \i /docker-entrypoint-initdb.d/schemas/13_fulfillment_policy.sql
+\i /docker-entrypoint-initdb.d/schemas/14_articles_blog.sql
 \i /docker-entrypoint-initdb.d/seeds/01_seed_data.sql
 
 -- 5. Prescription review security
@@ -37,6 +38,9 @@
 
 -- 9. Review/moderation ownership, write-column guards and retained audit history.
 \i /docker-entrypoint-initdb.d/security/review/review_rls.sql
+
+-- Blog articles, categories and comments: public reads, pharmacist drafts, admin approval.
+\i /docker-entrypoint-initdb.d/security/article/article_rls.sql
 
 -- Order ownership, fulfillment facility scope, transfer projection and loyalty ledger.
 \i /docker-entrypoint-initdb.d/schemas/11_logistics_transport.sql

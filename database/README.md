@@ -24,6 +24,7 @@ database/
 │   ├── 07_crm_loyalty_rma.sql      # Customer loyalty points ledger
 │   ├── 08_finance_ar_ap.sql        # Cashbook logs, accounts receivable (AR), accounts payable (AP)
 │   └── 09_prescription_management.sql # Prescription review table, column, and indexes
+│   └── 14_articles_blog.sql        # Article categories, blog article columns and article comments
 ├── seeds/                          # Development catalog and sample transactions
 │   └── 01_seed_data.sql
 └── tests/
@@ -32,6 +33,7 @@ database/
     ├── wishlist_rls_test.sql       # Wishlist allow/deny checks, rolled back
     ├── cart_rls_test.sql           # Cart ownership and column-grant checks
     ├── review_rls_test.sql         # Review visibility and write restrictions
+    ├── article_rls_test.sql        # Blog visibility, pharmacist drafts, admin approval and comment rules
     ├── order_rls_test.sql          # Customer/facility ownership and transfer projection
     ├── voucher_rls_test.sql        # Exact-code previews, management and consumption
     ├── manufacturer_rls_test.sql   # Manufacturer permissions and facility assignment
