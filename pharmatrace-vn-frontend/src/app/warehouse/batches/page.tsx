@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Alert, App, Button, Descriptions, Drawer, Input, Modal, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useHydrated } from '@/hooks/useHydrated';
+import { FactoryBatchModal, downloadBatchLabels } from '@/components/warehouse/FactoryBatchModal';
 import { warehouseService, type BatchDetail, type BatchItem } from '@/services/warehouse.service';
 import { useAuthStore } from '@/store/useAuthStore';
 import { workflowErrorMessage } from '@/utils/workflow-error';
@@ -67,6 +68,19 @@ function BatchesPage() {
   const getUser = useAuthStore(state => state.getUser);
   const role = useHydrated() ? String(getUser()?.role ?? '') : '';
   const manager = role === 'WAREHOUSE_MANAGER' || role === 'SUPER_ADMIN';
+  // Only the factory registers batches (the backend also limits this to FACTORY facilities); SUPER_ADMIN picks the factory.
+  const canCreate = role === 'FACTORY_WAREHOUSE_STAFF' || role === 'SUPER_ADMIN';
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const labelsColumn: ColumnsType<BatchItem>[number] = {
+    title: 'Labels',
+    render: (_, batch) => (
+      <Button size="small" onClick={event => {
+        event.stopPropagation();
+        downloadBatchLabels(batch.id).catch(err => message.error(workflowErrorMessage(err, 'We could not download the labels.')));
+      }}>CSV</Button>
+    ),
+  };
 
   const columns: ColumnsType<BatchItem> = manager ? [...COLUMNS, {
     title: 'Action',
@@ -80,6 +94,7 @@ function BatchesPage() {
       </Button>
     ),
   }] : COLUMNS;
+  const tableColumns = canCreate ? [...columns, labelsColumn] : columns;
 
   const submit = async () => {
     if (!action) return;
@@ -107,7 +122,10 @@ function BatchesPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="m-0 text-lg font-bold text-slate-900">Batches</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-lg font-bold text-slate-900">Batches</h1>
+        {canCreate && <Button type="primary" onClick={() => setCreateOpen(true)}>New batch</Button>}
+      </div>
       <Tabs
         activeKey={tab}
         onChange={key => { setLoading(true); setPage(1); setTab(key); }}
@@ -124,12 +142,13 @@ function BatchesPage() {
       <Table
         rowKey="id"
         dataSource={rows}
-        columns={columns}
+        columns={tableColumns}
         loading={loading}
         scroll={{ x: 720 }}
         onRow={row => ({ onClick: () => setSelected(row.id), className: 'cursor-pointer' })}
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: value => { setLoading(true); setPage(value); } }}
       />
+      <FactoryBatchModal open={createOpen} pickFactory={role === 'SUPER_ADMIN'} onClose={() => setCreateOpen(false)} onCreated={() => { setLoading(true); setReload(value => value + 1); }} />
       <BatchDrawer id={selected} onClose={() => setSelected(undefined)} />
       <Modal
         open={!!action}
