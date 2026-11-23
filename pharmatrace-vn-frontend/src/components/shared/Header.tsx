@@ -32,7 +32,7 @@ const Logo = "https://res.cloudinary.com/dc64co0el/image/upload/v1777731026/Logo
 
 const NAV_LINKS = [
   { label: 'Medications', href: '/products' },
-  { label: 'Health Library', href: '/products' },
+  { label: 'Health Library', href: '/blog' },
   { label: 'Supplements', href: '/products' },
   { label: 'Mom & Baby', href: '/products' },
   { label: 'PharmaTrace VN Brands', href: '/products' },
