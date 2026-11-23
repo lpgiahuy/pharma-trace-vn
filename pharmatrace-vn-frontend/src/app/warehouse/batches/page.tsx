@@ -21,7 +21,9 @@ const SEVERITIES = [
   { value: 'LEVEL_3', label: 'Level 3 - low risk' },
 ];
 const newRecallCode = () => `RCL-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-const statusTag = (status: string | null) => <Tag color={STATUS_COLORS[status ?? ''] ?? 'default'}>{status ?? 'UNKNOWN'}</Tag>;
+// The database keeps the status VOIDED; people know the action as "Cancel batch", so the screen says CANCELLED.
+const STATUS_LABELS: Record<string, string> = { VOIDED: 'CANCELLED' };
+const statusTag = (status: string | null) => <Tag color={STATUS_COLORS[status ?? ''] ?? 'default'}>{STATUS_LABELS[status ?? ''] ?? status ?? 'UNKNOWN'}</Tag>;
 
 const COLUMNS: ColumnsType<BatchItem> = [
   { title: 'Batch', dataIndex: 'batchNumber' },
@@ -97,7 +99,7 @@ function BatchesPage() {
         onClick: () => { setReason(''); setAction({ batch, release: batch.status === 'ON_HOLD' }); },
       });
     }
-    if (canCreate) {
+    if (canCreate && batch.status !== 'VOIDED') {
       items.push(
         {
           key: 'pdf', label: pdfBatch === batch.id ? 'Building PDF...' : 'Labels (PDF)', disabled: pdfBatch === batch.id,
