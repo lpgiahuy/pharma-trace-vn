@@ -32,6 +32,8 @@ export function StockTransferRequests() {
   const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
   const facilityId = user?.facilityId;
   const isManager = (role === 'WAREHOUSEMANAGER' || role === 'STOREMANAGER') && !!facilityId;
+  // Factory staff have no manager role: they only answer requests that ask their factory for stock.
+  const isDecider = isManager || (role === 'FACTORYWAREHOUSESTAFF' && !!facilityId);
 
   const load = useCallback(() => logisticsService.getStockTransferRequests(), []);
   const { result, loading, reload } = useLogisticsList(load, 'Unable to load stock transfer requests');
@@ -126,8 +128,8 @@ export function StockTransferRequests() {
     { title: 'Transfer', key: 'transfer', render: (_, row) => row.transfer
       ? <span className="text-xs"><span className="font-mono">{row.transfer.transfer_code}</span> ({row.transfer.status})</span> : '—' },
     { title: 'Action', key: 'action', render: (_, row) => {
-      const atSource = isManager && row.from_facility.id === facilityId;
-      const canCancel = isManager && (atSource || row.to_facility.id === facilityId)
+      const atSource = isDecider && row.from_facility.id === facilityId;
+      const canCancel = isDecider && (atSource || row.to_facility.id === facilityId)
         && (row.status === 'REQUESTED' || (row.status === 'APPROVED' && row.transfer?.status === 'REQUESTED'));
       return <div className="flex gap-1">
         {atSource && row.status === 'REQUESTED' && <>

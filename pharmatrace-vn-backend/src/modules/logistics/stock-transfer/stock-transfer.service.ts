@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { authActor } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
-import { warehouseScope } from '../../../common/warehouse-roles';
+import { WH_TRANSFER, warehouseScope } from '../../../common/warehouse-roles';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { WarehouseFacilityQueryDto } from '../../warehouse/inventory/dto/warehouse-inventory-query.dto';
 import { CreateStockTransferRequestDto } from './dto/stock-transfer.dto';
@@ -48,7 +48,7 @@ export class StockTransferService {
   }
 
   warehouseTransfers(user: CurrentUserPayload, query: WarehouseFacilityQueryDto) {
-    const facilityId = warehouseScope(user, query);
+    const facilityId = warehouseScope(user, query, WH_TRANSFER);
     return this.prisma.withOrder('transfer_read', tx => tx.internal_transfers.findMany({
       where: facilityId === null ? {} : { OR: [{ from_facility_id: facilityId }, { to_facility_id: facilityId }] },
       include: { from_facility: FACILITY, to_facility: FACILITY },

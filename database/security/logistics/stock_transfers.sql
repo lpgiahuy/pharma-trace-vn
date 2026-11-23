@@ -60,7 +60,7 @@ END $$;
 CREATE OR REPLACE FUNCTION public.stock_transfer_party(unit integer) RETURNS boolean
 LANGUAGE sql STABLE SET search_path = pg_catalog AS $$
   SELECT current_setting('app.current_user_type', true) = 'employee'
-    AND (coalesce(current_setting('app.current_user_role', true), '') IN ('STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_ALL'))
+    AND (coalesce(current_setting('app.current_user_role', true), '') IN ('STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_TRANSFER'))
     AND (current_setting('app.current_user_role', true) = 'SUPER_ADMIN' OR unit = nullif(current_setting('app.current_unit_id', true), '')::integer)
 $$;
 REVOKE ALL ON FUNCTION public.stock_transfer_party(integer) FROM PUBLIC;
@@ -77,7 +77,7 @@ CREATE POLICY stock_transfer_request_event_read ON public.stock_transfer_request
 CREATE OR REPLACE FUNCTION public.stock_transfer_manager(unit integer) RETURNS boolean
 LANGUAGE sql STABLE SET search_path = pg_catalog AS $$
   SELECT current_setting('app.current_user_type', true) = 'employee'
-    AND coalesce(current_setting('app.current_user_role', true), '') IN ('WAREHOUSE_MANAGER', 'STORE_MANAGER')
+    AND coalesce(current_setting('app.current_user_role', true), '') IN ('WAREHOUSE_MANAGER', 'STORE_MANAGER', 'FACTORY_WAREHOUSE_STAFF')
     AND unit = nullif(current_setting('app.current_unit_id', true), '')::integer
 $$;
 REVOKE ALL ON FUNCTION public.stock_transfer_manager(integer) FROM PUBLIC;

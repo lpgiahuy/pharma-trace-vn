@@ -1,6 +1,7 @@
 import { ROLES_KEY } from './decorators/roles.decorator';
 import { normalizeRole } from './auth-identity';
 import { InternalTransferController } from '../modules/logistics/internal-transfer/internal-transfer.controller';
+import { StockTransferController } from '../modules/logistics/stock-transfer/stock-transfer.controller';
 import { LogisticsController } from '../modules/logistics/shipment/logistics.controller';
 import { AdminOrderController } from '../modules/order/admin-order.controller';
 import { AdminReturnsController } from '../modules/returns/admin-returns.controller';
@@ -20,7 +21,7 @@ function rolesOf(controller: { prototype: object }, method: string): Set<string>
 }
 
 const managerRoutes: [string, { prototype: object }, string[]][] = [
-  ['transfers', InternalTransferController, ['transfers', 'transfer', 'cancelTransfer', 'dispatch', 'transportStaff', 'halt', 'receive', 'receiveReturn', 'rejectDamaged', 'resolveDiscrepancy']],
+  ['transfers', InternalTransferController, ['cancelTransfer', 'receive', 'rejectDamaged', 'resolveDiscrepancy']],
   ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'receiveReturn']],
   ['orders', AdminOrderController, ['getAllOrders', 'getOrderById', 'resolution', 'getAvailableBoxes', 'packOrder']],
   ['returns', AdminReturnsController, ['list', 'detail', 'addAttachment', 'attachment', 'rejectReceipt', 'receive']],
@@ -34,6 +35,21 @@ describe('Warehouse route access', () => {
       expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
       expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
     });
+  });
+
+  // The factory sends stock out: it joins the source side of a transfer, never the receiving or resolving side.
+  it.each(['transfers', 'transfer', 'dispatch', 'transportStaff', 'halt', 'receiveReturn'])('transfers %s admits WAREHOUSE_MANAGER and FACTORY_WAREHOUSE_STAFF', (method) => {
+    const roles = rolesOf(InternalTransferController, method);
+    expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
+    expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+  });
+
+  it.each(['list', 'approve', 'reject', 'cancel'])('stock transfer %s admits FACTORY_WAREHOUSE_STAFF', (method) => {
+    expect(rolesOf(StockTransferController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+  });
+
+  it('does not let factory staff create stock transfer requests', () => {
+    expect(rolesOf(StockTransferController, 'create').has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
   });
 
   it('lets only managers void packages', () => {

@@ -29,6 +29,8 @@ const NAV_ITEMS = [
   { key: '/warehouse/traceability', icon: <ScanOutlined />, label: 'Traceability' },
 ];
 
+const FACTORY_NAV_KEYS = ['/warehouse', '/warehouse/inventory', '/warehouse/batches', '/warehouse/transfers'];
+
 export function WarehouseLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -48,7 +50,8 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
 
   if (!allowed) return null;
 
-  const selectedKey = NAV_ITEMS.filter((item) => item.key === '/warehouse' ? pathname === item.key : pathname.startsWith(item.key))
+  const navItems = user.role === 'FACTORY_WAREHOUSE_STAFF' ? NAV_ITEMS.filter((item) => FACTORY_NAV_KEYS.includes(item.key)) : NAV_ITEMS;
+  const selectedKey = navItems.filter((item) => item.key === '/warehouse' ? pathname === item.key : pathname.startsWith(item.key))
     .at(-1)?.key ?? '';
 
   const userMenu: MenuProps['items'] = [
@@ -64,7 +67,7 @@ export function WarehouseLayout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center justify-center gap-2 h-16 px-5 border-b border-slate-100 font-bold text-[#1e4287] whitespace-nowrap">
           <Warehouse className="w-5 h-5 shrink-0" /> {!collapsed && 'Warehouse Portal'}
         </div>
-        <Menu mode="inline" selectedKeys={[selectedKey]} items={NAV_ITEMS} onClick={({ key }) => { router.push(key); if (isMobile) setCollapsed(true); }} className="border-r-0!" />
+        <Menu mode="inline" selectedKeys={[selectedKey]} items={navItems} onClick={({ key }) => { router.push(key); if (isMobile) setCollapsed(true); }} className="border-r-0!" />
       </Sider>
       {isMobile && !collapsed && <div className="fixed inset-0 z-99 bg-black/30" onClick={() => setCollapsed(true)} />}
       <Layout>

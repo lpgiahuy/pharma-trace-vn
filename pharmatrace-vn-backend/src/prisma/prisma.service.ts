@@ -3,7 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AuthActor, authActor } from '../common/auth-identity';
-import { FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_READ } from '../common/warehouse-roles';
+import { FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_READ, WH_TRANSFER } from '../common/warehouse-roles';
 import { REPORT_READ } from '../common/report-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
@@ -412,8 +412,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       checkout: ['CUSTOMER'], cancel: ['CUSTOMER'], customer_receive: ['CUSTOMER'],
       status: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST'],
       pack: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL],
-      transfer_read: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL],
-      dispatch: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL],
+      // Factory staff send stock out (source side only): they read and dispatch transfers but never receive or resolve them.
+      transfer_read: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_TRANSFER],
+      dispatch: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_TRANSFER],
       receive: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL],
       // Discrepancy resolution additionally requires a manager role in the database (resolve_transfer_discrepancy).
       replace: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL],

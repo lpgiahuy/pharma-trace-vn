@@ -83,7 +83,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
 
   const user = mounted ? getUser() : null;
   const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
-  const canOperateTransfers = role === 'SUPERADMIN' || role === 'STOREMANAGER' || role === 'WAREHOUSESTAFF' || role === 'WAREHOUSEMANAGER';
+  const canOperateTransfers = role === 'SUPERADMIN' || role === 'STOREMANAGER' || role === 'WAREHOUSESTAFF' || role === 'WAREHOUSEMANAGER' || role === 'FACTORYWAREHOUSESTAFF';
   const canDispatch = canOperateTransfers && !!selectedTransfer && (role === 'SUPERADMIN' || user?.facilityId === selectedTransfer.from_facility_id);
   const canReceive = canOperateTransfers && !!selectedTransfer && (role === 'SUPERADMIN' || user?.facilityId === selectedTransfer.to_facility_id);
 
