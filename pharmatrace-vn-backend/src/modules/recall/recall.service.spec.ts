@@ -72,6 +72,35 @@ describe('RecallService.create', () => {
   });
 });
 
+describe('RecallService.createForFactory', () => {
+  const factory = { id: 8, role: 'FACTORY_WAREHOUSE_STAFF', type: 'employee', facilityId: 4 };
+
+  it('lets factory staff and nobody else open a recall from the warehouse routes', () => {
+    expect(allows(WarehouseRecallController, 'create', 'FACTORY_WAREHOUSE_STAFF')).toBe(true);
+    for (const role of ['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'STORE_MANAGER', 'SUPER_ADMIN']) expect(allows(WarehouseRecallController, 'create', role)).toBe(false);
+  });
+
+  it('creates the recall as the factory and returns only its id and code', async () => {
+    const { tx, prisma, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{ id: 9 }]);
+    await expect(service.createForFactory(factory, dto)).resolves.toEqual({ id: 9, recallCode: 'RCL-20261120-01' });
+    expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ role: 'FACTORY_WAREHOUSE_STAFF', facilityId: 4 }), expect.any(Function));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['RCL-20261120-01', 'Contamination', 'LEVEL_1', null, [3]]);
+  });
+
+  it('maps the database refusal for a batch of another factory', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockRejectedValueOnce(databaseError('RC_FORBIDDEN'));
+    expect(await failure(service.createForFactory(factory, dto))).toBe('RC_FORBIDDEN');
+  });
+
+  it('needs an account assigned to a factory', () => {
+    const { prisma, service } = setup();
+    expect(() => service.createForFactory({ ...factory, facilityId: undefined }, dto)).toThrow(AppException);
+    expect(prisma.withActor).not.toHaveBeenCalled();
+  });
+});
+
 describe('RecallService.detail', () => {
   it('reports a recall the caller cannot read as not found', async () => {
     const { tx, service } = setup();

@@ -1,12 +1,15 @@
 import { ROLES_KEY } from './decorators/roles.decorator';
 import { normalizeRole } from './auth-identity';
 import { InternalTransferController } from '../modules/logistics/internal-transfer/internal-transfer.controller';
+import { StockTransferController } from '../modules/logistics/stock-transfer/stock-transfer.controller';
 import { LogisticsController } from '../modules/logistics/shipment/logistics.controller';
 import { AdminOrderController } from '../modules/order/admin-order.controller';
 import { AdminReturnsController } from '../modules/returns/admin-returns.controller';
 import { GoodsReceiptController } from '../modules/procurement/goods-receipt.controller';
 import { PurchaseOrderController } from '../modules/procurement/purchase-order.controller';
-import { FactoryBatchController } from '../modules/warehouse/factory/factory-batch.controller';
+import { DisposalController } from '../modules/warehouse/disposal/disposal.controller';
+import { WarehouseInventoryController } from '../modules/warehouse/inventory/warehouse-inventory.controller';
+import { FactoryBatchController, FactoryReportController } from '../modules/warehouse/factory/factory-batch.controller';
 import { FulfillmentController } from '../modules/warehouse/fulfillment/fulfillment.controller';
 import { WarehouseController } from '../modules/warehouse/warehouse.controller';
 
@@ -20,7 +23,7 @@ function rolesOf(controller: { prototype: object }, method: string): Set<string>
 }
 
 const managerRoutes: [string, { prototype: object }, string[]][] = [
-  ['transfers', InternalTransferController, ['transfers', 'transfer', 'cancelTransfer', 'dispatch', 'transportStaff', 'halt', 'receive', 'receiveReturn', 'rejectDamaged', 'resolveDiscrepancy']],
+  ['transfers', InternalTransferController, ['cancelTransfer', 'receive', 'rejectDamaged', 'resolveDiscrepancy']],
   ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'receiveReturn']],
   ['orders', AdminOrderController, ['getAllOrders', 'getOrderById', 'resolution', 'getAvailableBoxes', 'packOrder']],
   ['returns', AdminReturnsController, ['list', 'detail', 'addAttachment', 'attachment', 'rejectReceipt', 'receive']],
@@ -34,6 +37,25 @@ describe('Warehouse route access', () => {
       expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
       expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
     });
+  });
+
+  // The factory sends stock out: it joins the source side of a transfer, never the receiving or resolving side.
+  it.each(['transfers', 'transfer', 'dispatch', 'transportStaff', 'halt', 'receiveReturn'])('transfers %s admits WAREHOUSE_MANAGER and FACTORY_WAREHOUSE_STAFF', (method) => {
+    const roles = rolesOf(InternalTransferController, method);
+    expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
+    expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+  });
+
+  it.each(['list', 'approve', 'reject', 'cancel'])('stock transfer %s admits FACTORY_WAREHOUSE_STAFF', (method) => {
+    expect(rolesOf(StockTransferController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+  });
+
+  it('lets only factory staff start a transfer from a factory', () => {
+    expect([...rolesOf(StockTransferController, 'send')]).toEqual(['FACTORY_WAREHOUSE_STAFF']);
+  });
+
+  it('does not let factory staff create stock transfer requests', () => {
+    expect(rolesOf(StockTransferController, 'create').has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
   });
 
   it('lets only managers void packages', () => {
@@ -55,14 +77,16 @@ describe('Warehouse route access', () => {
   });
 
   it('lets warehouse staff read purchase orders but only managers change them', () => {
-    // Read routes inherit the class-level roles.
+    // The class-level roles stay warehouse-only; the two read routes also admit the factory that supplies the order.
     const readers = Reflect.getMetadata(ROLES_KEY, PurchaseOrderController) as string[];
     expect(readers).toContain('WAREHOUSE_STAFF');
     expect(readers).not.toContain('FACTORY_WAREHOUSE_STAFF');
+    for (const method of ['list', 'detail']) expect(rolesOf(PurchaseOrderController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
     for (const method of ['create', 'update', 'approve', 'cancel', 'close']) {
       const roles = rolesOf(PurchaseOrderController, method);
       expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
       expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
+      expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
     }
   });
 
@@ -79,8 +103,24 @@ describe('Warehouse route access', () => {
     expect(rolesOf(WarehouseController, 'me').has('WAREHOUSE_STAFF')).toBe(true);
   });
 
-  it('opens factory batch intake to factory staff and SUPER_ADMIN only', () => {
+  it('opens factory batch intake, voiding and labels to factory staff and SUPER_ADMIN only', () => {
     const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryBatchController) as string[]);
+    expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
+  });
+
+  it('lets factory staff hold and release batches and draft disposals, but not approve or complete them', () => {
+    for (const method of ['hold', 'release']) expect(rolesOf(WarehouseInventoryController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+    // Staff routes inherit the controller roles; manager routes override them.
+    expect(new Set(Reflect.getMetadata(ROLES_KEY, DisposalController) as string[]).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+    for (const method of ['approve', 'complete', 'cancel']) expect(rolesOf(DisposalController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
+  });
+
+  it('lets only managers read the stock of a source facility for a request', () => {
+    expect([...rolesOf(StockTransferController, 'sourceStock')].sort()).toEqual(['STORE_MANAGER', 'WAREHOUSE_MANAGER']);
+  });
+
+  it('opens the production report to factory staff and SUPER_ADMIN only', () => {
+    const roles = new Set(Reflect.getMetadata(ROLES_KEY, FactoryReportController) as string[]);
     expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
   });
 });

@@ -84,7 +84,11 @@ GRANT USAGE ON SEQUENCE public.purchase_orders_id_seq, public.purchase_order_ite
 
 DROP POLICY IF EXISTS purchase_order_read ON public.purchase_orders;
 CREATE POLICY purchase_order_read ON public.purchase_orders FOR SELECT TO app_user
-  USING (public.app_role_in_group('WH_ALL') AND public.po_in_scope(facility_id));
+  USING ((public.app_role_in_group('WH_ALL') AND public.po_in_scope(facility_id))
+    -- A factory reads, never changes, the approved orders that ask it for stock (not drafts).
+    OR (current_setting('app.current_user_role', true) = 'FACTORY_WAREHOUSE_STAFF'
+      AND supplier_id = nullif(current_setting('app.current_unit_id', true), '')::integer
+      AND status <> 'PENDING'));
 DROP POLICY IF EXISTS purchase_order_insert ON public.purchase_orders;
 CREATE POLICY purchase_order_insert ON public.purchase_orders FOR INSERT TO app_user
   WITH CHECK (public.app_role_in_group('WH_MANAGER') AND public.po_in_scope(facility_id)

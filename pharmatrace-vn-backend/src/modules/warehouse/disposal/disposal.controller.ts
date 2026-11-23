@@ -6,7 +6,7 @@ import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/curr
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { WH_ALL, WH_MANAGER } from '../../../common/warehouse-roles';
+import { WH_MANAGER, WH_QUALITY } from '../../../common/warehouse-roles';
 import { CreateDisposalDto, DisposalCandidateQueryDto, DisposalQueryDto, DisposalReasonDto } from './dto/disposal.dto';
 import { DisposalService } from './disposal.service';
 
@@ -15,7 +15,7 @@ type Upload = { buffer: Buffer; mimetype: string; size: number };
 @ApiTags('Warehouse - Disposals')
 @ApiBearerAuth('bearerAuth')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(...WH_ALL)
+@Roles(...WH_QUALITY)
 @Controller('warehouse/disposals')
 export class DisposalController {
   constructor(private readonly disposals: DisposalService) {}

@@ -7,12 +7,12 @@ import { useHydrated } from '@/hooks/useHydrated';
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { TransferDiscrepancyResolution } from '@/components/logistics/TransferDiscrepancyResolution';
+import { ScanToolbar, appendCode, type ScannedCode } from '@/components/trace/ScanToolbar';
 import {
   Table,
   Select,
   AutoComplete,
   Input,
-  InputNumber,
   Button,
   Drawer,
   Modal,
@@ -79,11 +79,11 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
   const [transportStaff, setTransportStaff] = useState<Array<{ id: number; full_name: string }>>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [manifestLines, setManifestLines] = useState<Record<number, { quantity: number; boxUids: string }>>({});
+  const [manifestLines, setManifestLines] = useState<Record<number, { quantity: number; boxUids: string; cartonCodes?: string }>>({});
 
   const user = mounted ? getUser() : null;
   const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
-  const canOperateTransfers = role === 'SUPERADMIN' || role === 'STOREMANAGER' || role === 'WAREHOUSESTAFF' || role === 'WAREHOUSEMANAGER';
+  const canOperateTransfers = role === 'SUPERADMIN' || role === 'STOREMANAGER' || role === 'WAREHOUSESTAFF' || role === 'WAREHOUSEMANAGER' || role === 'FACTORYWAREHOUSESTAFF';
   const canDispatch = canOperateTransfers && !!selectedTransfer && (role === 'SUPERADMIN' || user?.facilityId === selectedTransfer.from_facility_id);
   const canReceive = canOperateTransfers && !!selectedTransfer && (role === 'SUPERADMIN' || user?.facilityId === selectedTransfer.to_facility_id);
 
@@ -156,6 +156,15 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
     return () => clearTimeout(timer);
   }, [loadTransferDetail]);
 
+  /** Puts a scanned label in the UID box (box label) or the SSCC box (carton label) of a manifest line. */
+  const addScannedCode = (variantId: number, scanned: ScannedCode) => {
+    const field = scanned.kind === 'uid' ? 'boxUids' : 'cartonCodes';
+    setManifestLines(current => {
+      const line = current[variantId] || { quantity: 0, boxUids: '', cartonCodes: '' };
+      return { ...current, [variantId]: { ...line, [field]: appendCode(line[field], scanned.code) } };
+    });
+  };
+
   const handleDispatch = async () => {
     if (!selectedTransfer) return;
     setActionLoading(true);
@@ -168,12 +177,9 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
         message.error('Enter the carrier and its actual tracking number');
         return;
       }
-      const manifest = selectedTransfer.items.map(item => ({ variantId: Number(item.variantId), quantity: manifestLines[Number(item.variantId)]?.quantity || 0,
-        boxUids: (manifestLines[Number(item.variantId)]?.boxUids || '').split(/[\s,]+/).filter(Boolean) }));
-      if (manifest.some((line, index) => line.quantity !== Number(selectedTransfer.items[index].quantity))) {
-        message.error('Enter the actual quantity for every manifest line.');
-        return;
-      }
+      const manifest = selectedTransfer.items.map(item => ({ variantId: Number(item.variantId), quantity: Number(item.quantity),
+        boxUids: (manifestLines[Number(item.variantId)]?.boxUids || '').split(/[\s,]+/).filter(Boolean),
+        cartonCodes: (manifestLines[Number(item.variantId)]?.cartonCodes || '').split(/[\s,]+/).filter(Boolean) }));
       await logisticsService.dispatchTransfer(selectedTransfer.id, transportMode === 'INTERNAL'
         ? { transportMode, transportEmployeeId, manifest }
         : { transportMode, courierName: carrierName.trim(), trackingCode: trackingCodeInput.trim(), manifest });
@@ -587,7 +593,7 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
                   </div>
                 ))}
               </div>
-              {selectedTransfer.manifest ? <div className="text-xs text-slate-600 space-y-1"><p>Scanned by staff #{selectedTransfer.manifest.prepared_by} at {new Date(selectedTransfer.manifest.prepared_at).toLocaleString()}.</p>{selectedTransfer.manifest.lines.map(line => <p className="break-all" key={line.variantId}>Variant #{line.variantId}: {line.quantity} units{line.boxUids.length ? ` — ${line.boxUids.join(', ')}` : ' — untracked units'}</p>)}</div> : selectedTransfer.status !== 'REQUESTED' && <p className="text-xs text-slate-600">No source manifest was recorded for this transfer.</p>}
+              {selectedTransfer.manifest ? <div className="text-xs text-slate-600 space-y-1"><p>Scanned by staff #{selectedTransfer.manifest.prepared_by} at {new Date(selectedTransfer.manifest.prepared_at).toLocaleString()}.</p>{selectedTransfer.manifest.lines.map(line => <p className="break-all" key={line.variantId}>Variant #{line.variantId}: {line.quantity} units{line.boxUids.length ? ` — ${line.boxUids.length} boxes scanned` : ' — untracked units'}</p>)}</div> : selectedTransfer.status !== 'REQUESTED' && <p className="text-xs text-slate-600">No source manifest was recorded for this transfer.</p>}
             </div>
 
             {/* Action Buttons for allowed roles */}
@@ -646,6 +652,8 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
       {/* Dispatch Modal with Tracking Code */}
       <Modal
         title="Dispatch Stock Transfer"
+        centered
+        styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
         open={dispatchModalOpen}
         onOk={handleDispatch}
         onCancel={() => {
@@ -657,17 +665,19 @@ export function TransfersBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
         cancelText="Cancel"
         okButtonProps={{ className: 'bg-[#004996]!' }}
       >
-        <div className="space-y-2.5 py-2">
-          <p className="text-sm">Count each line and scan every reserved package before handing goods to the responsible carrier.</p>
+        <div className="flex flex-col gap-4 py-3">
+          <p className="m-0 text-sm">Scan every reserved package, or whole cartons, until each line has exactly the requested number of boxes, then hand the goods to the responsible carrier.</p>
           {selectedTransfer?.items.map(item => {
             const variantId = Number(item.variantId);
-            const line = manifestLines[variantId] || { quantity: 0, boxUids: '' };
-            return <div key={variantId} className="border border-slate-200 rounded p-2 space-y-2">
+            const line = manifestLines[variantId] || { quantity: 0, boxUids: '', cartonCodes: '' };
+            return <div key={variantId} className="flex flex-col gap-3 rounded border border-slate-200 p-3">
               <div>{item.medicineName || `Variant #${variantId}`} — expected {item.quantity}</div>
-              <InputNumber aria-label={`Count for variant ${variantId}`} min={0} max={Number(item.quantity)} precision={0} value={line.quantity}
-                onChange={value => setManifestLines(current => ({ ...current, [variantId]: { ...line, quantity: value || 0 } }))} />
+              <ScanToolbar onCode={scanned => addScannedCode(variantId, scanned)} hint="Box QR codes go to the UID box, carton QR codes to the SSCC box." />
               <Input.TextArea aria-label={`Scanned UIDs for variant ${variantId}`} value={line.boxUids} placeholder="Scan package UIDs, separated by lines or commas"
                 onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, boxUids: event.target.value } }))} />
+              <Input.TextArea aria-label={`Scanned carton codes for variant ${variantId}`} value={line.cartonCodes ?? ''} rows={2}
+                placeholder="Or scan SSCC carton codes: every box of a carton is added."
+                onChange={event => setManifestLines(current => ({ ...current, [variantId]: { ...line, cartonCodes: event.target.value } }))} />
             </div>;
           })}
           <label className="block text-sm" htmlFor="transfer-transport-mode">Transport method</label>

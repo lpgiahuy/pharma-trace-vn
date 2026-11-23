@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { AppException } from '../../../common/errors/app-exception';
 import { CryptoUtil } from '../../../common/utils/crypto.util';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -121,9 +122,10 @@ describe('FactoryBatchService.labels', () => {
   it('lists every box with the SSCC of its carton', async () => {
     const { tx, service } = setup();
     tx.batches.findFirst.mockResolvedValue({ medicine_boxes: [
-      { uid: 'u-1', sscc_cartons: { sscc_code: '100' } }, { uid: 'u-2', sscc_cartons: { sscc_code: '100' } }, { uid: 'u-3', sscc_cartons: null },
+      { uid: 'u-1', signature: 's-1', sscc_cartons: { sscc_code: '100' } }, { uid: 'u-2', signature: 's-2', sscc_cartons: { sscc_code: '100' } },
+      { uid: 'u-3', signature: 's-3', sscc_cartons: null },
     ] });
-    await expect(service.labels(staff, 31, {})).resolves.toBe('sscc,uid\n100,u-1\n100,u-2\n,u-3');
+    await expect(service.labels(staff, 31, {})).resolves.toBe('sscc,uid,secret_code\n100,u-1,s-1\n100,u-2,s-2\n,u-3,s-3');
     expect(tx.batches.findFirst.mock.calls[0][0].where).toEqual({ id: 31, manufacturer_source_facility_id: 4 });
   });
 
@@ -144,5 +146,88 @@ describe('FactoryBatchService.labels', () => {
     const { prisma, service } = setup();
     expect(await errorCode(service.labels(warehouseStaff, 31, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
     expect(prisma.withWarehouseRead).not.toHaveBeenCalled();
+  });
+});
+
+describe('FactoryBatchService.void', () => {
+  it('calls the void function with the trimmed reason inside the factory intake context', async () => {
+    const { tx, prisma, service } = setup();
+    await expect(service.void(staff, 31, { reason: '  wrong box count ' })).resolves.toEqual({ id: 31 });
+    expect(prisma.withFactoryIntake).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([31, 'wrong box count']);
+  });
+
+  it('lets SUPER_ADMIN void a batch', async () => {
+    const { service } = setup();
+    await expect(service.void(admin, 31, { reason: 'duplicate' })).resolves.toEqual({ id: 31 });
+  });
+
+  it('rejects warehouse staff before touching the database', async () => {
+    const { prisma, service } = setup();
+    expect(await errorCode(service.void(warehouseStaff, 31, { reason: 'x' }))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
+    expect(prisma.withFactoryIntake).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['FB_VOID_NOT_ALLOWED', 'FB_VOID_NOT_ALLOWED'],
+    ['FB_VOID_REASON_REQUIRED', 'FB_VOID_REASON_REQUIRED'],
+    ['FB_BATCH_NOT_FOUND', 'FB_BATCH_NOT_FOUND'],
+  ])('maps the database error %s to an application error', async (raised, code) => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockRejectedValue(new Prisma.PrismaClientKnownRequestError(raised, { code: 'P2010', clientVersion: 'test', meta: { message: `ERROR: ${raised}` } }));
+    expect(await errorCode(service.void(staff, 31, { reason: 'x' }))).toBe(code);
+  });
+});
+
+describe('FactoryBatchService.productionReport', () => {
+  const totals = { batches: 2, boxes: 300, voidedBatches: 1, recalledBatches: 0, heldBatches: 0 };
+  const periods = [{ period: '2026-10-01', batches: 1, boxes: 100 }, { period: '2026-11-01', batches: 1, boxes: 200 }];
+  const medicines = [{ medicineId: 3, medicineName: 'Panadol', batches: 2, boxes: 300 }];
+  function reportSetup() {
+    const result = setup();
+    result.tx.$queryRaw.mockReset().mockResolvedValueOnce([totals]).mockResolvedValueOnce(periods).mockResolvedValueOnce(medicines);
+    return result;
+  }
+
+  it('reports the totals, periods and medicines of the factory of the token', async () => {
+    const { tx, service } = reportSetup();
+    await expect(service.productionReport(staff, { from: '2026-10-01', to: '2026-11-30', groupBy: 'month' })).resolves.toEqual({
+      from: '2026-10-01', to: '2026-11-30', groupBy: 'month', totals, periods, medicines,
+    });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
+    // The factory is bound into every query; groupBy is bound into the period query.
+    const bound = JSON.stringify(tx.$queryRaw.mock.calls.map(call => call.slice(1)));
+    expect(bound).toContain('2026-10-01');
+    expect(tx.$queryRaw.mock.calls[1].slice(1)).toContain('month');
+    expect((tx.$queryRaw.mock.calls[0][1] as Prisma.Sql).values).toEqual(['2026-10-01', '2026-11-30', 4, 4]);
+  });
+
+  it('defaults to the last year by month', async () => {
+    const { service } = reportSetup();
+    const report = await service.productionReport(staff, { to: '2026-11-30' });
+    expect(report).toMatchObject({ groupBy: 'month', from: '2025-11-30', to: '2026-11-30' });
+  });
+
+  it('defaults to the last 30 days when grouped by day', async () => {
+    const { service } = reportSetup();
+    expect(await service.productionReport(staff, { to: '2026-11-30', groupBy: 'day' })).toMatchObject({ from: '2026-11-01' });
+  });
+
+  it('rejects a reversed range before touching the database', async () => {
+    const { prisma, service } = reportSetup();
+    expect(await errorCode(service.productionReport(staff, { from: '2026-12-01', to: '2026-11-01' }))).toBe('FB_REPORT_RANGE_INVALID');
+    expect(prisma.withWarehouseRead).not.toHaveBeenCalled();
+  });
+
+  it('rejects another factory for factory staff and warehouse staff', async () => {
+    const { service } = reportSetup();
+    expect(await errorCode(service.productionReport(staff, { facilityId: 5 }))).toBe('WAREHOUSE_FACILITY_FORBIDDEN');
+    expect(await errorCode(service.productionReport(warehouseStaff, {}))).toBe('WAREHOUSE_ACCOUNT_REQUIRED');
+  });
+
+  it('lets SUPER_ADMIN report on all factories or one', async () => {
+    const { tx, service } = reportSetup();
+    await service.productionReport(admin, { from: '2026-01-01', to: '2026-02-01' });
+    expect((tx.$queryRaw.mock.calls[0][1] as Prisma.Sql).values).toEqual(['2026-01-01', '2026-02-01', null, null]);
   });
 });

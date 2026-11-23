@@ -3,7 +3,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { OrderModule } from '../order/order.module';
 import { DisposalController } from './disposal/disposal.controller';
 import { DisposalService } from './disposal/disposal.service';
-import { FactoryBatchController } from './factory/factory-batch.controller';
+import { FactoryBatchController, FactoryReportController } from './factory/factory-batch.controller';
 import { FactoryBatchService } from './factory/factory-batch.service';
 import { FulfillmentController } from './fulfillment/fulfillment.controller';
 import { FulfillmentService } from './fulfillment/fulfillment.service';
@@ -22,7 +22,7 @@ import { WarehouseService } from './warehouse.service';
 /** Warehouse portal API (/warehouse/*). Later warehouse features register their controllers here. */
 @Module({
   imports: [PrismaModule, OrderModule],
-  controllers: [WarehouseController, WarehouseInventoryController, FactoryBatchController, FulfillmentController, HandoverController, StockCountController, DisposalController, TraceabilityController],
+  controllers: [WarehouseController, WarehouseInventoryController, FactoryBatchController, FactoryReportController, FulfillmentController, HandoverController, StockCountController, DisposalController, TraceabilityController],
   providers: [WarehouseService, WarehouseInventoryService, BatchStatusService, FactoryBatchService, FulfillmentService, HandoverService, StockCountService, DisposalService, TraceabilityService],
 })
 export class WarehouseModule {}

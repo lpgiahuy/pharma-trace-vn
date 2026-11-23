@@ -14,6 +14,14 @@ export const WH_ALL = [...WH_STAFF, ...WH_MANAGER] as const;
 /** Read-only inventory and batch views; factory staff read their own factory. */
 export const WH_READ = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
+/** Stock transfers: the factory sends stock to a warehouse, so it joins the source-side transfer workflow only. */
+export const WH_TRANSFER = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
+/** Quality actions at a factory: drafting disposals and holding batches. Approval and completion stay with managers. */
+export const WH_QUALITY = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+/** Holding or releasing a batch: warehouse managers, and factory staff for the batches of their own factory. */
+export const BATCH_HOLD = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
 export const FACTORY_INTAKE = ['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN'] as const;
 
 export type WarehouseRole = (typeof WH_ALL)[number];

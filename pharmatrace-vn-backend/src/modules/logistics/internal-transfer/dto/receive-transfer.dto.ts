@@ -30,6 +30,12 @@ export class ReceiveTransferLineDto {
   @IsString({ each: true })
   damagedUids?: string[];
 
+  /** Boxes dispatched but not received. With damagedUids, every other dispatched box counts as good. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  missingUids?: string[];
+
   @IsOptional()
   @IsString()
   notes?: string;

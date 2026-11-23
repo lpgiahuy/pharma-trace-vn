@@ -1,11 +1,14 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class DispatchManifestLineDto {
   @IsInt() @Min(1) variantId: number;
   @IsInt() @Min(1) quantity: number;
-  @IsArray() @IsString({ each: true }) boxUids: string[];
+  @ApiPropertyOptional({ description: 'Box UIDs scanned one by one' })
+  @IsOptional() @IsArray() @IsString({ each: true }) boxUids?: string[];
+  @ApiPropertyOptional({ description: 'SSCC carton codes of this variant; every box of each carton is added to the manifest line' })
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @IsString({ each: true }) @MaxLength(40, { each: true }) cartonCodes?: string[];
 }
 
 export class DispatchTransferDto {

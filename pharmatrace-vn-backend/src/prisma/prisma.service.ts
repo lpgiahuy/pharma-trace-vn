@@ -3,7 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AuthActor, authActor } from '../common/auth-identity';
-import { FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_READ } from '../common/warehouse-roles';
+import { BATCH_HOLD, FACTORY_INTAKE, WH_ALL, WH_MANAGER, WH_QUALITY, WH_READ, WH_TRANSFER } from '../common/warehouse-roles';
 import { REPORT_READ } from '../common/report-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
@@ -231,7 +231,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /** Batch hold and release by a warehouse manager (batch_status_event_insert policy). */
   async withBatchStatus<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !(WH_MANAGER as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid batch status scope');
+    if (actor.type !== 'employee' || !(BATCH_HOLD as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid batch status scope');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
         SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relowner <> r.oid
@@ -243,6 +243,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await tx.$queryRaw`SELECT set_config('app.current_user_id', ${String(actor.id)}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor.type}, true)`;
       await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor.role}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_unit_id', ${actor.facilityId ? String(actor.facilityId) : ''}, true)`;
       return run(tx);
     });
   }
@@ -250,7 +251,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /** Purchase orders of one warehouse: reads for WH_ALL, writes for WH_MANAGER (purchase_order_* policies). */
   async withPurchaseOrder<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !(WH_ALL as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid purchase order scope');
+    // Factory staff only read the purchase orders addressed to their factory; the routes and RLS keep them read-only.
+    if (actor.type !== 'employee' || !(WH_READ as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid purchase order scope');
     if (actor.role !== 'SUPER_ADMIN' && (!Number.isInteger(actor.facilityId) || Number(actor.facilityId) <= 0)) throw new ForbiddenException('Staff account is not assigned to a facility');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
@@ -293,7 +295,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /** Drug disposals of one warehouse: reads for WH_ALL, writes through the disposal functions. */
   async withDisposal<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !(WH_ALL as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid disposal scope');
+    if (actor.type !== 'employee' || !(WH_QUALITY as readonly string[]).includes(actor.role)) throw new ForbiddenException('Invalid disposal scope');
     if (actor.role !== 'SUPER_ADMIN' && (!Number.isInteger(actor.facilityId) || Number(actor.facilityId) <= 0)) throw new ForbiddenException('Staff account is not assigned to a facility');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
@@ -412,8 +414,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       checkout: ['CUSTOMER'], cancel: ['CUSTOMER'], customer_receive: ['CUSTOMER'],
       status: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST'],
       pack: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL],
-      transfer_read: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL],
-      dispatch: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL],
+      // Factory staff send stock out (source side only): they read and dispatch transfers but never receive or resolve them.
+      transfer_read: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_TRANSFER],
+      dispatch: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_TRANSFER],
       receive: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL],
       // Discrepancy resolution additionally requires a manager role in the database (resolve_transfer_discrepancy).
       replace: ['SUPER_ADMIN', 'STORE_MANAGER', ...WH_ALL],

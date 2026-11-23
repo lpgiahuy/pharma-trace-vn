@@ -5,7 +5,7 @@ import { AppException } from '../../common/errors/app-exception';
 const { CONFLICT, FORBIDDEN, NOT_FOUND, UNPROCESSABLE_ENTITY } = HttpStatus;
 
 const CATALOG = {
-  RC_FORBIDDEN: [FORBIDDEN, 'Only a super administrator can manage recalls, and facilities only see their own recall tasks.'],
+  RC_FORBIDDEN: [FORBIDDEN, 'Only a super administrator, or factory staff for batches their own factory made, can start a recall.'],
   RC_CODE_INVALID: [UNPROCESSABLE_ENTITY, 'The recall code must be 6-30 letters, digits, dashes or underscores.'],
   RC_CODE_TAKEN: [CONFLICT, 'This recall code is already used for other batches.'],
   RC_BATCH_INVALID: [UNPROCESSABLE_ENTITY, 'Choose existing batches, each once.'],

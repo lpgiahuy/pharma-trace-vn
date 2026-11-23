@@ -161,6 +161,7 @@ DECLARE
   lot_number text; produced date; expires date; reason text; supplier text; next_status text;
   accepted uuid[]; rejected uuid[]; scanned uuid[]; seen uuid[] := '{}'; carton_ids integer[];
   units integer; balance integer; amount numeric := 0;
+  from_factory boolean; found_boxes integer;
 BEGIN
   IF actor IS NULL OR NOT public.app_role_in_group('WH_ALL') THEN
     RAISE EXCEPTION 'GR_FORBIDDEN' USING ERRCODE = '42501';
@@ -172,6 +173,10 @@ BEGIN
   IF NOT FOUND OR public.po_in_scope(po.facility_id) IS NOT TRUE THEN
     RAISE EXCEPTION 'PO_NOT_FOUND' USING ERRCODE = '22023';
   END IF;
+
+  -- A factory supplier ships boxes it already registered (factory batch intake): they are taken out of the factory's
+  -- stock instead of being registered as new. Outside manufacturers keep the original behaviour.
+  from_factory := EXISTS (SELECT FROM public.facilities f WHERE f.id = po.supplier_id AND f.facility_type = 'FACTORY');
 
   SELECT * INTO previous_receipt FROM public.goods_receipts WHERE receipt_code = receipt_ref;
   IF FOUND THEN
@@ -207,13 +212,18 @@ BEGIN
     IF lot_number IS NULL OR length(lot_number) > 100 OR produced IS NULL OR expires IS NULL OR produced >= expires THEN
       RAISE EXCEPTION 'GR_BATCH_INVALID' USING ERRCODE = '22023';
     END IF;
-    INSERT INTO public.batches(batch_number, medicine_id, manufacturer_id, manufacturer_source_facility_id, manufacturer_source_facility_name,
-        production_date, expiry_date, initial_quantity, remaining_quantity, status, certificate_co_cq)
-      VALUES (lot_number, item.medicine_id, po.supplier_manufacturer_id, po.supplier_id,
-        (SELECT f.facility_name FROM public.facilities f WHERE f.id = po.supplier_id),
-        produced, expires, 0, 0, 'ACTIVE', nullif(btrim(entry->>'certificateCoCq'), ''))
-      ON CONFLICT (batch_number) DO NOTHING;
+    IF NOT from_factory THEN
+      INSERT INTO public.batches(batch_number, medicine_id, manufacturer_id, manufacturer_source_facility_id, manufacturer_source_facility_name,
+          production_date, expiry_date, initial_quantity, remaining_quantity, status, certificate_co_cq)
+        VALUES (lot_number, item.medicine_id, po.supplier_manufacturer_id, po.supplier_id,
+          (SELECT f.facility_name FROM public.facilities f WHERE f.id = po.supplier_id),
+          produced, expires, 0, 0, 'ACTIVE', nullif(btrim(entry->>'certificateCoCq'), ''))
+        ON CONFLICT (batch_number) DO NOTHING;
+    END IF;
     SELECT * INTO lot FROM public.batches WHERE batch_number = lot_number FOR UPDATE;
+    IF from_factory AND (lot.id IS NULL OR lot.manufacturer_source_facility_id IS DISTINCT FROM po.supplier_id OR lot.status IS DISTINCT FROM 'ACTIVE') THEN
+      RAISE EXCEPTION 'GR_BATCH_NOT_FROM_SUPPLIER %', lot_number USING ERRCODE = '22023';
+    END IF;
     IF lot.medicine_id IS DISTINCT FROM item.medicine_id THEN
       RAISE EXCEPTION 'GR_BATCH_MEDICINE_MISMATCH %', lot_number USING ERRCODE = '22023';
     END IF;
@@ -237,7 +247,11 @@ BEGIN
       IF carton.batch_id IS DISTINCT FROM lot.id THEN
         RAISE EXCEPTION 'GR_CARTON_WRONG_BATCH %', carton.sscc_code USING ERRCODE = '22023';
       END IF;
-      IF carton.current_facility_id IS NOT NULL THEN
+      IF (CASE WHEN from_factory THEN carton.current_facility_id IS DISTINCT FROM po.supplier_id ELSE carton.current_facility_id IS NOT NULL END) THEN
+        RAISE EXCEPTION 'GR_CARTON_UNAVAILABLE %', carton.sscc_code USING ERRCODE = '22023';
+      END IF;
+      IF from_factory AND (SELECT count(*) FROM public.medicine_boxes b WHERE b.carton_id = carton.id
+          AND b.current_facility_id = po.supplier_id AND b.status = 'IN_STOCK') <> carton.box_count THEN
         RAISE EXCEPTION 'GR_CARTON_UNAVAILABLE %', carton.sscc_code USING ERRCODE = '22023';
       END IF;
       carton_ids := carton_ids || carton.id;
@@ -263,15 +277,22 @@ BEGIN
     END IF;
 
     -- A box already known to the system must belong to the declared batch and must not be held by any facility yet.
+    found_boxes := 0;
     FOR box IN SELECT b.uid, b.batch_id, b.current_facility_id, b.status FROM public.medicine_boxes b
         WHERE b.uid = ANY (scanned) ORDER BY b.uid FOR UPDATE LOOP
+      found_boxes := found_boxes + 1;
       IF box.batch_id IS DISTINCT FROM lot.id THEN
         RAISE EXCEPTION 'GR_BOX_WRONG_BATCH %', box.uid USING ERRCODE = '22023';
       END IF;
-      IF box.current_facility_id IS NOT NULL OR coalesce(box.status, 'MANUFACTURED') NOT IN ('MANUFACTURED','IN_STOCK') THEN
+      IF (CASE WHEN from_factory THEN box.current_facility_id IS DISTINCT FROM po.supplier_id OR box.status IS DISTINCT FROM 'IN_STOCK'
+          ELSE box.current_facility_id IS NOT NULL OR coalesce(box.status, 'MANUFACTURED') NOT IN ('MANUFACTURED','IN_STOCK') END) THEN
         RAISE EXCEPTION 'GR_BOX_UNAVAILABLE %', box.uid USING ERRCODE = '22023';
       END IF;
     END LOOP;
+    -- A factory ships only boxes it registered: an unknown UID is never created at receipt.
+    IF from_factory AND found_boxes <> units THEN
+      RAISE EXCEPTION 'GR_BOX_UNAVAILABLE' USING ERRCODE = '22023';
+    END IF;
 
     UPDATE public.purchase_order_items SET received_quantity = received_quantity + units
       WHERE id = item.id AND received_quantity + units <= quantity;
@@ -284,9 +305,22 @@ BEGIN
       SELECT s.uid, lot.id, po.facility_id, CASE WHEN s.uid = ANY (rejected) THEN 'QUARANTINED' ELSE 'IN_STOCK' END
       FROM unnest(scanned) AS s(uid) WHERE NOT EXISTS (SELECT FROM public.medicine_boxes b WHERE b.uid = s.uid);
     UPDATE public.sscc_cartons SET current_facility_id = po.facility_id WHERE id = ANY (carton_ids);
-    UPDATE public.batches SET initial_quantity = initial_quantity + units,
-        remaining_quantity = remaining_quantity + cardinality(accepted)
-      WHERE id = lot.id;
+    IF from_factory THEN
+      -- The boxes were counted when the factory registered the batch; they now leave the factory's stock.
+      UPDATE public.inventories SET stock_quantity = stock_quantity - units, updated_at = now()
+        WHERE facility_id = po.supplier_id AND variant_id = item.variant_id
+          AND stock_quantity - coalesce(reserved_quantity, 0) >= units
+        RETURNING stock_quantity INTO balance;
+      IF NOT FOUND THEN RAISE EXCEPTION 'GR_SUPPLIER_STOCK_INSUFFICIENT' USING ERRCODE = '22023'; END IF;
+      INSERT INTO public.inventory_logs(facility_id, medicine_id, variant_id, batch_id, stock_bucket, transaction_type,
+          quantity_changed, previous_quantity, new_quantity, reference_code, note, performed_by_id)
+        VALUES (po.supplier_id, item.medicine_id, item.variant_id, lot.id, 'ON_HAND', 'PO_SHIPMENT_OUT',
+          -units, balance + units, balance, receipt_ref, format('%s, batch %s', po.po_code, lot.batch_number), actor);
+    ELSE
+      UPDATE public.batches SET initial_quantity = initial_quantity + units,
+          remaining_quantity = remaining_quantity + cardinality(accepted)
+        WHERE id = lot.id;
+    END IF;
 
     INSERT INTO public.goods_receipt_lines(receipt_id, po_item_id, batch_id, quantity_accepted, quantity_rejected, reject_reason, box_uids, rejected_box_uids)
       VALUES (receipt, item.id, lot.id, cardinality(accepted), cardinality(rejected), reason, accepted, rejected);

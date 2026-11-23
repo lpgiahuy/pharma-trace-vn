@@ -11,7 +11,7 @@ BEGIN
   IF current_setting('app.order_operation',true) IS DISTINCT FROM 'dispatch'
     OR current_setting('app.current_user_type',true) IS DISTINCT FROM 'employee'
     OR nullif(current_setting('app.current_user_id',true),'') IS NULL
-    OR NOT (coalesce(current_setting('app.current_user_role',true),'') IN ('SUPER_ADMIN','STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
+    OR NOT (coalesce(current_setting('app.current_user_role',true),'') IN ('SUPER_ADMIN','STORE_MANAGER') OR public.app_role_in_group('WH_TRANSFER'))
     OR public.order_staff(t.from_facility_id) IS NOT TRUE THEN
     RAISE EXCEPTION 'Source handoff is not authorized' USING ERRCODE='42501';
   END IF;

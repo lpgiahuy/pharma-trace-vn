@@ -9,7 +9,7 @@ function setup(status: string | null, boxesAtWarehouse = 2) {
     $queryRaw: jest.fn().mockResolvedValue(status === null ? [] : [{ status }]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     medicine_boxes: { count: jest.fn().mockResolvedValue(boxesAtWarehouse) },
-    batches: { update: jest.fn().mockResolvedValue({}) },
+    batches: { update: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(1) },
   };
   const prisma = {
     withBatchStatus: jest.fn((_actor: unknown, run: Run) => run(tx)),
@@ -26,6 +26,29 @@ async function errorCode(promise: Promise<unknown>): Promise<string | undefined>
 const manager = { id: 4, role: 'WAREHOUSE_MANAGER', type: 'employee', facilityId: 7 };
 const admin = { id: 1, role: 'SUPER_ADMIN', type: 'employee' };
 const staff = { id: 5, role: 'WAREHOUSE_STAFF', type: 'employee', facilityId: 7 };
+
+describe('BatchStatusService for factory staff', () => {
+  const factory = { id: 8, role: 'FACTORY_WAREHOUSE_STAFF', type: 'employee', facilityId: 4 };
+
+  it('holds a batch made at their own factory without looking at warehouse boxes', async () => {
+    const { tx, service } = setup('ACTIVE');
+    await expect(service.hold(factory, 10, 'Lab check')).resolves.toEqual({ id: 10, status: 'ON_HOLD' });
+    expect(tx.batches.count).toHaveBeenCalledWith({ where: { id: 10, manufacturer_source_facility_id: 4 } });
+    expect(tx.medicine_boxes.count).not.toHaveBeenCalled();
+  });
+
+  it('releases a held batch of their own factory', async () => {
+    const { service } = setup('ON_HOLD');
+    await expect(service.release(factory, 10, 'Lab cleared')).resolves.toEqual({ id: 10, status: 'ACTIVE' });
+  });
+
+  it('refuses a batch another factory made', async () => {
+    const { tx, service } = setup('ACTIVE');
+    tx.batches.count.mockResolvedValue(0);
+    expect(await errorCode(service.hold(factory, 10, 'x'))).toBe('WAREHOUSE_BATCH_NOT_FOUND');
+    expect(tx.batches.update).not.toHaveBeenCalled();
+  });
+});
 
 describe('BatchStatusService.hold', () => {
   it('puts an active batch at the manager warehouse on hold and records the reason', async () => {

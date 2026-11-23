@@ -8,7 +8,7 @@ import { isBoxUnit } from "../../../common/inventory/box.helper";
 import { DispatchTransferDto } from './dto/dispatch-transfer.dto';
 import { ReceiveTransferDto, ReceiveTransferLineDto } from './dto/receive-transfer.dto';
 import { HaltTransferDto, RerouteTransferDto, ReceiveTransferReturnDto } from './dto/transfer-return.dto';
-import { validateInspectionUids } from '../inspection.helper';
+import { deriveGoodUids, validateInspectionUids } from '../inspection.helper';
 import { LogisticsHistoryEvent } from '../logistics.types';
 import { ResolveDiscrepancyDto } from './dto/resolve-discrepancy.dto';
 
@@ -157,7 +157,18 @@ export class InternalTransferService {
       if (!Array.isArray(dto.manifest) || dto.manifest.length === 0) {
         throw new BadRequestException('A complete scanned source manifest is required.');
       }
-      await tx.$executeRaw`SELECT public.prepare_dispatch_manifest(${transferId}, ${JSON.stringify(dto.manifest)}::jsonb)`;
+      // A scanned SSCC carton stands for all its boxes: expand it here so the manifest still lists every box UID.
+      const manifest: { variantId: number; quantity: number; boxUids: string[] }[] = [];
+      for (const line of dto.manifest) {
+        let boxUids = line.boxUids ?? [];
+        const cartonCodes = (line.cartonCodes ?? []).map(code => code.trim()).filter(Boolean);
+        if (cartonCodes.length) {
+          const [expanded] = await tx.$queryRaw<{ uids: string[] }[]>`SELECT public.expand_dispatch_cartons(${transferId}::integer, ${line.variantId}::integer, ${cartonCodes}::text[]) AS uids`;
+          boxUids = [...boxUids, ...(expanded?.uids ?? [])];
+        }
+        manifest.push({ variantId: line.variantId, quantity: line.quantity, boxUids });
+      }
+      await tx.$executeRaw`SELECT public.prepare_dispatch_manifest(${transferId}, ${JSON.stringify(manifest)}::jsonb)`;
 
       const dispatched = await tx.internal_transfers.updateMany({
         where: { id: transferId, status: 'REQUESTED' },
@@ -408,8 +419,8 @@ export class InternalTransferService {
         if ((damagedQty > 0 || missingQty > 0) && isBoxUnit(orderItem?.unit_name) && shippedUids.length !== totalQuantity) {
           throw new BadRequestException('Assign dispatched package UIDs before discrepancy inspection.');
         }
-        const inspectedGoodUids = lineSpec?.goodUids ?? (damagedQty === 0 && missingQty === 0 ? shippedUids : []);
         const inspectedDamagedUids = lineSpec?.damagedUids ?? [];
+        const inspectedGoodUids = deriveGoodUids(shippedUids, lineSpec?.goodUids, inspectedDamagedUids, lineSpec?.missingUids);
         validateInspectionUids(shippedUids, [
           { quantity: goodQty, uids: inspectedGoodUids }, { quantity: damagedQty, uids: inspectedDamagedUids },
         ], true);

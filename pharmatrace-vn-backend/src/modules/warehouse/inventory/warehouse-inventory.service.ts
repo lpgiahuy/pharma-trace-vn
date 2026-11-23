@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { authActor } from '../../../common/auth-identity';
+import { authActor, normalizeRole } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { AVAILABLE_BOX_STATUSES } from '../../../common/inventory/box.helper';
 import { WH_ALL, WH_READ, isWarehouseRole, warehouseScope } from '../../../common/warehouse-roles';
@@ -35,6 +35,8 @@ export interface InventoryItem {
   stock: number;
   reserved: number;
   available: number;
+  /** In-stock boxes of batches on hold: counted in stock and available, but they cannot be reserved, packed or sent. */
+  held: number;
   quarantine: number;
   updatedAt: Date | null;
 }
@@ -57,7 +59,7 @@ export function pagination(total: number, page: number, limit: number): Paginati
   return { total, page, limit, totalPages: Math.ceil(total / limit) || 1 };
 }
 
-function toInventoryItem(row: InventoryRow, quarantine: Map<string, number>): InventoryItem {
+function toInventoryItem(row: InventoryRow, quarantine: Map<string, number>, held: Map<string, number>): InventoryItem {
   return {
     facilityId: row.facility_id,
     variantId: row.variant_id,
@@ -67,6 +69,7 @@ function toInventoryItem(row: InventoryRow, quarantine: Map<string, number>): In
     stock: row.stock_quantity,
     reserved: row.reserved_quantity ?? 0,
     available: availableStock(row),
+    held: held.get(`${row.facility_id}:${row.variant_id}`) ?? 0,
     quarantine: quarantine.get(`${row.facility_id}:${row.variant_id}`) ?? 0,
     updatedAt: row.updated_at,
   };
@@ -106,6 +109,23 @@ async function quarantineByKey(tx: Tx, variantIds: number[]): Promise<Map<string
   return new Map(rows.map(r => [`${r.facility_id}:${r.variant_id}`, r.quantity]));
 }
 
+/**
+ * In-stock boxes of batches that are ON_HOLD, per `facility:variant`. Boxes carry no packaging, so a batch belongs to the
+ * variant it was first stocked as (its production or purchase log): a medicine sold as Box and Blister Pack keeps them apart.
+ */
+async function heldByKey(tx: Tx, rows: InventoryRow[]): Promise<Map<string, number>> {
+  const facilityIds = [...new Set(rows.flatMap(r => (r.facility_id === null ? [] : [r.facility_id])))];
+  if (facilityIds.length === 0) return new Map();
+  const found = await tx.$queryRaw<{ facility_id: number; variant_id: number; held: number }[]>`
+    SELECT b.current_facility_id AS facility_id, origin.variant_id, count(*)::integer AS held
+    FROM public.medicine_boxes b JOIN public.batches lot ON lot.id = b.batch_id
+    JOIN LATERAL (SELECT l.variant_id FROM public.inventory_logs l WHERE l.batch_id = lot.id
+      AND l.transaction_type IN ('PRODUCTION_IN', 'PURCHASE_IN') ORDER BY l.id LIMIT 1) origin ON true
+    WHERE lot.status = 'ON_HOLD' AND b.status = ANY(${AVAILABLE_BOX_STATUSES}::text[]) AND b.current_facility_id = ANY(${facilityIds}::integer[])
+    GROUP BY 1, 2`;
+  return new Map(found.map(f => [`${f.facility_id}:${f.variant_id}`, f.held]));
+}
+
 @Injectable()
 export class WarehouseInventoryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -126,7 +146,8 @@ export class WarehouseInventoryService {
         tx.inventories.findMany({ where, select: inventorySelect, orderBy: [{ variant_id: 'asc' }, { facility_id: 'asc' }], skip: (page - 1) * limit, take: limit }),
       ]);
       const quarantine = await quarantineByKey(tx, rows.flatMap(r => (r.variant_id === null ? [] : [r.variant_id])));
-      return { items: rows.map(r => toInventoryItem(r, quarantine)), pagination: pagination(total, page, limit) };
+      const held = await heldByKey(tx, rows);
+      return { items: rows.map(r => toInventoryItem(r, quarantine, held)), pagination: pagination(total, page, limit) };
     });
   }
 
@@ -148,7 +169,8 @@ export class WarehouseInventoryService {
       const batches = await tx.batches.findMany({
         where: { id: { in: [...boxes.keys()].filter((id): id is number => id !== null) } }, select: batchSelect, orderBy: { expiry_date: 'asc' },
       });
-      return { stock: rows.map(r => toInventoryItem(r, quarantine)), batches: batches.map(b => toBatchItem(b, boxes.get(b.id) ?? 0)) };
+      const held = await heldByKey(tx, rows);
+      return { stock: rows.map(r => toInventoryItem(r, quarantine, held)), batches: batches.map(b => toBatchItem(b, boxes.get(b.id) ?? 0)) };
     });
   }
 
@@ -213,8 +235,12 @@ export class WarehouseInventoryService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const boxWhere = boxesInStockWhere(facilityId);
+    // A factory keeps seeing the batches it made after every box has left, so it can still hold or recall them.
+    const atFacility: Prisma.batchesWhereInput = facilityId !== null && normalizeRole(user.role) === 'FACTORY_WAREHOUSE_STAFF'
+      ? { OR: [{ manufacturer_source_facility_id: facilityId }, { medicine_boxes: { some: boxesAtWhere(facilityId) } }] }
+      : { medicine_boxes: { some: boxesAtWhere(facilityId) } };
     const where: Prisma.batchesWhereInput = {
-      medicine_boxes: { some: boxesAtWhere(facilityId) },
+      AND: [atFacility],
       ...(query.days ? { expiry_date: { lte: daysFromNow(query.days) } } : {}),
       ...(query.search ? { OR: [
         { batch_number: { contains: query.search, mode: 'insensitive' } },
@@ -238,12 +264,12 @@ export class WarehouseInventoryService {
     const facilityId = warehouseScope(user, query, WH_READ);
     return this.prisma.withWarehouseRead(authActor(user), async tx => {
       const [row, counts] = await Promise.all([
-        tx.batches.findUnique({ where: { id }, select: { ...batchSelect, initial_quantity: true, remaining_quantity: true, certificate_co_cq: true, hold_reason: true, held_at: true } }),
+        tx.batches.findUnique({ where: { id }, select: { ...batchSelect, manufacturer_source_facility_id: true, initial_quantity: true, remaining_quantity: true, certificate_co_cq: true, hold_reason: true, held_at: true } }),
         tx.medicine_boxes.groupBy({
           by: ['status'], where: { batch_id: id, ...boxesAtWhere(facilityId) }, _count: { _all: true },
         }),
       ]);
-      if (!row || (facilityId !== null && counts.length === 0)) throw warehouseError('WAREHOUSE_BATCH_NOT_FOUND');
+      if (!row || (facilityId !== null && counts.length === 0 && row.manufacturer_source_facility_id !== facilityId)) throw warehouseError('WAREHOUSE_BATCH_NOT_FOUND');
       const boxes = counts.map(c => ({ status: c.status, count: c._count._all }));
       const inStock = boxes.filter(b => AVAILABLE_BOX_STATUSES.includes(b.status ?? '')).reduce((sum, b) => sum + b.count, 0);
       return {
