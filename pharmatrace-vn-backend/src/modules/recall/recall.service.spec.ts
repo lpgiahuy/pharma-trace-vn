@@ -94,7 +94,7 @@ describe('RecallService.createForFactory', () => {
     expect(await failure(service.createForFactory(factory, dto))).toBe('RC_FORBIDDEN');
   });
 
-  it('needs an account assigned to a factory', async () => {
+  it('needs an account assigned to a factory', () => {
     const { prisma, service } = setup();
     expect(() => service.createForFactory({ ...factory, facilityId: undefined }, dto)).toThrow(AppException);
     expect(prisma.withActor).not.toHaveBeenCalled();
