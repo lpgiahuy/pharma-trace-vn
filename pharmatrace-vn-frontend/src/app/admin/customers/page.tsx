@@ -206,13 +206,16 @@ export default function CustomersManagementPage() {
 
   const isAuthenticated = mounted ? getIsAuthenticated() : false;
   const currentUser = mounted ? getUser() : null;
-  const canManageCustomerStatus = ['SUPER_ADMIN', 'STORE_MANAGER'].includes(currentUser?.role);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const canManageCustomerStatus = isSuperAdmin;
 
   useEffect(() => {
     if (mounted && !isAuthenticated) {
       router.push('/admin/login');
+    } else if (mounted && !isSuperAdmin) {
+      router.replace('/admin');
     }
-  }, [mounted, isAuthenticated, router]);
+  }, [mounted, isAuthenticated, isSuperAdmin, router]);
 
   const fetchCustomers = useCallback(
     async (page = 1, limit = 10) => {

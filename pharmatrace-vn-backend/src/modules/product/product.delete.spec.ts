@@ -8,7 +8,7 @@ describe('ProductService.delete', () => {
   };
   const orderTx = { $queryRaw: jest.fn() };
   const prisma = {
-    withCatalogManagement: jest.fn((_actor, callback) => callback(tx)),
+    withMedicineManagement: jest.fn((_actor, callback) => callback(tx)),
     withOrder: jest.fn((_operation, callback) => callback(orderTx)),
   };
   const cloudinary = { deleteImage: jest.fn() };

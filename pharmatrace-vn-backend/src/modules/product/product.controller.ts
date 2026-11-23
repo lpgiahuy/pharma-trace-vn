@@ -113,7 +113,7 @@ export class ProductController {
   @Post('admin/products')
   @ApiBearerAuth('bearerAuth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager')
+  @Roles('SUPER_ADMIN', 'SuperAdmin')
   @ApiOperation({
     summary: 'Create medicine product (Admin)',
     description: 'Adds a new medicine product to the catalog.',
@@ -131,7 +131,7 @@ export class ProductController {
   @Put('admin/products/:id')
   @ApiBearerAuth('bearerAuth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager')
+  @Roles('SUPER_ADMIN', 'SuperAdmin')
   @ApiOperation({
     summary: 'Update medicine product (Admin)',
     description: 'Updates information of an existing medicine product.',
@@ -154,7 +154,7 @@ export class ProductController {
   @Delete('admin/products/:id')
   @ApiBearerAuth('bearerAuth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager')
+  @Roles('SUPER_ADMIN', 'SuperAdmin')
   @ApiOperation({
     summary: 'Delete or deactivate medicine product (Admin)',
     description: 'Deletes product permanently if unused, or sets status to INACTIVE if referenced by orders/batches.',
@@ -173,7 +173,7 @@ export class ProductController {
   @Post('admin/products/upload-image')
   @ApiBearerAuth('bearerAuth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager')
+  @Roles('SUPER_ADMIN', 'SuperAdmin')
   @ApiOperation({
     summary: 'Upload image to Cloudinary (Admin)',
     description: 'Uploads an image to Cloudinary and returns the secure URL.',
@@ -227,7 +227,7 @@ export class ProductController {
   @Post('admin/products/:id/images')
   @ApiBearerAuth('bearerAuth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager')
+  @Roles('SUPER_ADMIN', 'SuperAdmin')
   @ApiOperation({
     summary: 'Upload product image to Cloudinary and link to product (Admin)',
     description: 'Uploads an image file to Cloudinary and updates the medicine record image_url.',

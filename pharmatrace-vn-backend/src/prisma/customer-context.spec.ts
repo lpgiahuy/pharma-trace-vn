@@ -8,7 +8,7 @@ describe('Customer management context', () => {
     tx = { $queryRaw: jest.fn().mockResolvedValue([{ ready: true }]) };
     service.$transaction = jest.fn(run => run(tx)) as any;
   });
-  it.each(['ADMIN', 'WAREHOUSE_STAFF', 'DELIVERY_STAFF'])('rejects %s before querying', async role => {
+  it.each(['ADMIN', 'STORE_MANAGER', 'PHARMACIST', 'WAREHOUSE_STAFF', 'DELIVERY_STAFF'])('rejects %s before querying', async role => {
     const run = jest.fn();
     await expect(service.withCustomerManagement({ id: 1, type: 'employee', role }, run)).rejects.toThrow();
     expect(run).not.toHaveBeenCalled();
@@ -25,8 +25,8 @@ describe('Customer management context', () => {
     expect(run).not.toHaveBeenCalled();
   });
   it('sets transaction-local customer management variables', async () => {
-    const result = await service.withCustomerManagement({ id: 12, type: 'employee', role: 'STORE_MANAGER', facilityId: 5 }, () => Promise.resolve('ok'));
+    const result = await service.withCustomerManagement({ id: 12, type: 'employee', role: 'SUPER_ADMIN', facilityId: 5 }, () => Promise.resolve('ok'));
     expect(result).toBe('ok');
-    expect(tx.$queryRaw.mock.calls.slice(1).map(call => call[1])).toEqual(['manage', '12', 'employee', 'STORE_MANAGER', '5', 'read']);
+    expect(tx.$queryRaw.mock.calls.slice(1).map(call => call[1])).toEqual(['manage', '12', 'employee', 'SUPER_ADMIN', '5', 'read']);
   });
 });

@@ -211,11 +211,15 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
               },
             ]
           : []),
-        {
-          key: '/admin/customers',
-          icon: <UserOutlined style={{ fontSize: 16 }} />,
-          label: 'Customer Management',
-        },
+        ...(normalizedRole === 'SUPERADMIN'
+          ? [
+              {
+                key: '/admin/customers',
+                icon: <UserOutlined style={{ fontSize: 16 }} />,
+                label: 'Customer Management',
+              },
+            ]
+          : []),
       ];
 
   // Determine selected key based on current pathname

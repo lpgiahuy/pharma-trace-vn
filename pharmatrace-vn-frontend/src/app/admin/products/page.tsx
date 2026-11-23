@@ -62,6 +62,7 @@ export default function AdminProductsPage() {
 
   const isAuthenticated = mounted ? getIsAuthenticated() : false;
   const user = mounted ? getUser() : null;
+  const canWriteProducts = user?.role === 'SUPER_ADMIN';
 
   useEffect(() => {
     if (mounted && !isAuthenticated) {
@@ -290,15 +291,17 @@ export default function AdminProductsPage() {
               <ReloadOutlined className={cn(loading && 'animate-spin')} />
               Refresh
             </button>
-            <Link href="/admin/products/new">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-[#1e4287] hover:bg-[#163266] text-white text-xs font-medium transition-colors cursor-pointer border-none shadow-xs"
-              >
-                <PlusOutlined />
-                Add Product
-              </button>
-            </Link>
+            {canWriteProducts && (
+              <Link href="/admin/products/new">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-[#1e4287] hover:bg-[#163266] text-white text-xs font-medium transition-colors cursor-pointer border-none shadow-xs"
+                >
+                  <PlusOutlined />
+                  Add Product
+                </button>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -466,7 +469,7 @@ export default function AdminProductsPage() {
           centered
           width={640}
           footer={
-            viewingProduct ? (
+            viewingProduct && canWriteProducts ? (
               <div className="flex items-center justify-between pt-3 border-t border-slate-100 flex-wrap gap-2">
                 <div>
                   <Popconfirm

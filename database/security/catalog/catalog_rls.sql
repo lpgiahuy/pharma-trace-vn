@@ -9,8 +9,15 @@ LANGUAGE sql STABLE SET search_path=pg_catalog AS $$
 $$;
 REVOKE ALL ON FUNCTION public.catalog_manager() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.catalog_manager() TO app_user;
+-- Medicine, packaging variant and medicine-category writes are SUPER_ADMIN only; categories stay shared.
+CREATE OR REPLACE FUNCTION public.catalog_medicine_manager() RETURNS boolean
+LANGUAGE sql STABLE SET search_path=pg_catalog AS $$
+ SELECT public.catalog_manager() AND current_setting('app.current_user_role',true)='SUPER_ADMIN'
+$$;
+REVOKE ALL ON FUNCTION public.catalog_medicine_manager() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.catalog_medicine_manager() TO app_user;
 DO $$
-DECLARE t text; cols text; seq text;
+DECLARE t text; cols text; seq text; writer text;
 BEGIN
  FOREACH t IN ARRAY ARRAY['medicines','categories','medicine_categories','packaging_variants'] LOOP
   IF EXISTS (SELECT FROM pg_policies WHERE schemaname='public' AND tablename=t AND policyname NOT IN ('catalog_read','catalog_write')) THEN
@@ -30,8 +37,9 @@ BEGIN
   END IF;
   EXECUTE format('DROP POLICY IF EXISTS catalog_read ON public.%I',t);
   EXECUTE format('CREATE POLICY catalog_read ON public.%I FOR SELECT TO app_user USING (true)',t);
+  writer := CASE WHEN t='categories' THEN 'public.catalog_manager()' ELSE 'public.catalog_medicine_manager()' END;
   EXECUTE format('DROP POLICY IF EXISTS catalog_write ON public.%I',t);
-  EXECUTE format('CREATE POLICY catalog_write ON public.%I FOR ALL TO app_user USING (public.catalog_manager()) WITH CHECK (public.catalog_manager())',t);
+  EXECUTE format('CREATE POLICY catalog_write ON public.%I FOR ALL TO app_user USING (%s) WITH CHECK (%s)',t,writer,writer);
   EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
   EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY',t);
  END LOOP;

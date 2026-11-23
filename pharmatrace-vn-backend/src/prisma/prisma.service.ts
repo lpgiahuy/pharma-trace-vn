@@ -124,7 +124,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async withCustomerManagement<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST'].includes(actor.role)) throw new ForbiddenException('Invalid customer management scope');
+    if (actor.type !== 'employee' || actor.role !== 'SUPER_ADMIN') throw new ForbiddenException('Invalid customer management scope');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
         SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relforcerowsecurity
@@ -143,9 +143,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
   }
 
-  async withCatalogManagement<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  /** Medicine, packaging variant and medicine-category writes are SUPER_ADMIN only. */
+  withMedicineManagement<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.withCatalogManagement(identity, run, 'medicine');
+  }
+
+  async withCatalogManagement<T>(identity: AuthActor, run: (tx: Prisma.TransactionClient) => Promise<T>, scope: 'category' | 'medicine' = 'category'): Promise<T> {
     const actor = authActor(identity);
-    if (actor.type !== 'employee' || !['SUPER_ADMIN', 'STORE_MANAGER'].includes(actor.role)) throw new ForbiddenException('Invalid catalog management scope');
+    const allowedRoles = scope === 'medicine' ? ['SUPER_ADMIN'] : ['SUPER_ADMIN', 'STORE_MANAGER'];
+    if (actor.type !== 'employee' || !allowedRoles.includes(actor.role)) throw new ForbiddenException('Invalid catalog management scope');
     return this.$transaction(async tx => {
       const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
         SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND bool_and(c.relrowsecurity AND c.relforcerowsecurity AND c.relowner <> r.oid) AS ready

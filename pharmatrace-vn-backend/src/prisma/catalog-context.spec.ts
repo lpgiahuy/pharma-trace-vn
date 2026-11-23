@@ -29,4 +29,13 @@ describe('Catalog management context', () => {
     expect(result).toBe('ok');
     expect(tx.$queryRaw.mock.calls.slice(1).map(call => call[1])).toEqual(['manage', '12', 'employee', 'STORE_MANAGER']);
   });
+  it.each(['STORE_MANAGER', 'ADMIN', 'PHARMACIST', 'WAREHOUSE_STAFF'])('rejects %s for medicine management before querying', async role => {
+    const run = jest.fn();
+    await expect(service.withMedicineManagement({ id: 1, type: 'employee', role }, run)).rejects.toThrow();
+    expect(run).not.toHaveBeenCalled();
+  });
+  it('allows SUPER_ADMIN to manage medicines', async () => {
+    const result = await service.withMedicineManagement({ id: 3, type: 'employee', role: 'SUPER_ADMIN' }, () => Promise.resolve('ok'));
+    expect(result).toBe('ok');
+  });
 });
