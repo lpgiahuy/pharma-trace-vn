@@ -25,6 +25,7 @@ import { TraceModule } from './modules/trace/trace.module';
 import { FraudModule } from './modules/fraud/fraud.module';
 import { ReportModule } from './modules/report/report.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
+import { ArticleModule } from './modules/article/article.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -56,6 +57,7 @@ import { AppService } from './app.service';
     FraudModule,
     ReportModule,
     ChatbotModule,
+    ArticleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

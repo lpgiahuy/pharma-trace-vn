@@ -99,6 +99,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
   }
 
+  async withArticle<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, identity?: AuthActor): Promise<T> {
+    const actor = identity ? authActor(identity) : undefined;
+    return this.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${actor ? String(actor.id) : ''}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_type', ${actor?.type || ''}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', ${actor?.role || ''}, true)`;
+      return operation(tx);
+    });
+  }
+
   async prepareVoucher(tx: Prisma.TransactionClient, scope: VoucherScope | 'checkout', code = '', orderId?: number): Promise<void> {
     const [state] = await tx.$queryRaw<{ ready: boolean }[]>`
       SELECT NOT r.rolsuper AND NOT r.rolbypassrls AND c.relrowsecurity AND c.relforcerowsecurity
