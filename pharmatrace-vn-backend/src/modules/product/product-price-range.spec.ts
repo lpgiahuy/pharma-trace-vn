@@ -27,6 +27,7 @@ describe('product price range filter (B2)', () => {
   describe('ProductService.findAll', () => {
     const prisma = {
       medicines: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
     const service = new ProductService(prisma as never, {} as never);
 
