@@ -265,6 +265,10 @@ export class ProductService {
       });
     }
 
+    if (query?.minPrice !== undefined && query?.maxPrice !== undefined && query.minPrice > query.maxPrice) {
+      throw new BadRequestException('Minimum price cannot be greater than maximum price');
+    }
+
     if (query?.minPrice !== undefined || query?.maxPrice !== undefined) {
       const minVal = query.minPrice !== undefined ? new Prisma.Decimal(query.minPrice) : undefined;
       const maxVal = query.maxPrice !== undefined ? new Prisma.Decimal(query.maxPrice) : undefined;

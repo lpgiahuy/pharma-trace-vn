@@ -11,6 +11,7 @@ import type { customers } from '@prisma/client';
 import { authActor, requireCustomer } from '../../../common/auth-identity';
 import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { staffProfile } from '../auth-profile';
+import { normalizeVietnamPhone } from '../../../common/phone';
 
 function sanitizeCustomer(customer: any) {
   return {
@@ -76,15 +77,17 @@ export class AuthUserService {
 
   async loginCustomer(dto: UserLoginDto) {
     const identifier = dto.identifier.trim().toLowerCase();
+    // A phone typed as +84... or with spaces matches the stored local form.
+    const phoneIdentifier = normalizeVietnamPhone(dto.identifier) ?? identifier;
 
     const customer = await this.prisma.withAuth((tx) => tx.customers.findFirst({
       where: {
         OR: [
-          { phone_number: identifier },
+          { phone_number: phoneIdentifier },
           { email: identifier },
         ],
       },
-    }), { operation: 'customer_login', identifier });
+    }), { operation: 'customer_login', identifier: phoneIdentifier });
 
     if (!customer || !customer.password_hash) {
       throw new UnauthorizedException('Invalid phone/email or password');

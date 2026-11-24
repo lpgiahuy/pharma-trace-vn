@@ -10,6 +10,7 @@ import { AuthLayoutWrapper } from '@/components/layout/AuthLayoutWrapper';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { authService } from '@/services/auth.service';
+import { normalizeVietnamPhone, PHONE_ERROR_MESSAGE } from '@/utils/phone';
 
 export default function RegisterPage() {
   const { message } = App.useApp();
@@ -38,7 +39,7 @@ export default function RegisterPage() {
     try {
       await authService.register({
         name: data.name.trim(),
-        phone: data.phone.trim(),
+        phone: normalizeVietnamPhone(data.phone) ?? data.phone.trim(),
         email: data.email.trim().toLowerCase(),
         password: data.password,
         address: data.address?.trim() || undefined,
@@ -89,7 +90,7 @@ export default function RegisterPage() {
             required
             {...register('phone', {
               required: 'Mobile Number is required',
-              minLength: { value: 9, message: 'Please enter a valid phone number' },
+              validate: (value: string) => normalizeVietnamPhone(value) !== null || PHONE_ERROR_MESSAGE,
             })}
           />
 
