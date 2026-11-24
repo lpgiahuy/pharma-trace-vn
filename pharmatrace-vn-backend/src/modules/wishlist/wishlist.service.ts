@@ -12,6 +12,9 @@ export class WishlistService {
 
   private formatWishlistItem(w: any) {
     const m = w.medicines;
+    // Same definition as the product list: stock minus reserved, summed over inventory rows, never below zero.
+    const availableStock = (pv: any): number => (Array.isArray(pv.inventories) ? pv.inventories : [])
+      .reduce((sum: number, inv: any) => sum + Math.max(0, (inv.stock_quantity || 0) - (inv.reserved_quantity || 0)), 0);
     const packagingOptions = (m.packaging_variants || []).map((pv: any) => ({
       id: pv.id,
       unitName: pv.unit_name,
@@ -19,6 +22,7 @@ export class WishlistService {
       originalPrice: pv.original_price ? Number(pv.original_price) : null,
       discountPercent: pv.discount_percent ?? 0,
       isBaseUnit: Boolean(pv.is_base_unit),
+      stock: availableStock(pv),
     }));
 
     const baseVariant =
@@ -31,8 +35,7 @@ export class WishlistService {
       ? Number(baseVariant.original_price)
       : null;
 
-    const calculatedStock = m.id % 7 === 0 ? 0 : (m.id * 13) % 80 + 5;
-    const totalStock = m.total_stock !== undefined && m.total_stock !== null ? Number(m.total_stock) : calculatedStock;
+    const totalStock = packagingOptions.reduce((sum: number, option: { stock: number }) => sum + option.stock, 0);
 
     return {
       id: m.id,
@@ -90,7 +93,7 @@ export class WishlistService {
         include: {
           medicines: {
             include: {
-              packaging_variants: true,
+              packaging_variants: { include: { inventories: true } },
               medicine_categories: {
                 include: { category: true },
               },
