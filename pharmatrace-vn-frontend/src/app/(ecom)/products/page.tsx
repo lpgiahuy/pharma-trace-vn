@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Minus,
   X,
   Package,
   Search,
@@ -22,6 +23,7 @@ import { Category } from '@/types/category.types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
 import { formatCurrency, cn } from '@/utils';
 import { parsePriceRange } from '@/utils/price-range';
+import { selectionState, toggleCategorySelection, topSelectedIds } from '@/utils/category-selection';
 import { pickVariantForPriceRange } from '@/utils/product-variant';
 import { ProductCard } from '@/components/shared/ProductCard';
 
@@ -60,18 +62,22 @@ const buildCategoryTree = (flatList: Category[]): (Category & { children?: Categ
 
 function CategoryFilterItem({
   cat,
+  tree,
   selectedCategory,
   onCategoryToggle,
 }: {
   cat: Category & { children?: Category[] };
+  tree: (Category & { children?: Category[] })[];
   selectedCategory?: string;
   onCategoryToggle: (id: number | '') => void;
 }) {
   const selectedIds = selectedCategory ? String(selectedCategory).split(',').filter(Boolean) : [];
   const hasChildren = cat.children && cat.children.length > 0;
-  const isParentSelected = selectedIds.includes(String(cat.id));
-  const hasChildSelected = cat.children?.some((child) => selectedIds.includes(String(child.id)));
-  const isParentActive = isParentSelected || hasChildSelected;
+  // A parent is checked when it and all its children are selected, and partial when only some children are.
+  const parentState = selectionState(tree, selectedIds, cat.id);
+  const isParentSelected = parentState === 'checked';
+  const isParentPartial = parentState === 'partial';
+  const isParentActive = parentState !== 'none';
 
   const [expanded, setExpanded] = useState(isParentActive);
 
@@ -89,7 +95,7 @@ function CategoryFilterItem({
           onClick={() => onCategoryToggle(cat.id)}
           className={cn(
             'flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors group text-left min-w-0 cursor-pointer',
-            isParentSelected
+            isParentSelected || isParentPartial
               ? 'bg-blue-50 border-blue-200 text-[#004996] font-bold'
               : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50',
           )}
@@ -97,11 +103,13 @@ function CategoryFilterItem({
           <div
             className={cn(
               'w-4 h-4 rounded-md border flex items-center justify-center transition-colors shrink-0',
-              isParentSelected ? 'border-[#004996] bg-[#004996]' : 'border-slate-300 text-slate-400 group-hover:text-slate-600',
+              isParentSelected || isParentPartial ? 'border-[#004996] bg-[#004996]' : 'border-slate-300 text-slate-400 group-hover:text-slate-600',
             )}
           >
             {isParentSelected ? (
               <Check className="w-2.5 h-2.5 text-white stroke-[2.5]" />
+            ) : isParentPartial ? (
+              <Minus aria-label="Some subcategories selected" className="w-2.5 h-2.5 text-white stroke-[3]" />
             ) : (
               <CategoryIcon icon={cat.icon || 'pill'} size={12} />
             )}
@@ -131,7 +139,7 @@ function CategoryFilterItem({
       {hasChildren && expanded && (
         <div className="pl-5 space-y-1 animate-fade-in">
           {cat.children!.map((child) => {
-            const isChildActive = selectedIds.includes(String(child.id));
+            const isChildActive = selectionState(tree, selectedIds, child.id) === 'checked';
             return (
               <button
                 key={child.id}
@@ -258,13 +266,8 @@ function ProductListContainer() {
       return;
     }
     const current = categoryParam ? categoryParam.split(',').filter(Boolean) : [];
-    const strId = String(catId);
-    if (current.includes(strId)) {
-      const next = current.filter((id) => id !== strId);
-      setParam('category', next.join(','));
-    } else {
-      setParam('category', [...current, strId].join(','));
-    }
+    // A parent selects (or clears) everything under it; a parent is only ticked when all its children are.
+    setParam('category', toggleCategorySelection(categoryTree, current, Number(catId)).join(','));
   };
 
   const handleBrandToggle = (brandName: string) => {
@@ -431,6 +434,7 @@ function ProductListContainer() {
             <CategoryFilterItem
               key={cat.id}
               cat={cat}
+              tree={categoryTree}
               selectedCategory={categoryParam}
               onCategoryToggle={handleCategoryToggle}
             />
@@ -725,9 +729,7 @@ function ProductListContainer() {
               <span className="text-xs font-semibold text-slate-500 mr-1">
                 Active filters:
               </span>
-              {categoryParam
-                .split(',')
-                .filter(Boolean)
+              {topSelectedIds(categoryTree, categoryParam.split(',').filter(Boolean))
                 .map((catIdStr) => {
                   const cat = categories.find((c) => String(c.id) === catIdStr);
                   return (
