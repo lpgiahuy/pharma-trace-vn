@@ -9,6 +9,7 @@ import { useAuth } from '@/store/useAuthStore';
 import { useCartStore } from '@/store/useCartStore';
 import { Product } from '@/types/product.types';
 import { formatCurrency, cleanText, cn } from '@/utils';
+import { pickDisplayedVariant } from '@/utils/product-variant';
 
 export function ProductCard({
   product,
@@ -61,6 +62,9 @@ export function ProductCard({
 
   const addItem = useCartStore((state) => state.addItem);
 
+  // The unit the card labels is the unit it sells: the given variant, otherwise the product's base unit.
+  const shownVariant = pickDisplayedVariant(product, variant);
+
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -70,8 +74,7 @@ export function ProductCard({
       return;
     }
 
-    const baseVariant =
-      variant || product.packagingOptions?.[0] || product.packaging;
+    const baseVariant = shownVariant || product.packaging;
 
     const effectivePrice = baseVariant && 'price' in baseVariant && baseVariant.price
       ? Number(baseVariant.price)
@@ -88,7 +91,7 @@ export function ProductCard({
         variantId: baseVariant?.id,
         unitName: baseVariant?.unitName || 'Box',
         price: effectivePrice,
-        originalPrice: Number((variant?.originalPrice ?? product.unitPrice) || effectivePrice),
+        originalPrice: Number((shownVariant?.originalPrice ?? product.unitPrice) || effectivePrice),
       },
       1,
     );
@@ -97,17 +100,19 @@ export function ProductCard({
   };
 
   // Price shown on the card: the given variant when provided, otherwise the product default.
-  const shownPrice = variant ? Number(variant.price) : Number(product.promotionalPrice || product.unitPrice);
-  const shownOriginal = variant ? Number(variant.originalPrice ?? 0) : Number(product.unitPrice);
-  const shownUnit = variant?.unitName || product.packaging?.unitName || 'Box';
+  const shownPrice = shownVariant ? Number(shownVariant.price) : Number(product.promotionalPrice || product.unitPrice);
+  const shownOriginal = shownVariant ? Number(shownVariant.originalPrice ?? 0) : Number(product.unitPrice);
+  const shownUnit = shownVariant?.unitName || product.packaging?.unitName || 'Box';
 
   const hasDiscount = Boolean(shownOriginal && shownPrice && shownPrice < shownOriginal);
 
   const discount = hasDiscount
-    ? (variant?.discountPercent || Math.round(((shownOriginal - shownPrice) / shownOriginal) * 100))
+    ? (shownVariant?.discountPercent || Math.round(((shownOriginal - shownPrice) / shownOriginal) * 100))
     : 0;
 
-  const isInStock = variant ? (variant.stock ?? 0) > 0 : (product.totalStock ?? 0) > 0;
+  const isInStock = shownVariant
+    ? (shownVariant.stock ?? (variant ? 0 : (product.totalStock ?? 0))) > 0
+    : (product.totalStock ?? 0) > 0;
 
   return (
     <article className="bg-white rounded-2xl border border-slate-200/90 hover:border-slate-300 hover:shadow-md transition-all duration-300 p-4 flex flex-col h-full group">
