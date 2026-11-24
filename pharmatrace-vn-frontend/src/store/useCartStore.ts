@@ -21,6 +21,8 @@ export interface CartItem {
   price: number;
   originalPrice?: number | null;
   quantity: number;
+  /** Units that can still be supplied, as last reported by the server. */
+  availableStock?: number;
   packagingOptions?: CartPackagingOption[];
 }
 
@@ -105,6 +107,7 @@ const mapServerItemToCartItem =(s: ServerCartItem): CartItem => ({
   price: Number(s.price),
   originalPrice: s.originalPrice ? Number(s.originalPrice) : null,
   quantity: s.quantity,
+  availableStock: typeof s.availableStock === 'number' ? s.availableStock : undefined,
   packagingOptions: (s.packagingOptions || []).map((p) => ({
     id: p.id,
     unitName: p.unitName,

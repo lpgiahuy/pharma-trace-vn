@@ -37,6 +37,7 @@ import { voucherService } from '@/services/voucher.service';
 import VoucherPickerModal from '@/components/shared/VoucherPickerModal';
 import { Prescription, prescriptionService } from '@/services/prescription.service';
 import { formatCurrency } from '@/utils';
+import { findStockIssues } from '@/utils/cart-stock';
 
 const CHECKOUT_DRAFT_KEY = 'pharmatrace_checkout_draft_v1';
 
@@ -177,6 +178,8 @@ export default function CheckoutPage() {
     return items.filter((item) => selectedItemIds.includes(item.id));
   }, [items, selectedItemIds]);
   const needsPrescription = selectedItems.some((item) => item.isPrescription);
+  // Items asking for more than can be supplied block the order; the cart keeps their available amount fresh.
+  const stockIssues = useMemo(() => findStockIssues(selectedItems), [selectedItems]);
 
   useEffect(() => {
     if (!isAuthenticated || !needsPrescription) return;
@@ -384,6 +387,11 @@ export default function CheckoutPage() {
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (stockIssues.length > 0) {
+      message.error(stockIssues[0].message);
+      return;
+    }
+
     if (!isAuthenticated) {
       message.warning('Please log in to complete your order.');
       router.push('/login?redirect=/checkout');
@@ -578,6 +586,20 @@ export default function CheckoutPage() {
             Enter your shipping details and select a payment method to complete your order.
           </p>
         </div>
+
+        {stockIssues.length > 0 && (
+          <div role="alert" className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="font-semibold">Some items are above the available stock</p>
+            <ul className="mt-1 list-disc pl-5 space-y-0.5">
+              {stockIssues.map((issue) => (
+                <li key={issue.id}>{issue.message}</li>
+              ))}
+            </ul>
+            <Link href="/cart" className="mt-2 inline-block font-semibold text-[#004996] hover:underline">
+              Edit your cart
+            </Link>
+          </div>
+        )}
 
         <form onSubmit={handleSubmitOrder}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start">
@@ -901,9 +923,14 @@ export default function CheckoutPage() {
                           </button>
                         </div>
                       </div>
-                      <span className="text-sm font-semibold text-green-700 whitespace-nowrap">
-                        -{formatCurrency(voucherDiscount)}
-                      </span>
+                      {voucherDiscount > 0 ? (
+                        <span className="text-sm font-semibold text-green-700 whitespace-nowrap">
+                          -{formatCurrency(voucherDiscount)}
+                        </span>
+                      ) : (
+                        // The voucher no longer applies (e.g. the order fell below its minimum): say so instead of showing a zero discount.
+                        <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Not applied</span>
+                      )}
                     </div>
                   ) : (
                     <button
@@ -1046,7 +1073,7 @@ export default function CheckoutPage() {
                 {/* Place Order Button */}
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || stockIssues.length > 0}
                   className="w-full py-2.5 px-4 rounded-md bg-[#004996] hover:bg-[#004084] disabled:bg-gray-300 text-white font-medium text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   {submitting ? (

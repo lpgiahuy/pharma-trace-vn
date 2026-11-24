@@ -69,6 +69,12 @@ describe('CartService', () => {
         delete: jest.fn().mockResolvedValue(mockCartRecord),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      // 100 units on hand, 10 reserved: 90 can still be supplied.
+      inventories: {
+        findMany: jest.fn().mockResolvedValue([{ variant_id: 10, facility_id: 1, stock_quantity: 100, reserved_quantity: 10 }]),
+      },
+      // Boxes of held, recalled or expired lots per facility and medicine (none by default).
+      $queryRaw: jest.fn().mockResolvedValue([]),
       withActor: jest.fn((_actor: unknown, operation: (tx: any) => Promise<unknown>) => operation(prisma)),
     };
 
@@ -209,6 +215,68 @@ describe('CartService', () => {
       expect(result.items).toEqual([]);
       expect(result.totalItems).toBe(0);
       expect(result.subtotal).toBe(0);
+    });
+  });
+
+  describe('stock limits (C1)', () => {
+    it('reports the units that can still be supplied for every cart item', async () => {
+      const result = await service.getCart(1);
+      expect(result.items[0].availableStock).toBe(90);
+    });
+
+    it('reports zero for a unit without inventory rows', async () => {
+      prisma.inventories.findMany.mockResolvedValueOnce([]);
+      const result = await service.getCart(1);
+      expect(result.items[0].availableStock).toBe(0);
+    });
+
+    it('rejects adding more than is available, naming the item and the amount', async () => {
+      prisma.cart_items.findUnique.mockResolvedValueOnce(null);
+      await expect(service.addToCart(1, { variantId: 10, quantity: 500 })).rejects.toThrow(/Only 90 of .* available/);
+      expect(prisma.cart_items.create).not.toHaveBeenCalled();
+    });
+
+    it('counts what is already in the cart when adding more', async () => {
+      prisma.cart_items.findUnique.mockResolvedValueOnce({ ...mockCartRecord, quantity: 89 });
+      await expect(service.addToCart(1, { variantId: 10, quantity: 2 })).rejects.toThrow(/Only 90 of/);
+      expect(prisma.cart_items.update).not.toHaveBeenCalled();
+    });
+
+    it('allows exactly the available amount', async () => {
+      prisma.cart_items.findUnique.mockResolvedValueOnce(null);
+      await service.addToCart(1, { variantId: 10, quantity: 90 });
+      expect(prisma.cart_items.create).toHaveBeenCalled();
+    });
+
+    it('rejects adding a unit that is out of stock', async () => {
+      prisma.inventories.findMany.mockResolvedValueOnce([{ variant_id: 10, facility_id: 1, stock_quantity: 5, reserved_quantity: 5 }]);
+      prisma.cart_items.findUnique.mockResolvedValueOnce(null);
+      await expect(service.addToCart(1, { variantId: 10, quantity: 1 })).rejects.toThrow(/out of stock/);
+    });
+
+    it('rejects raising a quantity above the available amount but always allows lowering it', async () => {
+      await expect(service.updateQuantity(1, 10, { quantity: 91 })).rejects.toThrow(/Only 90 of/);
+      expect(prisma.cart_items.update).not.toHaveBeenCalled();
+      prisma.cart_items.findUnique.mockResolvedValueOnce({ ...mockCartRecord, quantity: 500 });
+      await service.updateQuantity(1, 10, { quantity: 400 });
+      expect(prisma.cart_items.update).toHaveBeenCalledWith(expect.objectContaining({ data: { quantity: 400 } }));
+    });
+
+    it('counts only warehouses and pharmacies, like checkout (a factory does not ship to customers)', async () => {
+      await service.getCart(1);
+      expect(prisma.inventories.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ facilities: { facility_type: { in: ['CENTRAL_WAREHOUSE', 'BRANCH_WAREHOUSE', 'PHARMACY'] } } }),
+      }));
+    });
+
+    it('sums facilities and subtracts boxes of held or expired lots', async () => {
+      prisma.inventories.findMany.mockResolvedValueOnce([
+        { variant_id: 10, facility_id: 1, stock_quantity: 100, reserved_quantity: 10 },
+        { variant_id: 10, facility_id: 2, stock_quantity: 50, reserved_quantity: 0 },
+      ]);
+      prisma.$queryRaw.mockResolvedValueOnce([{ facility_id: 2, medicine_id: 100, boxes: 20 }]);
+      const result = await service.getCart(1);
+      expect(result.items[0].availableStock).toBe(90 + 30);
     });
   });
 });

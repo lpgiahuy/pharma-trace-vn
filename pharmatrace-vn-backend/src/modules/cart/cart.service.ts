@@ -28,6 +28,8 @@ export interface FormattedCartItem {
   isPrescription: boolean;
   status: string;
   totalStock: number;
+  /** Units that can still be supplied for this packaging unit (stock minus reserved, all facilities). */
+  availableStock: number;
   packagingOptions: {
     id: number;
     unitName: string;
@@ -60,34 +62,69 @@ export class CartService {
   }
 
 
+  /**
+   * Units that can be supplied per variant, counted the way checkout counts them: warehouses and pharmacies only
+   * (a factory does not ship to customers), stock minus reserved, minus boxes of held, recalled or expired lots.
+   * The final check still happens, atomically, when the order is placed.
+   */
+  private async getAvailableStockByVariant(
+    tx: Prisma.TransactionClient,
+    variants: { id: number | null; medicineId: number | null }[],
+  ): Promise<Map<number, number>> {
+    const result = new Map<number, number>();
+    const known = variants.filter((v): v is { id: number; medicineId: number | null } => v.id !== null);
+    if (known.length === 0) return result;
+
+    const rows = await tx.inventories.findMany({
+      where: {
+        variant_id: { in: known.map((v) => v.id) },
+        facilities: { facility_type: { in: ['CENTRAL_WAREHOUSE', 'BRANCH_WAREHOUSE', 'PHARMACY'] } },
+      },
+      select: { variant_id: true, facility_id: true, stock_quantity: true, reserved_quantity: true },
+    });
+
+    const medicineIds = [...new Set(known.map((v) => v.medicineId).filter((id): id is number => id !== null))];
+    const blockedRows = medicineIds.length === 0
+      ? []
+      : await tx.$queryRaw<{ facility_id: number; medicine_id: number; boxes: number }[]>`
+          SELECT * FROM public.unsellable_box_counts(${medicineIds}::integer[])`;
+    const medicineOf = new Map(known.map((v) => [v.id, v.medicineId]));
+
+    for (const row of rows) {
+      if (row.variant_id === null) continue;
+      const medicineId = medicineOf.get(row.variant_id);
+      const blocked = Number(blockedRows.find((b) => b.facility_id === row.facility_id && b.medicine_id === medicineId)?.boxes ?? 0);
+      const available = Math.max(0, row.stock_quantity - (row.reserved_quantity ?? 0) - blocked);
+      result.set(row.variant_id, (result.get(row.variant_id) ?? 0) + available);
+    }
+    return result;
+  }
+
+  /** Rejects a cart quantity above what can be supplied, naming the item and the available amount. */
+  private async assertQuantityAvailable(
+    tx: Prisma.TransactionClient,
+    variant: { id: number; unit_name: string; medicine: { id: number; medicine_name: string } },
+    quantity: number,
+  ) {
+    const available = await this.getVariantAvailableStock(tx, variant.id, variant.medicine);
+    if (available <= 0) {
+      throw new BadRequestException(`"${variant.medicine.medicine_name}" (${variant.unit_name}) is currently out of stock`);
+    }
+    if (quantity > available) {
+      throw new BadRequestException(`Only ${available} of "${variant.medicine.medicine_name}" (${variant.unit_name}) available; you asked for ${quantity}`);
+    }
+  }
+
   private async getVariantAvailableStock(
     tx: Prisma.TransactionClient,
     variantId: number,
-    medicine: { id: number; total_stock?: number | null },
+    medicine: { id: number },
   ): Promise<number> {
-    const invCount = await tx.inventories.count({
-      where: { variant_id: variantId },
-    });
-
-    if (invCount > 0) {
-      const inv = await tx.inventories.aggregate({
-        where: { variant_id: variantId },
-        _sum: {
-          stock_quantity: true,
-          reserved_quantity: true,
-        },
-      });
-      const stock = (inv._sum.stock_quantity ?? 0) - (inv._sum.reserved_quantity ?? 0);
-      return Math.max(0, stock);
-    }
-
-    // Fallback: If not allocated in inventories table, fallback to medicine.total_stock or 0
-    return medicine.total_stock !== undefined && medicine.total_stock !== null
-      ? Number(medicine.total_stock)
-      : 0;
+    const stock = await this.getAvailableStockByVariant(tx, [{ id: variantId, medicineId: medicine.id }]);
+    return stock.get(variantId) ?? 0;
   }
 
-  private formatCartItem(cartItem: any): FormattedCartItem | null {
+  private formatCartItem(cartItem: any, availableStock: number): FormattedCartItem | null {
     const variant = cartItem.packaging_variants;
     if (!variant || !variant.medicine) return null;
 
@@ -127,6 +164,7 @@ export class CartService {
       isPrescription: Boolean(m.is_prescription),
       status: m.status,
       totalStock,
+      availableStock,
       packagingOptions,
     };
   }
@@ -161,9 +199,11 @@ export class CartService {
       records.flatMap((r: any) => [r.packaging_variants, ...(r.packaging_variants?.medicine?.packaging_variants ?? [])]).filter(Boolean),
     );
 
+    const available = await this.getAvailableStockByVariant(tx, records.map((r: any) => ({ id: r.variant_id as number | null, medicineId: (r.packaging_variants?.medicine_id ?? null) as number | null })));
+
     const items: FormattedCartItem[] = [];
     for (const record of records) {
-      const formatted = this.formatCartItem(record);
+      const formatted = this.formatCartItem(record, available.get(record.variant_id as number) ?? 0);
       if (formatted) {
         items.push(formatted);
       }
@@ -212,11 +252,13 @@ export class CartService {
 
       if (existing) {
         const newQuantity = Math.min(999, existing.quantity + quantityToAdd);
+        await this.assertQuantityAvailable(tx, variant, newQuantity);
         await tx.cart_items.update({
           where: { id: existing.id },
           data: { quantity: newQuantity },
         });
       } else {
+        await this.assertQuantityAvailable(tx, variant, Math.min(999, quantityToAdd));
         await tx.cart_items.create({
           data: {
             customer_id: customerId,
@@ -257,6 +299,11 @@ export class CartService {
           where: { id: existing.id },
         });
       } else {
+        // Lowering a quantity is always allowed; raising it must stay within what can be supplied.
+        if (dto.quantity > existing.quantity) {
+          const variant = await tx.packaging_variants.findUnique({ where: { id: variantId }, include: { medicine: true } });
+          if (variant) await this.assertQuantityAvailable(tx, variant, Math.min(999, dto.quantity));
+        }
         await tx.cart_items.update({
           where: { id: existing.id },
           data: { quantity: Math.min(999, dto.quantity) },
