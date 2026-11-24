@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { WH_ALL } from '../../common/warehouse-roles';
 import { WarehouseFacilityQueryDto } from '../warehouse/inventory/dto/warehouse-inventory-query.dto';
-import { CloseRecallDto, CollectRecallDto, CreateRecallDto } from './dto/recall.dto';
+import { CloseRecallDto, CollectFromFacilityDto, CollectRecallDto, CreateRecallDto } from './dto/recall.dto';
 import { RecallService } from './recall.service';
 
 @ApiTags('Admin - Recalls')
@@ -42,7 +42,7 @@ export class AdminRecallController {
   }
 
   @Post(':id/collect')
-  @ApiOperation({ summary: 'Create RECALL_COLLECTION transfers from every facility holding recalled stock to a warehouse' })
+  @ApiOperation({ summary: 'Create RECALL_COLLECTION transfers from every facility holding recalled stock to a factory or warehouse' })
   async collect(@Param('id', ParseIntPipe) id: number, @Body() dto: CollectRecallDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.recalls.collect(user, id, dto) };
   }
@@ -67,6 +67,20 @@ export class WarehouseRecallController {
   @ApiOperation({ summary: 'Recall a batch your factory made: it is marked RECALLED and its stock is quarantined at every facility' })
   async create(@Body() dto: CreateRecallDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.recalls.createForFactory(user, dto) };
+  }
+
+  @Get(':id/collection-destination')
+  @Roles('WAREHOUSE_MANAGER')
+  @ApiOperation({ summary: 'The facility your recalled stock goes back to: the facility that started the recall' })
+  async collectionDestination(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.recalls.collectionDestination(user, id) };
+  }
+
+  @Post(':id/collect')
+  @Roles('WAREHOUSE_MANAGER')
+  @ApiOperation({ summary: 'Create the RECALL_COLLECTION transfer of the recalled stock held at your warehouse back to the facility that started the recall' })
+  async collect(@Param('id', ParseIntPipe) id: number, @Body() dto: CollectFromFacilityDto, @CurrentUser() user: CurrentUserPayload) {
+    return { success: true, data: await this.recalls.collectFromFacility(user, id, dto) };
   }
 
   @Get()

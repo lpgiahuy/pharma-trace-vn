@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { RecallTasks, SEVERITY_COLORS } from '@/components/quality/RecallTasks';
 import { TransferStatusBadge } from '@/components/logistics/LogisticsBadges';
 import {
-  recallService, RECALL_SEVERITIES, type CreateRecallInput, type RecallDetail, type RecallImpact, type RecallLocation, type RecallSummary,
+  recallService, RECALL_DESTINATION_TYPES, RECALL_SEVERITIES, type CreateRecallInput, type RecallDetail, type RecallImpact, type RecallLocation, type RecallSummary,
 } from '@/services/recall.service';
 import { warehouseService } from '@/services/warehouse.service';
 import { facilityService } from '@/services/facility.service';
@@ -165,8 +165,8 @@ function RecallDrawer({ id, facilities, onClose, onChanged }: { id?: number; fac
             ]} />
             {shown.status === 'ACTIVE' && (
               <div className="flex flex-wrap gap-2">
-                <Select className="w-64" placeholder="Collect into warehouse" value={destination} onChange={setDestination}
-                  options={facilities.filter(f => ['CENTRAL_WAREHOUSE', 'BRANCH_WAREHOUSE'].includes(f.rawType || f.type)).map(f => ({ value: f.id, label: f.name }))} />
+                <Select className="w-64" placeholder="Collect into factory or warehouse" value={destination} onChange={setDestination}
+                  options={facilities.filter(f => RECALL_DESTINATION_TYPES.includes(f.rawType || f.type)).map(f => ({ value: f.id, label: f.name }))} />
                 <Button type="primary" disabled={!destination} loading={saving}
                   onClick={() => destination && run(() => recallService.collect(shown.id, destination), 'Collection transfers created')}>
                   Start collection

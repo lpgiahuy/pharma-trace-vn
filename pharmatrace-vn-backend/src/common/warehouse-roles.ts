@@ -24,6 +24,12 @@ export const BATCH_HOLD = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
 export const FACTORY_INTAKE = ['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN'] as const;
 
+/**
+ * Receiving a transfer at its destination. Factory staff receive only recall collections sent back to their factory;
+ * the transfer service and public.consume_transfer_custody() refuse them any other transfer type.
+ */
+export const TRANSFER_RECEIVE = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
 export type WarehouseRole = (typeof WH_ALL)[number];
 
 export function isWarehouseRole(role: string | undefined, group: readonly string[] = WH_ALL): boolean {

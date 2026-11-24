@@ -156,6 +156,26 @@ describe("InternalTransferService facility access", () => {
       }),
     );
   });
+
+  describe("factory staff receipt", () => {
+    const factoryStaff = { type: "employee" as const, id: 22, role: "FACTORY_WAREHOUSE_STAFF", facilityId: 2045 };
+    function receiving(transferType: string) {
+      const transfer = { id: 8, to_facility_id: 2045, status: "RECEIVED", transfer_type: transferType, orders: null };
+      const prisma = { internal_transfers: { findFirst: jest.fn().mockResolvedValue(transfer) } };
+      return { prisma, transfer, service: new InternalTransferService(scopedPrisma(prisma)) };
+    }
+
+    it("lets factory staff receive a recall collection sent to their factory", async () => {
+      const { service, prisma, transfer } = receiving("RECALL_COLLECTION");
+      await expect(service.adminReceiveInternalTransfer(8, factoryStaff)).resolves.toBe(transfer);
+      expect(prisma.internal_transfers.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 8, to_facility_id: 2045 } }));
+    });
+
+    it.each(["REPLENISHMENT", "ORDER_FULFILLMENT", "RETURN_TO_WAREHOUSE"])("refuses factory staff a %s transfer", async (transferType) => {
+      const { service } = receiving(transferType);
+      await expect(service.adminReceiveInternalTransfer(8, factoryStaff)).rejects.toThrow(/only recall collection/i);
+    });
+  });
 });
 
 describe("InternalTransferService transfer completion", () => {

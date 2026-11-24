@@ -56,6 +56,22 @@ export interface RecallTask {
   orderCode: string | null;
 }
 
+export interface CollectionDestination {
+  facilityId: number;
+  facilityName: string;
+}
+
+export interface CollectionTransfer {
+  transferId: number;
+  transferCode: string;
+  toFacilityId: number;
+  /** False when an open collection transfer from this warehouse already existed. */
+  created: boolean;
+}
+
+/** Facility types that may receive recalled stock: the factory it came from or a warehouse. */
+export const RECALL_DESTINATION_TYPES = ['FACTORY', 'CENTRAL_WAREHOUSE', 'BRANCH_WAREHOUSE'];
+
 export interface CreateRecallInput {
   recallCode: string;
   reason: string;
@@ -75,4 +91,7 @@ export const recallService = {
     apiClient.post<unknown, Envelope<RecallDetail>>(`${BASE}/${id}/collect`, { destinationFacilityId }),
   close: (id: number, note: string) => apiClient.post<unknown, Envelope<RecallDetail>>(`${BASE}/${id}/close`, { note }),
   tasks: () => apiClient.get<unknown, Envelope<RecallTask[]>>('/warehouse/recalls'),
+  collectionDestination: (id: number) => apiClient.get<unknown, Envelope<CollectionDestination>>(`/warehouse/recalls/${id}/collection-destination`),
+  collectFromFacility: (id: number, toFacilityId: number, note?: string) =>
+    apiClient.post<unknown, Envelope<CollectionTransfer>>(`/warehouse/recalls/${id}/collect`, { toFacilityId, note }),
 };

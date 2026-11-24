@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
-import { WH_ALL, WH_TRANSFER } from '../../../common/warehouse-roles';
+import { TRANSFER_RECEIVE, WH_ALL, WH_TRANSFER } from '../../../common/warehouse-roles';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { InternalTransferService } from './internal-transfer.service';
 import { DispatchTransferDto } from './dto/dispatch-transfer.dto';
@@ -68,7 +68,7 @@ export class InternalTransferController {
   }
 
   @Patch('transfers/:id/receive')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', ...WH_ALL)
+  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', ...TRANSFER_RECEIVE)
   async receive(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload, @Body() dto?: ReceiveTransferDto) {
     const data = dto !== undefined
       ? await this.transfersService.adminReceiveInternalTransfer(id, user, dto)

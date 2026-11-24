@@ -31,14 +31,15 @@ describe('Order context for warehouse managers', () => {
     await expect(service.withOrder('dispatch', jest.fn(), { ...manager, facilityId: null })).rejects.toThrow('not assigned to a facility');
   });
 
-  it.each(['read', 'receive', 'replace', 'pack'] as OrderOperation[])('keeps factory warehouse staff out of %s', async (operation) => {
+  it.each(['read', 'replace', 'pack'] as OrderOperation[])('keeps factory warehouse staff out of %s', async (operation) => {
     const { service } = setup();
     await expect(service.withOrder(operation, jest.fn(), factory)).rejects.toThrow('Invalid order access scope');
   });
 });
 
 describe('Order context for factory warehouse staff sending stock', () => {
-  it.each(['transfer_read', 'dispatch'] as OrderOperation[])('allows %s at the own factory', async (operation) => {
+  // receive: recall collections sent back to the factory only, checked by the transfer service and the database.
+  it.each(['transfer_read', 'dispatch', 'receive'] as OrderOperation[])('allows %s at the own factory', async (operation) => {
     const { service, settings } = setup();
     await expect(service.withOrder(operation, () => Promise.resolve('ok'), factory)).resolves.toBe('ok');
     expect(settings()).toEqual([operation, '5', 'employee', 'FACTORY_WAREHOUSE_STAFF', '7']);

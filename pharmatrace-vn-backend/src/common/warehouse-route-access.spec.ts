@@ -23,7 +23,7 @@ function rolesOf(controller: { prototype: object }, method: string): Set<string>
 }
 
 const managerRoutes: [string, { prototype: object }, string[]][] = [
-  ['transfers', InternalTransferController, ['cancelTransfer', 'receive', 'rejectDamaged', 'resolveDiscrepancy']],
+  ['transfers', InternalTransferController, ['cancelTransfer', 'rejectDamaged', 'resolveDiscrepancy']],
   ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'receiveReturn']],
   ['orders', AdminOrderController, ['getAllOrders', 'getOrderById', 'resolution', 'getAvailableBoxes', 'packOrder']],
   ['returns', AdminReturnsController, ['list', 'detail', 'addAttachment', 'attachment', 'rejectReceipt', 'receive']],
@@ -39,8 +39,9 @@ describe('Warehouse route access', () => {
     });
   });
 
-  // The factory sends stock out: it joins the source side of a transfer, never the receiving or resolving side.
-  it.each(['transfers', 'transfer', 'dispatch', 'transportStaff', 'halt', 'receiveReturn'])('transfers %s admits WAREHOUSE_MANAGER and FACTORY_WAREHOUSE_STAFF', (method) => {
+  // The factory sends stock out and receives back only recall collections (the service and the database check the
+  // transfer type); it never resolves a transfer.
+  it.each(['transfers', 'transfer', 'dispatch', 'transportStaff', 'halt', 'receiveReturn', 'receive'])('transfers %s admits WAREHOUSE_MANAGER and FACTORY_WAREHOUSE_STAFF', (method) => {
     const roles = rolesOf(InternalTransferController, method);
     expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
     expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(true);

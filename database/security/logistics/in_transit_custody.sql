@@ -88,7 +88,8 @@ BEGIN
   SELECT * INTO t FROM public.internal_transfers WHERE id=target FOR UPDATE;
   IF current_setting('app.order_operation',true) IS DISTINCT FROM 'receive'
     OR current_setting('app.current_user_type',true) IS DISTINCT FROM 'employee'
-    OR NOT (coalesce(current_setting('app.current_user_role',true),'') IN ('SUPER_ADMIN','STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
+    OR NOT (coalesce(current_setting('app.current_user_role',true),'') IN ('SUPER_ADMIN','STORE_MANAGER') OR public.app_role_in_group('WH_ALL')
+      OR (current_setting('app.current_user_role',true) = 'FACTORY_WAREHOUSE_STAFF' AND t.transfer_type = 'RECALL_COLLECTION' AND t.status = 'DISPATCHED'))
     OR NOT ((t.status='DISPATCHED' AND public.order_staff(t.to_facility_id))
       OR (t.status='RETURN_REQUESTED' AND public.order_staff(t.from_facility_id))) THEN
     RAISE EXCEPTION 'Transfer custody receipt is not authorized' USING ERRCODE='42501';

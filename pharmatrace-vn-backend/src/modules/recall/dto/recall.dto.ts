@@ -21,8 +21,16 @@ export class CreateRecallDto {
 }
 
 export class CollectRecallDto {
-  @ApiProperty({ example: 1, description: 'Central or branch warehouse that receives the recalled stock' })
+  @ApiProperty({ example: 1, description: 'Factory, central or branch warehouse that receives the recalled stock' })
   @IsInt() @Min(1) destinationFacilityId: number;
+}
+
+export class CollectFromFacilityDto {
+  @ApiProperty({ example: 2045, description: 'The facility that started the recall (see GET :id/collection-destination); no other facility is accepted' })
+  @IsInt() @Min(1) toFacilityId: number;
+
+  @ApiPropertyOptional({ description: 'Note copied to the collection transfer' })
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
 }
 
 export class CloseRecallDto {
