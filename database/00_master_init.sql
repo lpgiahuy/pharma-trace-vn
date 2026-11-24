@@ -141,4 +141,8 @@
 \i /docker-entrypoint-initdb.d/security/reporting/finance_reports.sql
 \i /docker-entrypoint-initdb.d/security/reporting/supplier_payments.sql
 
+-- 10. Demo transactions from the manual test run (orders, stock, returns, recalls, finance). Loaded last,
+-- after every table, function and policy exists. Development only.
+\i /docker-entrypoint-initdb.d/seeds/02_demo_transactions.sql
+
 \unset bootstrap_current_functions

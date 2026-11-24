@@ -103,7 +103,7 @@ Requirements: Docker with Compose.
 
 3. Open `http://localhost` (or the port in `HTTP_PORT`). nginx serves the frontend on `/` and the API on `/v1/pharmatrace`.
 
-On the first start with an empty database volume, the PostgreSQL container runs the scripts in `database/`: it creates `app_user`, loads the schema, applies RLS and imports the development seed data. These scripts do **not** run again on an existing volume.
+On the first start with an empty database volume, the PostgreSQL container runs the scripts in `database/`: it creates `app_user`, loads the schema, applies RLS and imports the development seed data and the demo transactions. These scripts do **not** run again on an existing volume.
 
 To run only the database (for local development of the API and frontend): `docker compose up -d db`.
 
@@ -147,13 +147,25 @@ Notes:
 
    Open `http://localhost:3000`.
 
-### Demo accounts
+### Demo accounts and data
 
-The development seed contains catalog data, facilities and login accounts only (no orders or stock). Seeded accounts use these patterns:
+The development seed has two parts: `database/seeds/01_seed_data.sql` (catalog, facilities and login accounts) and `database/seeds/02_demo_transactions.sql` (a ready-made demo of a manual end-to-end test: purchase orders, batches and boxes, orders in several states, a return and refund, a batch recall and disposal, COD reconciliation, supplier payables, reviews with a moderation report, and a blog article). Personal data in it is replaced with placeholders, and image references point to the author's Cloudinary account, so uploaded images may not load on another setup.
 
-- Customers: `customer<ID>@example.test`
-- Employees: `employee<ID>@example.test` (for example `employee11` is a super administrator, `employee12` a store manager and `employee13` a pharmacist)
-- Password for every seeded account: `PharmaTraceDemo2026!` (development only)
+Accounts (the number is the database ID):
+
+| Role | Account |
+|---|---|
+| Super administrator | `employee11@example.test` |
+| Store manager | `employee12@example.test` |
+| Pharmacist | `employee13@example.test` |
+| Warehouse staff (distribution hub) | `employee14@example.test` |
+| Factory warehouse staff | `employee15@example.test` |
+| Accountant | `employee21@example.test` |
+| Finance manager | `employee22@example.test` |
+| Warehouse manager (distribution hub) | `employee39@example.test` |
+| Customers | `customer17@example.test`, `customer18@example.test` |
+
+Password for every seeded account: `PharmaTraceDemo2026!` (development only).
 
 ## Database
 
@@ -165,7 +177,7 @@ database/
 ├── 00_master_init.sql           # orchestrates the schema, security and seed scripts
 ├── schemas/                     # table DDL, constraints, keys, functions and triggers
 ├── security/                    # grants, RLS policies and workflow safeguards, grouped by module
-├── seeds/                       # development seed data (and a cleanup script)
+├── seeds/                       # development seed data, demo transactions and a cleanup script
 └── tests/                       # SQL checks for RLS and workflows
 ```
 
