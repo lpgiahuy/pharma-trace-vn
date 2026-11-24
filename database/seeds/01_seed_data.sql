@@ -24,19 +24,19 @@ COPY public.facilities (id, facility_name, facility_type, address, phone_number,
 \.
 
 COPY public.employees (id, facility_id, job_title, joined_date, full_name, email, password_hash, role, status, created_at) FROM stdin;
-12	1	QuanLyCuaHang	2026-08-25	Store Manager	employee12@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	STORE_MANAGER	ACTIVE	2026-08-25 12:54:24.980461
-14	2046	QuanLyKho	2026-08-25	Warehouse Staff	employee14@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	WAREHOUSE_STAFF	ACTIVE	2026-08-25 12:54:24.980461
-11	1	SuperAdmin	2026-08-25	Super Admin	employee11@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	SUPER_ADMIN	ACTIVE	2026-08-25 12:54:24.980461
-13	1	DuocSi	2026-08-25	Pharmacist	employee13@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	PHARMACIST	ACTIVE	2026-08-25 12:54:24.980461
-21	1	\N	2026-11-11	Accountant	employee21@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	ACCOUNTANT	ACTIVE	2026-11-11 10:08:42.171
-22	1	\N	2026-11-11	Finance Manager	employee22@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	FINANCE_MANAGER	ACTIVE	2026-11-11 10:09:35.17
-39	2046	WarehouseManager	2026-11-18	Warehouse Manager	employee39@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	WAREHOUSE_MANAGER	ACTIVE	2026-11-18 07:21:49.531366
-15	2045	QuanLyKho	2026-08-25	Factory Warehouse Staff	employee15@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	FACTORY_WAREHOUSE_STAFF	ACTIVE	2026-08-25 12:54:24.980461
+12	1	QuanLyCuaHang	2026-08-25	Store Manager	storemanager@pharmatrace.vn	$2b$10$hb7mcrzNgG1f3doqVpzY1OG6jiHvPYubu5titidaOaCQojNguvqx.	STORE_MANAGER	ACTIVE	2026-08-25 12:54:24.980461
+14	2046	QuanLyKho	2026-08-25	Warehouse Staff	warehouse@pharmatrace.vn	$2b$10$hb7mcrzNgG1f3doqVpzY1OG6jiHvPYubu5titidaOaCQojNguvqx.	WAREHOUSE_STAFF	ACTIVE	2026-08-25 12:54:24.980461
+11	1	SuperAdmin	2026-08-25	Super Admin	admin@pharmatrace.vn	$2b$10$hb7mcrzNgG1f3doqVpzY1OG6jiHvPYubu5titidaOaCQojNguvqx.	SUPER_ADMIN	ACTIVE	2026-08-25 12:54:24.980461
+13	1	DuocSi	2026-08-25	Pharmacist	pharmacist@pharmatrace.vn	$2b$10$hb7mcrzNgG1f3doqVpzY1OG6jiHvPYubu5titidaOaCQojNguvqx.	PHARMACIST	ACTIVE	2026-08-25 12:54:24.980461
+21	1	\N	2026-11-11	Accountant	accountant@pharmatrace.vn	$2b$10$c48Sl.4DB0peCmbCKZCCQOPPn0CNjDrQsdl3NUoJ91VkKs/4..7MW	ACCOUNTANT	ACTIVE	2026-11-11 10:08:42.171
+22	1	\N	2026-11-11	Finance Manager	financemanager@pharmatrace.vn	$2b$10$mAL7fBB3heIY486Sm3QRJOj6097Ik7hRDMYcs.Sv6rly7ParEX9ce	FINANCE_MANAGER	ACTIVE	2026-11-11 10:09:35.17
+39	2046	WarehouseManager	2026-11-18	Warehouse Manager	warehousemanager@pharmatrace.vn	$2b$10$hb7mcrzNgG1f3doqVpzY1OG6jiHvPYubu5titidaOaCQojNguvqx.	WAREHOUSE_MANAGER	ACTIVE	2026-11-18 07:21:49.531366
+15	2045	QuanLyKho	2026-08-25	Factory Warehouse Staff	factorywarehouse@pharmatrace.vn	$2b$10$OlEYMUY.54amPhUlykdC7OVkMEdryi1PpQZPcQeS69RlJ9hnHHTZe	FACTORY_WAREHOUSE_STAFF	ACTIVE	2026-08-25 12:54:24.980461
 \.
 
 COPY public.customers (id, membership_tier, reward_points, default_address, created_at, full_name, phone_number, email, password_hash, status) FROM stdin;
-17	BRONZE	0	\N	2026-10-29 10:23:34.343443	Demo customer 17	0900000017	customer17@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	ACTIVE
-18	BRONZE	0	\N	2026-10-29 10:33:18.370132	Demo customer 18	0900000018	customer18@example.test	$2b$12$ovckjvtZhf/PPH7AQCxnSOPWnFwKFUXe9nvBB9QfgwcxICbSqbirS	ACTIVE
+17	BRONZE	0	\N	2026-10-29 10:23:34.343443	Demo customer 17	0900000017	customer1@pharmatrace.vn	$2b$10$8Aiv.jBhxmS7rmD.s7RUG.7.8aKdJEcIBPSVysuPoaCpJBku.SpVi	ACTIVE
+18	BRONZE	0	\N	2026-10-29 10:33:18.370132	Demo customer 18	0900000018	customer2@pharmatrace.vn	$2b$10$iBcdGJscXC26ahaV6JajDefshsH21vDl.1NNe.UBMobSJ3sK2cNFO	ACTIVE
 \.
 
 COPY public.manufacturers (id, name, slug, country, logo_url, website, status, created_at, business_registration_number, address, phone_number, email, verification_status) FROM stdin;

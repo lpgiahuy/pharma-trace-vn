@@ -151,21 +151,21 @@ Notes:
 
 The development seed has two parts: `database/seeds/01_seed_data.sql` (catalog, facilities and login accounts) and `database/seeds/02_demo_transactions.sql` (a ready-made demo of a manual end-to-end test: purchase orders, batches and boxes, orders in several states, a return and refund, a batch recall and disposal, COD reconciliation, supplier payables, reviews with a moderation report, and a blog article). Personal data in it is replaced with placeholders, and image references point to the author's Cloudinary account, so uploaded images may not load on another setup.
 
-Accounts (the number is the database ID):
+Accounts:
 
 | Role | Account |
 |---|---|
-| Super administrator | `employee11@example.test` |
-| Store manager | `employee12@example.test` |
-| Pharmacist | `employee13@example.test` |
-| Warehouse staff (distribution hub) | `employee14@example.test` |
-| Factory warehouse staff | `employee15@example.test` |
-| Accountant | `employee21@example.test` |
-| Finance manager | `employee22@example.test` |
-| Warehouse manager (distribution hub) | `employee39@example.test` |
-| Customers | `customer17@example.test`, `customer18@example.test` |
+| Super administrator | `admin@pharmatrace.vn` |
+| Store manager | `storemanager@pharmatrace.vn` |
+| Pharmacist | `pharmacist@pharmatrace.vn` |
+| Warehouse staff (distribution hub) | `warehouse@pharmatrace.vn` |
+| Factory warehouse staff | `factorywarehouse@pharmatrace.vn` |
+| Accountant | `accountant@pharmatrace.vn` |
+| Finance manager | `financemanager@pharmatrace.vn` |
+| Warehouse manager (distribution hub) | `warehousemanager@pharmatrace.vn` |
+| Customers | `customer1@pharmatrace.vn`, `customer2@pharmatrace.vn` |
 
-Password for every seeded account: `PharmaTraceDemo2026!` (development only).
+Password for every seeded account: `password123` (development only).
 
 ## Database
 
@@ -204,5 +204,5 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on every push a
 ## Security notes
 
 - Never commit `.env` files. The repository ignores them.
-- `PharmaTraceDemo2026!` and the seed data are for development only.
+- `password123` and the seed data are for development only.
 - Keep `AUTH_RLS_ENABLED` consistent with the state of your database: enable it only after the auth RLS scripts have been applied.
