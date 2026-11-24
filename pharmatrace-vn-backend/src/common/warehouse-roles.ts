@@ -1,0 +1,66 @@
+import { warehouseError } from '../modules/warehouse/warehouse-errors';
+import { normalizeRole } from './auth-identity';
+
+/**
+ * Warehouse role groups, mirrored in the database by public.app_role_group() in
+ * database/security/access/app_role_groups.sql. Change both together.
+ *
+ * FACTORY_WAREHOUSE_STAFF is intentionally not a member yet: it is added per feature, together with the
+ * workflows that need it (inventory reads, factory batch intake, non-order stock transfers).
+ */
+export const WH_STAFF = ['WAREHOUSE_STAFF'] as const;
+export const WH_MANAGER = ['WAREHOUSE_MANAGER', 'SUPER_ADMIN'] as const;
+export const WH_ALL = [...WH_STAFF, ...WH_MANAGER] as const;
+/** Read-only inventory and batch views; factory staff read their own factory. */
+export const WH_READ = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
+/** Stock transfers: the factory sends stock to a warehouse, so it joins the source-side transfer workflow only. */
+export const WH_TRANSFER = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
+/** Quality actions at a factory: drafting disposals and holding batches. Approval and completion stay with managers. */
+export const WH_QUALITY = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+/**
+ * Approving, completing and cancelling a disposal of the own facility. A factory has no warehouse manager, so its
+ * staff decide its disposals themselves; the database keeps everyone to their own facility (disposal_lock).
+ */
+export const DISPOSAL_DECIDE = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
+/** Holding or releasing a batch: warehouse managers, and factory staff for the batches of their own factory. */
+export const BATCH_HOLD = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
+export const FACTORY_INTAKE = ['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN'] as const;
+
+/**
+ * Receiving a transfer at its destination. Factory staff receive only recall collections sent back to their factory;
+ * the transfer service and public.consume_transfer_custody() refuse them any other transfer type.
+ */
+export const TRANSFER_RECEIVE = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+
+export type WarehouseRole = (typeof WH_ALL)[number];
+
+export function isWarehouseRole(role: string | undefined, group: readonly string[] = WH_ALL): boolean {
+  const normalized = normalizeRole(role);
+  return normalized !== undefined && group.includes(normalized);
+}
+
+interface ScopeUser {
+  role?: string;
+  type?: string;
+  facilityId?: number | null;
+}
+
+/**
+ * Resolves which warehouse a request may read or change.
+ * - Warehouse staff and managers always get the warehouse from their token; passing another facilityId is refused.
+ * - SUPER_ADMIN may pick any warehouse with ?facilityId=, or gets null (all warehouses) without it.
+ */
+export function warehouseScope(
+  user: ScopeUser | undefined, query: { facilityId?: number } = {}, group: readonly string[] = WH_ALL,
+): number | null {
+  if (!user || user.type !== 'employee' || !isWarehouseRole(user.role, group)) throw warehouseError('WAREHOUSE_ACCOUNT_REQUIRED');
+  const requested = query.facilityId;
+  if (normalizeRole(user.role) === 'SUPER_ADMIN') return requested ?? null;
+  const own = Number(user.facilityId);
+  if (!Number.isInteger(own) || own <= 0) throw warehouseError('WAREHOUSE_FACILITY_REQUIRED');
+  if (requested !== undefined && requested !== own) throw warehouseError('WAREHOUSE_FACILITY_FORBIDDEN');
+  return own;
+}

@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 pharmatrace-vn-backend/node_modules/
 pharmatrace-vn-frontend/node_modules/
@@ -9,6 +9,8 @@ pharmatrace-vn-backend/dist/
 pharmatrace-vn-frontend/.next/
 pharmatrace-vn-frontend/out/
 pharmatrace-vn-frontend/build/
+*.tsbuildinfo
+
 
 # Environment variables
 .env
@@ -40,6 +42,20 @@ pnpm-debug.log*
 # Prisma
 pharmatrace-vn-backend/prisma/generated/
 
-# Uploads & Temporary files
+# Uploads & Temporary files / Scripts
+test-ci.ps1
 pharmatrace-vn-backend/uploads/*
+**/.private/
 !pharmatrace-vn-backend/uploads/.gitkeep
+temp/
+script/
+scripts/
+**/temp/
+**/script/
+**/scripts/
+
+database/backups/*
+
+docs/*
+
+pharmatrace-vn-backend/coverage/*

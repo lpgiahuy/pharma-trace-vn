@@ -1,5 +1,7 @@
-﻿-- Master database initialization script for PharmaTrace VN
--- Execution order: Schemas -> Functions -> Procedures -> Triggers -> Views -> Seeds
+-- Master database initialization script for PharmaTrace VN
+\set ON_ERROR_STOP on
+-- This entrypoint is for empty databases only; upgrades leave this marker unset.
+\set bootstrap_current_functions true
 
 -- 1. Schemas & Tables
 \i /docker-entrypoint-initdb.d/schemas/01_core_master_tables.sql
@@ -11,23 +13,136 @@
 \i /docker-entrypoint-initdb.d/schemas/07_crm_loyalty_rma.sql
 \i /docker-entrypoint-initdb.d/schemas/08_finance_ar_ap.sql
 
--- 2. Functions
-\i /docker-entrypoint-initdb.d/functions/fn_haversine_distance.sql
-\i /docker-entrypoint-initdb.d/functions/fn_calculate_shipping_fee.sql
-\i /docker-entrypoint-initdb.d/functions/fn_check_qr_risk_score.sql
+-- 2. Base application permissions (before the restricted review table exists)
+\i /docker-entrypoint-initdb.d/security/access/app_permissions.sql
 
--- 3. Stored Procedures
-\i /docker-entrypoint-initdb.d/procedures/sp_transfer_inventory.sql
-\i /docker-entrypoint-initdb.d/procedures/sp_receive_new_batch.sql
-\i /docker-entrypoint-initdb.d/procedures/sp_recall_medicine_batch.sql
+-- 3. Prescription review schema
+\i /docker-entrypoint-initdb.d/schemas/09_prescription_management.sql
 
--- 4. Triggers
-\i /docker-entrypoint-initdb.d/triggers/trg_sync_order_to_shipment.sql
-\i /docker-entrypoint-initdb.d/triggers/trg_auto_upgrade_customer_tier.sql
+-- 4. Remaining schemas (the seed data is loaded last, see step 10)
+\i /docker-entrypoint-initdb.d/schemas/13_fulfillment_policy.sql
+\i /docker-entrypoint-initdb.d/schemas/14_articles_blog.sql
+\i /docker-entrypoint-initdb.d/schemas/15_flash_sale_quota.sql
 
--- 5. Views
-\i /docker-entrypoint-initdb.d/views/v_inventory_summary.sql
-\i /docker-entrypoint-initdb.d/views/v_batch_management.sql
+-- 5. Prescription review security
+\i /docker-entrypoint-initdb.d/security/prescription/prescription_rls.sql
 
--- 6. Seed Data
+-- 6. Prepare auth role/policies without enabling account RLS during module rollout.
+\i /docker-entrypoint-initdb.d/security/auth/auth_rls.sql
+
+-- 7. Wishlist ownership: only the current customer can read/add/remove their rows.
+\i /docker-entrypoint-initdb.d/security/wishlist/wishlist_rls.sql
+
+-- 8. Cart ownership, including checkout cleanup.
+\i /docker-entrypoint-initdb.d/security/cart/cart_rls.sql
+
+-- 9. Review/moderation ownership, write-column guards and retained audit history.
+\i /docker-entrypoint-initdb.d/security/review/review_rls.sql
+
+-- Blog articles, categories and comments: public reads, pharmacist drafts, admin approval.
+\i /docker-entrypoint-initdb.d/security/article/article_rls.sql
+
+-- Order ownership, fulfillment facility scope, transfer projection and loyalty ledger.
+\i /docker-entrypoint-initdb.d/schemas/11_logistics_transport.sql
+-- Named employee role groups (warehouse roles) used by the policies and functions below.
+\i /docker-entrypoint-initdb.d/security/access/app_role_groups.sql
+\i /docker-entrypoint-initdb.d/security/order/order_rls.sql
+
+-- Voucher management, exact-code previews and order-bound consumption.
+\i /docker-entrypoint-initdb.d/security/voucher/voucher_rls.sql
+
+-- Facility public reads and administrator-only management.
+\i /docker-entrypoint-initdb.d/security/facility/facility_rls.sql
+
+-- Employee management and private employee rows.
+\i /docker-entrypoint-initdb.d/security/employee/employee_rls.sql
+
+-- Customer ownership, facility administration and loyalty integration.
+\i /docker-entrypoint-initdb.d/security/customer/customer_rls.sql
+
+-- Public catalog reads and authorized catalog management.
+\i /docker-entrypoint-initdb.d/security/catalog/catalog_rls.sql
+
+-- Facility-scoped staff administration.
+\i /docker-entrypoint-initdb.d/security/employee/employee_facility_rls.sql
+
+-- Manufacturer access control.
+\i /docker-entrypoint-initdb.d/security/manufacturer/manufacturer_rls.sql
+
+-- Release voucher usage atomically when a prescription is rejected.
+\i /docker-entrypoint-initdb.d/security/prescription/prescription_voucher_release.sql
+
+-- Logistics tables, operations and access controls.
+\i /docker-entrypoint-initdb.d/schemas/10_logistics_operations.sql
+\i /docker-entrypoint-initdb.d/security/logistics/logistics_rls.sql
+\i /docker-entrypoint-initdb.d/security/logistics/event_identity.sql
+\i /docker-entrypoint-initdb.d/schemas/12_customer_receipt.sql
+\i /docker-entrypoint-initdb.d/security/order/order_pickup_status.sql
+\i /docker-entrypoint-initdb.d/security/logistics/logistics_workflow_enhancements.sql
+
+\i /docker-entrypoint-initdb.d/security/logistics/logistics_integrity.sql
+\i /docker-entrypoint-initdb.d/security/order/cancellation_safeguards.sql
+\i /docker-entrypoint-initdb.d/security/returns/return_intake_lines.sql
+\i /docker-entrypoint-initdb.d/security/customer/customer_cancellation_reason.sql
+\i /docker-entrypoint-initdb.d/security/payment/online_payment_gate.sql
+\i /docker-entrypoint-initdb.d/security/payment/payment_expiration.sql
+\i /docker-entrypoint-initdb.d/security/logistics/transfer_manifest.sql
+\i /docker-entrypoint-initdb.d/security/returns/return_refund_decision.sql
+\i /docker-entrypoint-initdb.d/security/returns/refund_approval_before_payment.sql
+\i /docker-entrypoint-initdb.d/security/order/cancel_voucher_release.sql
+\i /docker-entrypoint-initdb.d/security/returns/return_authorized_items.sql
+\i /docker-entrypoint-initdb.d/security/inventory/quarantine_balances.sql
+\i /docker-entrypoint-initdb.d/security/payment/disable_unverified_cod_collection.sql
+\i /docker-entrypoint-initdb.d/security/payment/cancelled_payment_guard.sql
+\i /docker-entrypoint-initdb.d/security/payment/cod_receivable_and_net_cash.sql
+\i /docker-entrypoint-initdb.d/security/payment/online_payment_evidence.sql
+\i /docker-entrypoint-initdb.d/security/payment/cod_payment_evidence.sql
+\i /docker-entrypoint-initdb.d/security/payment/cod_statement_approval.sql
+\i /docker-entrypoint-initdb.d/security/logistics/transfer_reroute.sql
+
+\i /docker-entrypoint-initdb.d/security/logistics/in_transit_custody.sql
+\i /docker-entrypoint-initdb.d/security/logistics/source_manifest_assignment.sql
+\i /docker-entrypoint-initdb.d/security/logistics/transit_box_receipt.sql
+\i /docker-entrypoint-initdb.d/security/logistics/normalize_legacy_box_status.sql
+\i /docker-entrypoint-initdb.d/security/order/order_item_variant_restrict.sql
+
+\i /docker-entrypoint-initdb.d/security/logistics/transfer_discrepancy_resolution.sql
+
+\i /docker-entrypoint-initdb.d/security/payment/payment_exceptions.sql
+
+\i /docker-entrypoint-initdb.d/security/logistics/fulfillment_policy.sql
+
+\i /docker-entrypoint-initdb.d/security/order/unpacked_customer_cancellation.sql
+\i /docker-entrypoint-initdb.d/security/order/order_resolution.sql
+\i /docker-entrypoint-initdb.d/security/returns/return_requests.sql
+\i /docker-entrypoint-initdb.d/security/logistics/stock_transfers.sql
+\i /docker-entrypoint-initdb.d/security/logistics/factory_transfer_send.sql
+\i /docker-entrypoint-initdb.d/security/logistics/transfer_source_stock.sql
+\i /docker-entrypoint-initdb.d/security/logistics/carton_location_sync.sql
+\i /docker-entrypoint-initdb.d/security/inventory/warehouse_inventory_read.sql
+\i /docker-entrypoint-initdb.d/security/inventory/batch_sellability.sql
+\i /docker-entrypoint-initdb.d/security/procurement/purchase_orders.sql
+\i /docker-entrypoint-initdb.d/security/procurement/goods_receipts.sql
+\i /docker-entrypoint-initdb.d/security/inventory/factory_batch_intake.sql
+\i /docker-entrypoint-initdb.d/security/inventory/factory_batch_void.sql
+\i /docker-entrypoint-initdb.d/security/order/order_packages.sql
+\i /docker-entrypoint-initdb.d/security/order/carrier_handovers.sql
+\i /docker-entrypoint-initdb.d/security/order/shipment_carrier_confirmation.sql
+\i /docker-entrypoint-initdb.d/security/inventory/stock_counts.sql
+\i /docker-entrypoint-initdb.d/security/quality/batch_recalls.sql
+\i /docker-entrypoint-initdb.d/security/quality/drug_disposals.sql
+\i /docker-entrypoint-initdb.d/security/quality/factory_quality_actions.sql
+\i /docker-entrypoint-initdb.d/security/quality/recall_collection_scope.sql
+\i /docker-entrypoint-initdb.d/security/quality/warehouse_traceability.sql
+\i /docker-entrypoint-initdb.d/security/quality/public_trace.sql
+\i /docker-entrypoint-initdb.d/security/reporting/sales_reports.sql
+\i /docker-entrypoint-initdb.d/security/reporting/stock_alerts.sql
+\i /docker-entrypoint-initdb.d/security/reporting/report_access.sql
+\i /docker-entrypoint-initdb.d/security/reporting/finance_reports.sql
+\i /docker-entrypoint-initdb.d/security/reporting/supplier_payments.sql
+
+-- 10. Seed data and demo transactions. Loaded last so every table, function and policy already exists.
+-- Development only.
 \i /docker-entrypoint-initdb.d/seeds/01_seed_data.sql
+
+\unset bootstrap_current_functions

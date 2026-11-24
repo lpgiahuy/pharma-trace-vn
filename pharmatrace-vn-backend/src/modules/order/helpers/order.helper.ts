@@ -1,0 +1,328 @@
+import { BadRequestException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+
+export const ORDER_DETAILS_INCLUDE = {
+  order_items: { include: { medicines: true, source_facility: true } },
+  shipments: true,
+  facilities: true,
+  internal_transfers: {
+    include: {
+      from_facility: true,
+      to_facility: true,
+    },
+  },
+  prescription_review: {
+    include: {
+      pharmacist: { select: { id: true, full_name: true } },
+    },
+  },
+} as const satisfies Prisma.ordersInclude;
+
+export { AVAILABLE_BOX_STATUSES, findSellableBoxUids, findUnsellableUids, isBoxUnit } from "../../../common/inventory/box.helper";
+
+/** Units that can still be sold or reserved: stock minus reservations, never negative. */
+export function availableStock(inv: { stock_quantity: number; reserved_quantity: number | null }): number {
+  return Math.max(0, inv.stock_quantity - (inv.reserved_quantity ?? 0));
+}
+
+export function normalizeOrderStatus(status?: string | null): string {
+  if (!status) return "PENDING";
+  const s = status.trim().toUpperCase();
+  if (["PENDING"].includes(s)) return "PENDING";
+  if (["WAITING_INTERNAL_TRANSFER", "WAITING_TRANSFER"].includes(s))
+    return "WAITING_INTERNAL_TRANSFER";
+  if (["PROCESSING"].includes(s)) return "PROCESSING";
+  if (["SHIPPING", "IN_TRANSIT"].includes(s)) return "SHIPPING";
+  if (["COMPLETED", "DELIVERED"].includes(s)) return "COMPLETED";
+  if (["CANCELLED", "CANCELED"].includes(s)) return "CANCELLED";
+  if (["RETURNED", "PARTIALLY_RETURNED"].includes(s))
+    return "RETURNED";
+  return status;
+}
+
+export const STATUS_DB_MAPPINGS: Record<string, string[]> = {
+  PENDING: ["PENDING"],
+  WAITING_INTERNAL_TRANSFER: ["WAITING_INTERNAL_TRANSFER", "WAITING_TRANSFER"],
+  PROCESSING: ["PROCESSING"],
+  PENDING_PICKUP: ["PENDING_PICKUP"],
+  PICKED_UP: ["PICKED_UP"],
+  SHIPPING: ["SHIPPING", "IN_TRANSIT"],
+  COMPLETED: ["COMPLETED", "DELIVERED"],
+  CANCELLED: ["CANCELLED", "CANCELED"],
+  RETURNED: ["RETURNED", "PARTIALLY_RETURNED"],
+  PARTIALLY_RETURNED: ["RETURNED", "PARTIALLY_RETURNED"],
+};
+
+function normalizePaymentStatus(status?: string | null): string {
+  if (!status) return "UNPAID";
+  const s = status.trim().toUpperCase();
+  if (["PAID"].includes(s)) return "PAID";
+  if (["UNPAID"].includes(s)) return "UNPAID";
+  if (["REFUNDED"].includes(s)) return "REFUNDED";
+  return status;
+}
+
+function normalizePaymentMethod(method?: string | null): string {
+  if (!method) return "COD";
+  const s = method.trim().toUpperCase();
+  if (["COD", "CASH"].includes(s)) return "COD";
+  if (["BANK_TRANSFER", "VIETQR", "BANK"].includes(s)) return "BANK_TRANSFER";
+  if (["E_WALLET", "VNPAY", "MOMO", "ZALOPAY"].includes(s)) return "E_WALLET";
+  return method;
+}
+
+export async function releaseOrderReservations(
+  tx: Prisma.TransactionClient,
+  orderId: number,
+  facilityId: number | null,
+): Promise<void> {
+  const getTransfers = async () => {
+    if (tx.internal_transfers?.findMany) {
+      return await tx.internal_transfers.findMany({ where: { order_id: orderId } });
+    }
+    if (tx.internal_transfers?.findFirst) {
+      const single = await tx.internal_transfers.findFirst({ where: { order_id: orderId } });
+      return single ? [single] : [];
+    }
+    return [];
+  };
+
+  const transfers = await getTransfers();
+  const dispatchedTransfers = transfers.filter((t: any) => ["DISPATCHED", "RETURN_REQUESTED"].includes(t.status));
+  const requestedTransfers = transfers.filter((t: any) => t.status === "REQUESTED");
+
+  for (const dt of dispatchedTransfers) {
+    if (dt.status === "RETURN_REQUESTED") continue;
+    if (tx.internal_transfers?.update) {
+      await tx.internal_transfers.update({
+        where: { id: dt.id },
+        data: {
+          status: "RETURN_REQUESTED",
+          return_reason: "Order cancelled while transfer was in transit. Goods must return to source for inspection.",
+          notes: `Order cancelled. Goods in transit must return to facility #${dt.from_facility_id} for physical inspection.`,
+          updated_at: new Date(),
+        },
+      });
+    }
+  }
+
+  if (requestedTransfers.length > 0 && tx.internal_transfers?.updateMany) {
+    await tx.internal_transfers.updateMany({
+      where: { id: { in: requestedTransfers.map((t: any) => t.id) } },
+      data: {
+        status: "CANCELLED",
+        notes: "Cancelled before dispatch due to order cancellation",
+        updated_at: new Date(),
+      },
+    });
+  }
+
+  const dispatchedSourceFacilities = new Set(dispatchedTransfers.map((t: any) => t.from_facility_id));
+
+  const reservedItems = await tx.order_items.findMany({
+    where: { order_id: orderId, inventory_reserved: true },
+    select: {
+      id: true,
+      variant_id: true,
+      quantity: true,
+      assigned_uids: true,
+      source_facility_id: true,
+    },
+  });
+
+  for (const item of reservedItems) {
+    if (!item.variant_id) continue;
+    const targetFacilityId = item.source_facility_id ?? facilityId;
+    if (!targetFacilityId) continue;
+
+    if (dispatchedSourceFacilities.has(targetFacilityId)) {
+      continue;
+    }
+
+    const releasedInventoryRows = await tx.$executeRaw`
+        UPDATE "inventories"
+        SET "reserved_quantity" = COALESCE("reserved_quantity", 0) - ${item.quantity},
+            "updated_at" = NOW()
+        WHERE "facility_id" = ${targetFacilityId}
+          AND "variant_id" = ${item.variant_id}
+          AND COALESCE("reserved_quantity", 0) >= ${item.quantity}
+      `;
+    if (releasedInventoryRows !== 1) {
+      throw new BadRequestException("The order inventory reservation is inconsistent and could not be released.");
+    }
+
+    if (item.assigned_uids.length > 0) {
+      await tx.medicine_boxes.updateMany({
+        where: {
+          uid: { in: item.assigned_uids },
+          current_facility_id: targetFacilityId,
+          status: "RESERVED",
+        },
+        data: { status: "IN_STOCK" },
+      });
+    }
+
+    if (tx.order_items?.update) {
+      await tx.order_items.update({
+        where: { id: item.id },
+        data: {
+          inventory_reserved: false,
+          assigned_uids: [],
+        },
+      });
+    }
+  }
+}
+
+export function formatOrder(order: any, cancellationReason?: string | null) {
+  const voucherDiscount = Number(order.discount_amount || 0);
+  const usedPoints = Number(order.used_points || 0);
+
+  const formattedShipment = order.shipments
+    ? {
+      id: order.shipments.id,
+      trackingNumber: order.shipments.tracking_number,
+      courierName: order.shipments.courier_name,
+      shippingStatus: order.shipments.shipping_status,
+      codAmount: Number(order.shipments.cod_amount || 0),
+      codSettlementStatus: order.shipments.cod_settlement_status,
+      codSettledAt: order.shipments.cod_settled_at,
+      shippedAt: order.shipments.shipped_at,
+      deliveredAt: order.shipments.delivered_at,
+      actualDeliveryAt: order.shipments.actual_delivery_at,
+      proofType: order.shipments.proof_type,
+      proofReference: order.shipments.proof_reference,
+      deliveredToName: order.shipments.delivered_to_name,
+      deliveryNotes: order.shipments.delivery_notes,
+      returnCategory: order.shipments.return_category,
+      returnReason: order.shipments.return_reason,
+      returnQaStatus: order.shipments.return_qa_status,
+      returnQaNotes: order.shipments.return_qa_notes,
+      returnDisposition: order.shipments.return_disposition,
+      returnReceivedAt: order.shipments.return_received_at,
+      returnDisposedAt: order.shipments.return_disposed_at,
+      createdAt: order.shipments.created_at,
+    }
+    : undefined;
+
+  const formattedItems = (order.order_items || []).map((item: any) => {
+    const medicine = item.medicines
+      ? {
+        id: item.medicines.id,
+        name: item.medicines.medicine_name,
+        imageUrl: item.medicines.image_url,
+        images: item.medicines.image_url ? [item.medicines.image_url] : [],
+        slug: item.medicines.slug,
+        isPrescription: item.medicines.is_prescription,
+      }
+      : undefined;
+
+    return {
+      id: item.id,
+      orderId: item.order_id,
+      medicineId: item.medicine_id,
+      variantId: item.variant_id,
+      medicineName: item.medicine_name,
+      unitName: item.unit_name,
+      quantity: item.quantity,
+      unitPrice: Number(item.unit_price || 0),
+      totalPrice: Number(item.total_price || 0),
+      assignedUids: item.assigned_uids || [],
+      sourceFacilityId: item.source_facility_id ?? order.export_facility_id,
+      sourceFacilityName: item.source_facility?.facility_name ?? undefined,
+      medicine,
+      variant: {
+        id: item.variant_id,
+        unitName: item.unit_name,
+        price: Number(item.unit_price || 0),
+        medicine,
+      },
+    };
+  });
+
+  const formattedTransfers = (order.internal_transfers || []).map((t: any) => ({
+    id: t.id,
+    transferCode: t.transfer_code,
+    fromFacilityId: t.from_facility_id,
+    fromFacilityName: t.from_facility?.facility_name ?? `Facility #${t.from_facility_id}`,
+    toFacilityId: t.to_facility_id,
+    toFacilityName: t.to_facility?.facility_name ?? `Facility #${t.to_facility_id}`,
+    status: t.status,
+    items: t.items,
+    trackingCode: t.tracking_code,
+    distanceKm: Number(t.distance_km || 0),
+    estimatedHours: t.estimated_hours,
+    notes: t.notes,
+    varianceDetails: t.variance_details,
+    returnReason: t.return_reason,
+    returnedAt: t.returned_at,
+    discrepancyStatus: t.discrepancy_status,
+    dispatchedAt: t.dispatched_at,
+    receivedAt: t.received_at,
+    createdAt: t.created_at,
+  }));
+
+  return {
+    id: order.id,
+    orderCode: order.order_code,
+    customerId: order.customer_id,
+    exportFacilityId: order.export_facility_id,
+    exportFacility: order.facilities
+      ? {
+        id: order.facilities.id,
+        facilityName: order.facilities.facility_name,
+        address: order.facilities.address,
+      }
+      : undefined,
+    prescriptionId: order.prescription_id,
+    prescriptionReviewStatus: order.prescription_review_status,
+    prescriptionReview: order.prescription_review
+      ? {
+        id: order.prescription_review.id,
+        prescriptionId: order.prescription_review.prescription_id,
+        status: order.prescription_review.status,
+        pharmacistId: order.prescription_review.pharmacist_id,
+        pharmacistName: order.prescription_review.pharmacist?.full_name,
+        facilityId: order.prescription_review.facility_id,
+        note: order.prescription_review.note,
+        reviewedAt: order.prescription_review.reviewed_at,
+        createdAt: order.prescription_review.created_at,
+      }
+      : undefined,
+    subtotalAmount: Number(order.subtotal_amount || 0),
+    shippingFee: Number(order.shipping_fee || 0),
+    discountAmount: voucherDiscount,
+    voucherDiscount: voucherDiscount,
+    pointsDiscount: usedPoints,
+    usedPoints: usedPoints,
+    totalAmount: Number(order.total_amount || 0),
+    paymentMethod: normalizePaymentMethod(order.payment_method),
+    paymentStatus: normalizePaymentStatus(order.payment_status),
+    orderStatus: normalizeOrderStatus(order.order_status),
+    shippingAddress: order.shipping_address,
+    recipientName: order.recipient_name,
+    recipientPhone: order.recipient_phone,
+    note: (() => {
+      const resolved = cancellationReason ?? order.cancellationReason ?? order.cancellation_reason ?? null;
+      if (order.order_status === 'CANCELLED' && resolved && order.note?.trim() === resolved.trim()) {
+        return null; // legacy bug where cancellation reason was saved into order.note
+      }
+      return order.note ?? null;
+    })(),
+    cancellationReason: cancellationReason ?? order.cancellationReason ?? order.cancellation_reason ?? null,
+    createdAt: order.created_at,
+    customer: order.customers
+      ? {
+        id: order.customers.id,
+        fullName: order.customers.full_name,
+        phone: order.customers.phone_number,
+        email: order.customers.email,
+      }
+      : undefined,
+    items: formattedItems,
+    orderItems: formattedItems,
+    shipment: formattedShipment,
+    shipments: formattedShipment ? [formattedShipment] : [],
+    internalTransfers: formattedTransfers,
+  };
+}

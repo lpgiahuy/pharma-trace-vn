@@ -7,508 +7,1044 @@ datasource db {
   provider = "postgresql"
 }
 
-model packaging_specifications {
-  id                   Int                    @id @default(autoincrement())
-  name                 String                 @unique @db.VarChar(50)
-  description          String?
-  cart_items           cart_items[]
-  facility_inventories facility_inventories[]
-  medicines            medicines[]
-  order_items          order_items[]
-  purchase_order_items purchase_order_items[]
-}
-
 model categories {
-  id          Int         @id @default(autoincrement())
-  name        String      @unique @db.VarChar(100)
-  description String?
-  icon        String?     @db.VarChar(100)
-  medicines   medicines[]
+  id                  Int                   @id @default(autoincrement())
+  category_name       String                @db.VarChar(100)
+  slug                String?               @unique @db.VarChar(100)
+  description         String?
+  icon                String?               @db.VarChar(100)
+  parent_id           Int?
+  display_order       Int?                  @default(0)
+  status              String?               @default("ACTIVE") @db.VarChar(50)
+  parent              categories?           @relation("category_hierarchy", fields: [parent_id], references: [id], onUpdate: NoAction)
+  children            categories[]          @relation("category_hierarchy")
+  medicine_categories medicine_categories[]
 }
 
 model facilities {
-  id                   Int                    @id @default(autoincrement())
-  name                 String                 @db.VarChar(150)
-  type                 String                 @db.VarChar(50)
-  address              String?
-  phone                String?                @db.VarChar(20)
-  email                String?                @db.VarChar(100)
-  latitude             Decimal?               @db.Decimal(10, 7)
-  longitude            Decimal?               @db.Decimal(10, 7)
-  created_at           DateTime?              @default(now()) @db.Timestamp(6)
-  employees            employees[]
-  facility_inventories facility_inventories[]
-  inventory_transactions inventory_transactions[]
-  medicine_batches     medicine_batches[]
-  medicine_boxes       medicine_boxes[]
-  orders               orders[]
-  purchase_orders_supplier    purchase_orders[] @relation("po_supplier")
-  purchase_orders_destination purchase_orders[] @relation("po_destination")
-  shipping_packages    shipping_packages[]
-  users                users[]
-}
-
-model users {
-  id                     Int                      @id @default(autoincrement())
-  username               String                   @unique @db.VarChar(50)
-  password               String                   @db.VarChar(255)
-  full_name              String                   @db.VarChar(100)
-  email                  String?                  @unique @db.VarChar(100)
-  phone                  String?                  @db.VarChar(20)
-  role                   String                   @default("CUSTOMER") @db.VarChar(50)
-  status                 String?                  @default("ACTIVE") @db.VarChar(50)
-  facility_id            Int?
-  created_at             DateTime?                @default(now()) @db.Timestamp(6)
-  articles               articles[]
-  cash_flow_transactions cash_flow_transactions[]
-  customers              customers?
-  employees              employees?
-  inventory_transactions inventory_transactions[]
-  prescriptions          prescriptions[]
-  purchase_orders        purchase_orders[]
-  facilities             facilities?              @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
-  verification_logs      verification_logs[]
+  id                       Int                          @id @default(autoincrement())
+  facility_name            String                       @db.VarChar(150)
+  facility_type            String                       @db.VarChar(50)
+  address                  String?
+  phone_number             String?                      @db.VarChar(20)
+  email                    String?                      @db.VarChar(100)
+  latitude                 Decimal?                     @db.Decimal(10, 7)
+  longitude                Decimal?                     @db.Decimal(10, 7)
+  created_at               DateTime?                    @default(now()) @db.Timestamptz(6)
+  accounts_payable         accounts_payable[]
+  batches                  batches[]
+  employees                employees[]
+  inventories              inventories[]
+  inventory_logs           inventory_logs[]
+  medicine_boxes           medicine_boxes[]
+  orders                   orders[]
+  purchase_orders_supplier purchase_orders[]            @relation("po_supplier")
+  purchase_orders_received purchase_orders[]            @relation("po_facility")
+  sscc_cartons             sscc_cartons[]
+  transfers_from           internal_transfers[]         @relation("transfers_from")
+  transfers_to             internal_transfers[]         @relation("transfers_to")
+  stock_requests_from      stock_transfer_requests[]    @relation("stock_requests_from")
+  stock_requests_to        stock_transfer_requests[]    @relation("stock_requests_to")
+  order_items_sourced      order_items[]                @relation("order_items_source_facility")
+  prescription_reviews     order_prescription_reviews[]
+  goods_receipts           goods_receipts[]             @relation("gr_facility")
+  order_packages           order_packages[]
+  carrier_handovers        carrier_handovers[]
 }
 
 model customers {
-  id                 Int                  @id @default(autoincrement())
-  user_id            Int?                 @unique
-  membership_tier    String?              @default("BRONZE") @db.VarChar(50)
-  reward_points      Int?                 @default(0)
-  default_address    String?
-  created_at         DateTime?            @default(now()) @db.Timestamp(6)
-  cart_items         cart_items[]
-  customer_debts     customer_debts[]
-  users              users?               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  loyalty_point_logs loyalty_point_logs[]
-  orders             orders[]
-  prescriptions      prescriptions[]
-  product_reviews    product_reviews[]
-  return_orders      return_orders[]
+  id                    Int                     @id @default(autoincrement())
+  membership_tier       String?                 @default("BRONZE") @db.VarChar(50)
+  reward_points         Int?                    @default(0)
+  default_address       String?
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  full_name             String?                 @db.VarChar(100)
+  phone_number          String?                 @unique @db.VarChar(20)
+  email                 String?                 @unique @db.VarChar(100)
+  password_hash         String?                 @db.VarChar(255)
+  status                String?                 @default("ACTIVE") @db.VarChar(20)
+  accounts_receivable   accounts_receivable[]
+  cart_items            cart_items[]
+  loyalty_point_logs    loyalty_point_logs[]
+  orders                orders[]
+  prescriptions         prescriptions[]
+  qr_scan_logs          qr_scan_logs[]
+  reviews               reviews[]
+  wishlists             customer_wishlists[]
+  moderation_reports    moderation_reports[]    @relation("report_reporter_customer")
+  moderation_audit_logs moderation_audit_logs[] @relation("audit_customer")
 }
 
 model employees {
-  id          Int         @id @default(autoincrement())
-  user_id     Int?        @unique
-  facility_id Int?
-  job_title   String?     @db.VarChar(100)
-  hire_date   DateTime?   @default(now()) @db.Date
-  facilities  facilities? @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
-  users       users?      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                        Int                          @id @default(autoincrement())
+  facility_id               Int?
+  job_title                 String?                      @db.VarChar(100)
+  joined_date               DateTime?                    @default(dbgenerated("CURRENT_DATE")) @db.Date
+  full_name                 String?                      @db.VarChar(100)
+  email                     String?                      @unique @db.VarChar(100)
+  password_hash             String?                      @db.VarChar(255)
+  role                      String?                      @db.VarChar(50)
+  status                    String?                      @default("ACTIVE") @db.VarChar(20)
+  created_at                DateTime?                    @default(now()) @db.Timestamptz(6)
+  articles                  articles[]
+  cashbook_logs             cashbook_logs[]
+  facilities                facilities?                  @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
+  inventory_logs            inventory_logs[]
+  prescriptions             prescriptions[]
+  prescription_reviews      order_prescription_reviews[]
+  purchase_orders           purchase_orders[]
+  purchase_orders_approved  purchase_orders[]            @relation("po_approver")
+  purchase_order_events     purchase_order_events[]      @relation("po_event_actor")
+  goods_receipts            goods_receipts[]             @relation("gr_receiver")
+  packed_order_packages     order_packages[]             @relation("package_packer")
+  voided_order_packages     order_packages[]             @relation("package_voider")
+  carrier_handovers         carrier_handovers[]
+  goods_receipt_attachments goods_receipt_attachments[]  @relation("gr_attachment_uploader")
+  reported_moderations      moderation_reports[]         @relation("report_reporter_employee")
+  resolved_moderations      moderation_reports[]         @relation("report_resolver_employee")
+  moderation_audit_logs     moderation_audit_logs[]      @relation("audit_employee")
 }
 
 model medicines {
-  id                       Int                       @id @default(autoincrement())
-  name                     String                    @db.VarChar(255)
-  category_id              Int?
-  packaging_id             Int?
-  registration_number      String?                   @db.VarChar(100)
-  active_ingredients       String?
-  dosage                   String?                   @db.VarChar(100)
-  manufacturer             String?                   @db.VarChar(150)
-  country_of_origin        String?                   @db.VarChar(100)
-  unit_price               Decimal                   @default(0) @db.Decimal(15, 2)
-  sale_price               Decimal?                  @db.Decimal(15, 2)
-  image_url                String?
-  description              String?
-  drug_details             Json?                     @default("{}")
-  is_prescription_required Boolean?                  @default(false)
-  status                   String?                   @default("ACTIVE") @db.VarChar(50)
-  created_at               DateTime?                 @default(now()) @db.Timestamp(6)
-  cart_items               cart_items[]
-  facility_inventories     facility_inventories[]
-  inventory_transactions   inventory_transactions[]
-  medicine_batches         medicine_batches[]
-  categories               categories?               @relation(fields: [category_id], references: [id], onUpdate: NoAction)
-  packaging_specifications packaging_specifications? @relation(fields: [packaging_id], references: [id], onUpdate: NoAction)
-  order_items              order_items[]
-  product_reviews          product_reviews[]
-  purchase_order_items     purchase_order_items[]
-  return_order_items       return_order_items[]
+  id                            Int                    @id @default(autoincrement())
+  medicine_name                 String                 @db.VarChar(255)
+  registration_number           String?                @db.VarChar(100)
+  active_ingredients            String?
+  dosage                        String?                @db.VarChar(100)
+  manufacturer                  String?                @db.VarChar(150)
+  country_of_origin             String?                @db.VarChar(100)
+  unit_price                    Decimal                @default(0) @db.Decimal(15, 2)
+  promotional_price             Decimal?               @db.Decimal(15, 2)
+  image_url                     String?
+  short_description             String?
+  details                       Json?                  @default("{}")
+  is_prescription               Boolean?               @default(false)
+  status                        String?                @default("ACTIVE") @db.VarChar(50)
+  created_at                    DateTime?              @default(now()) @db.Timestamptz(6)
+  effective_price               Decimal?               @default(dbgenerated("COALESCE(NULLIF(promotional_price, (0)::numeric), unit_price)")) @db.Decimal(15, 2)
+  slug                          String?                @db.VarChar(255)
+  manufacturer_id               Int?
+  min_remaining_shelf_life_days Int?
+  manufacturer_rel              manufacturers?         @relation(fields: [manufacturer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  batches                       batches[]
+  inventory_logs                inventory_logs[]
+  medicine_categories           medicine_categories[]
+  order_items                   order_items[]
+  packaging_variants            packaging_variants[]
+  purchase_order_items          purchase_order_items[]
+  reviews                       reviews[]
+  wishlists                     customer_wishlists[]
+
+  @@index([effective_price], map: "idx_medicines_effective_price")
+  @@index([slug], map: "idx_medicines_slug")
+  @@index([manufacturer_id], map: "idx_medicines_manufacturer_id")
 }
 
-model medicine_batches {
+model packaging_variants {
   id                   Int                    @id @default(autoincrement())
-  batch_number         String                 @unique @db.VarChar(100)
-  medicine_id          Int?
-  manufacturer_id      Int?
-  manufacturing_date   DateTime               @db.Date
-  expiry_date          DateTime               @db.Date
-  initial_quantity     Int                    @default(0)
-  current_quantity     Int                    @default(0)
-  status               String?                @default("NORMAL") @db.VarChar(50)
-  co_cq_certificate    String?
-  created_at           DateTime?              @default(now()) @db.Timestamp(6)
-  facilities           facilities?            @relation(fields: [manufacturer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  medicines            medicines?             @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  medicine_boxes       medicine_boxes[]
+  medicine_id          Int
+  unit_name            String                 @db.VarChar(50)
+  price                Decimal                @default(0) @db.Decimal(15, 2)
+  original_price       Decimal?               @db.Decimal(15, 2)
+  discount_percent     Int?                   @default(0)
+  is_base_unit         Boolean?               @default(false)
+  sale_start_date      DateTime?              @db.Timestamptz(6)
+  sale_end_date        DateTime?              @db.Timestamptz(6)
+  sale_quantity        Int?
+  created_at           DateTime?              @default(now()) @db.Timestamptz(6)
+  cart_items           cart_items[]
+  inventories          inventories[]
+  order_items          order_items[]
+  medicine             medicines              @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   purchase_order_items purchase_order_items[]
-  shipping_packages    shipping_packages[]
+
+  @@index([medicine_id], map: "idx_packaging_variants_medicine")
 }
 
-model shipping_packages {
-  id                  Int               @id @default(autoincrement())
-  sscc_code           String            @unique @db.VarChar(50)
-  batch_id            Int?
-  current_facility_id Int?
-  status              String?           @default("PACKED") @db.VarChar(50)
-  box_count           Int?              @default(0)
-  created_at          DateTime?         @default(now()) @db.Timestamp(6)
-  medicine_boxes      medicine_boxes[]
-  medicine_batches    medicine_batches? @relation(fields: [batch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  facilities          facilities?       @relation(fields: [current_facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+model medicine_categories {
+  medicine_id Int
+  category_id Int
+  is_primary  Boolean    @default(false)
+  created_at  DateTime?  @default(now()) @db.Timestamptz(6)
+  category    categories @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicine    medicines  @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([medicine_id, category_id])
+  @@index([category_id], map: "idx_medicine_categories_cat_id")
+  @@index([medicine_id], map: "idx_medicine_categories_med_id")
 }
 
 model medicine_boxes {
-  uid                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  uid                 String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   batch_id            Int?
-  shipping_package_id Int?
+  carton_id           Int?
   current_facility_id Int?
-  secret_code_hash    String?            @db.VarChar(255)
-  status              String?            @default("IN_STOCK") @db.VarChar(50)
+  status              String?               @default("IN_STOCK") @db.VarChar(50)
   signature           String?
   public_key          String?
-  activated_at        DateTime?          @db.Timestamp(6)
-  created_at          DateTime?          @default(now()) @db.Timestamp(6)
+  created_at          DateTime?             @default(now()) @db.Timestamptz(6)
   fraud_alerts        fraud_alerts[]
-  medicine_batches    medicine_batches?  @relation(fields: [batch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  facilities          facilities?        @relation(fields: [current_facility_id], references: [id], onUpdate: NoAction)
-  shipping_packages   shipping_packages? @relation(fields: [shipping_package_id], references: [id], onUpdate: NoAction)
-  verification_logs   verification_logs[]
-}
+  medicine_batches    batches?              @relation(fields: [batch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sscc_cartons        sscc_cartons?         @relation(fields: [carton_id], references: [id], onUpdate: NoAction)
+  facilities          facilities?           @relation(fields: [current_facility_id], references: [id], onUpdate: NoAction)
+  qr_scan_logs        qr_scan_logs[]
+  order_package_items order_package_items[]
 
-model facility_inventories {
-  id                       Int                       @id @default(autoincrement())
-  facility_id              Int?
-  medicine_id              Int?
-  packaging_id             Int?
-  stock_quantity           Int                       @default(0)
-  reserved_quantity        Int?                      @default(0)
-  updated_at               DateTime?                 @default(now()) @db.Timestamp(6)
-  facilities               facilities?               @relation(fields: [facility_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  medicines                medicines?                @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  packaging_specifications packaging_specifications? @relation(fields: [packaging_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([facility_id, medicine_id, packaging_id], map: "uq_facility_inventory")
-}
-
-model inventory_transactions {
-  id                 Int         @id @default(autoincrement())
-  facility_id        Int?
-  medicine_id        Int?
-  transaction_type   String      @db.VarChar(50)
-  change_quantity    Int
-  previous_quantity  Int
-  remaining_quantity Int
-  reference_code     String?     @db.VarChar(100)
-  note               String?
-  performed_by_id    Int?
-  created_at         DateTime?   @default(now()) @db.Timestamp(6)
-  facilities         facilities? @relation(fields: [facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  medicines          medicines?  @relation(fields: [medicine_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users              users?      @relation(fields: [performed_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  @@index([batch_id], map: "idx_medicine_boxes_batch_id")
+  @@index([carton_id], map: "idx_medicine_boxes_carton_id")
+  @@index([current_facility_id], map: "idx_medicine_boxes_facility_id")
+  @@index([status], map: "idx_medicine_boxes_status")
 }
 
 model prescriptions {
-  id                      Int        @id @default(autoincrement())
-  customer_id             Int?
-  doctor_name             String?    @db.VarChar(100)
-  hospital_clinic         String?    @db.VarChar(150)
-  diagnosis               String?
-  prescription_image_url  String?
-  status                  String?    @default("PENDING") @db.VarChar(50)
-  pharmacist_note         String?
+  id                        Int                          @id @default(autoincrement())
+  customer_id               Int?
+  prescribing_doctor        String?                      @db.VarChar(100)
+  medical_facility          String?                      @db.VarChar(150)
+  diagnosis                 String?
+  prescription_image_url    String?
+  status                    String?                      @default("PENDING_APPROVAL") @db.VarChar(50)
+  pharmacist_note           String?
   approved_by_pharmacist_id Int?
-  issued_date             DateTime?  @db.Date
-  created_at              DateTime?  @default(now()) @db.Timestamp(6)
-  orders                  orders[]
-  users                   users?     @relation(fields: [approved_by_pharmacist_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers               customers? @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  prescribed_date           DateTime?                    @db.Date
+  created_at                DateTime?                    @default(now()) @db.Timestamptz(6)
+  orders                    orders[]
+  order_reviews             order_prescription_reviews[]
+  users                     employees?                   @relation(fields: [approved_by_pharmacist_id], references: [id], onUpdate: NoAction)
+  customers                 customers?                   @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([customer_id], map: "idx_prescriptions_customer_id")
+  @@index([status], map: "idx_prescriptions_status")
 }
 
 model vouchers {
-  id                 Int       @id @default(autoincrement())
-  code               String    @unique @db.VarChar(50)
-  discount_type      String?   @default("PERCENT") @db.VarChar(20)
-  discount_value     Decimal   @db.Decimal(15, 2)
-  min_order_value    Decimal?  @default(0) @db.Decimal(15, 2)
-  max_discount_amount Decimal? @db.Decimal(15, 2)
-  total_quantity     Int?      @default(100)
-  used_quantity      Int?      @default(0)
-  start_date         DateTime? @db.Timestamp(6)
-  end_date           DateTime? @db.Timestamp(6)
-  status             String?   @default("ACTIVE") @db.VarChar(50)
+  id                  Int       @id @default(autoincrement())
+  voucher_code        String    @unique @db.VarChar(50)
+  discount_type       String?   @default("PERCENT") @db.VarChar(20)
+  discount_value      Decimal   @db.Decimal(15, 2)
+  min_order_value     Decimal?  @default(0) @db.Decimal(15, 2)
+  max_discount_amount Decimal?  @db.Decimal(15, 2)
+  total_quantity      Int       @default(100)
+  used_quantity       Int       @default(0)
+  start_date          DateTime? @db.Timestamptz(6)
+  end_date            DateTime? @db.Timestamptz(6)
+  status              String?   @default("ACTIVE") @db.VarChar(50)
+  orders              orders[]
 }
 
 model orders {
-  id                     Int                      @id @default(autoincrement())
-  order_code             String                   @unique @db.VarChar(50)
-  customer_id            Int?
-  source_facility_id     Int?
-  prescription_id        Int?
-  subtotal_amount        Decimal                  @default(0) @db.Decimal(15, 2)
-  shipping_fee           Decimal?                 @default(0) @db.Decimal(15, 2)
-  discount_amount        Decimal?                 @default(0) @db.Decimal(15, 2)
-  reward_points_used     Int?                     @default(0)
-  total_amount           Decimal                  @default(0) @db.Decimal(15, 2)
-  payment_method         String?                  @default("COD") @db.VarChar(50)
-  payment_status         String?                  @default("UNPAID") @db.VarChar(50)
-  order_status           String?                  @default("PENDING") @db.VarChar(50)
-  shipping_address       String?
-  recipient_phone        String?                  @db.VarChar(20)
-  recipient_name         String?                  @db.VarChar(100)
-  bank_transaction_code  String?                  @unique @db.VarChar(100)
-  note                   String?
-  created_at             DateTime?                @default(now()) @db.Timestamp(6)
-  cash_flow_transactions cash_flow_transactions[]
-  customer_debts         customer_debts[]
-  loyalty_point_logs     loyalty_point_logs[]
-  order_items            order_items[]
-  customers              customers?               @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
-  prescriptions          prescriptions?           @relation(fields: [prescription_id], references: [id], onUpdate: NoAction)
-  facilities             facilities?              @relation(fields: [source_facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  return_orders          return_orders[]
-  shipments              shipments?
+  id                         Int                         @id @default(autoincrement())
+  voucher_id                 Int?
+  voucher                    vouchers?                   @relation(fields: [voucher_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  order_code                 String                      @unique @db.VarChar(50)
+  customer_id                Int?
+  export_facility_id         Int?
+  prescription_id            Int?
+  prescription_review_status String?                     @db.VarChar(30)
+  subtotal_amount            Decimal                     @default(0) @db.Decimal(15, 2)
+  shipping_fee               Decimal?                    @default(0) @db.Decimal(15, 2)
+  discount_amount            Decimal?                    @default(0) @db.Decimal(15, 2)
+  used_points                Int?                        @default(0)
+  total_amount               Decimal                     @default(0) @db.Decimal(15, 2)
+  payment_method             String?                     @default("COD") @db.VarChar(50)
+  payment_status             String?                     @default("UNPAID") @db.VarChar(50)
+  order_status               String?                     @default("PENDING") @db.VarChar(50)
+  shipping_address           String?
+  recipient_phone            String?                     @db.VarChar(20)
+  recipient_name             String?                     @db.VarChar(100)
+  note                       String?
+  created_at                 DateTime?                   @default(now()) @db.Timestamptz(6)
+  accounts_receivable        accounts_receivable[]
+  cashbook_logs              cashbook_logs[]
+  loyalty_point_logs         loyalty_point_logs[]
+  order_items                order_items[]
+  customers                  customers?                  @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
+  facilities                 facilities?                 @relation(fields: [export_facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  prescriptions              prescriptions?              @relation(fields: [prescription_id], references: [id], onUpdate: NoAction)
+  prescription_review        order_prescription_reviews?
+  shipments                  shipments?
+  internal_transfers         internal_transfers[]
+  order_packages             order_packages[]
+
+  @@index([customer_id], map: "idx_orders_customer_id")
+  @@index([order_status], map: "idx_orders_status")
+  @@index([created_at], map: "idx_orders_created_at")
+  @@index([voucher_id], map: "idx_orders_voucher_id")
+}
+
+model order_prescription_reviews {
+  id              Int           @id @default(autoincrement())
+  order_id        Int           @unique
+  prescription_id Int
+  status          String        @default("PENDING_APPROVAL") @db.VarChar(30)
+  pharmacist_id   Int?
+  facility_id     Int
+  note            String?
+  reviewed_at     DateTime?     @db.Timestamptz(6)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  order           orders        @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  prescription    prescriptions @relation(fields: [prescription_id], references: [id], onDelete: Restrict)
+  pharmacist      employees?    @relation(fields: [pharmacist_id], references: [id], onDelete: SetNull)
+  facility        facilities    @relation(fields: [facility_id], references: [id], onDelete: Restrict)
+
+  @@index([facility_id, status, created_at], map: "idx_order_prescription_reviews_queue")
+  @@index([prescription_id], map: "idx_order_prescription_reviews_prescription")
 }
 
 model order_items {
-  id                       Int                       @id @default(autoincrement())
-  order_id                 Int?
-  medicine_id              Int?
-  packaging_id             Int?
-  quantity                 Int                       @default(1)
-  unit_price               Decimal                   @default(0) @db.Decimal(15, 2)
-  total_price              Decimal                   @default(0) @db.Decimal(15, 2)
-  box_uids                 String[]                  @default([]) @db.Uuid
-  medicines                medicines?                @relation(fields: [medicine_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  orders                   orders?                   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  packaging_specifications packaging_specifications? @relation(fields: [packaging_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                  Int                   @id @default(autoincrement())
+  order_id            Int?
+  medicine_id         Int?
+  variant_id          Int?
+  medicine_name       String?               @db.VarChar(255)
+  unit_name           String?               @db.VarChar(50)
+  quantity            Int                   @default(1)
+  unit_price          Decimal               @default(0) @db.Decimal(15, 2)
+  total_price         Decimal               @default(0) @db.Decimal(15, 2)
+  assigned_uids       String[]              @default([]) @db.Uuid
+  inventory_reserved  Boolean               @default(false)
+  source_facility_id  Int?
+  packaging_variants  packaging_variants?   @relation(fields: [variant_id], references: [id], onUpdate: NoAction, map: "fk_order_items_variant")
+  medicines           medicines?            @relation(fields: [medicine_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders              orders?               @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  source_facility     facilities?           @relation("order_items_source_facility", fields: [source_facility_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  order_package_items order_package_items[]
+}
+
+model internal_transfers {
+  id                      Int       @id @default(autoincrement())
+  transfer_code           String    @unique @db.VarChar(50)
+  order_id                Int?
+  transfer_type           String    @default("ORDER_FULFILLMENT") @db.VarChar(30)
+  request_id              Int?      @unique
+  from_facility_id        Int
+  to_facility_id          Int
+  status                  String    @default("REQUESTED") @db.VarChar(50)
+  items                   Json      @default("[]")
+  tracking_code           String?   @db.VarChar(100)
+  transport_mode          String?   @db.VarChar(20)
+  transport_employee_id   Int?
+  transport_employee_name String?   @db.VarChar(150)
+  courier_name            String?   @db.VarChar(100)
+  distance_km             Decimal?  @db.Decimal(10, 2)
+  estimated_hours         Int?      @default(24)
+  notes                   String?
+  variance_details        Json?     @default("{}")
+  return_reason           String?
+  returned_at             DateTime? @db.Timestamptz(6)
+  discrepancy_status      String?   @default("NONE") @db.VarChar(50)
+  dispatched_at           DateTime? @db.Timestamptz(6)
+  received_at             DateTime? @db.Timestamptz(6)
+  created_at              DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime? @default(now()) @db.Timestamptz(6)
+
+  orders        orders?                  @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  request       stock_transfer_requests? @relation(fields: [request_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "internal_transfers_request_fk")
+  from_facility facilities               @relation("transfers_from", fields: [from_facility_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  to_facility   facilities               @relation("transfers_to", fields: [to_facility_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_internal_transfers_order_id")
+  @@index([from_facility_id], map: "idx_internal_transfers_from")
+  @@index([to_facility_id], map: "idx_internal_transfers_to")
+  @@index([status], map: "idx_internal_transfers_status")
+}
+
+model stock_transfer_requests {
+  id               Int       @id @default(autoincrement())
+  request_code     String    @unique @db.VarChar(40)
+  from_facility_id Int
+  to_facility_id   Int
+  lines            Json
+  status           String    @default("REQUESTED") @db.VarChar(20)
+  reason           String?
+  requested_by     Int
+  decided_by       Int?
+  decided_at       DateTime? @db.Timestamptz(6)
+  decision_note    String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  from_facility facilities                      @relation("stock_requests_from", fields: [from_facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  to_facility   facilities                      @relation("stock_requests_to", fields: [to_facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transfer      internal_transfers?
+  events        stock_transfer_request_events[]
+
+  @@index([from_facility_id], map: "idx_stock_transfer_requests_from")
+  @@index([to_facility_id], map: "idx_stock_transfer_requests_to")
+}
+
+model stock_transfer_request_events {
+  id          BigInt   @id @default(autoincrement())
+  request_id  Int
+  action      String   @db.VarChar(20)
+  from_status String?  @db.VarChar(20)
+  to_status   String   @db.VarChar(20)
+  actor_id    Int
+  note        String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  request stock_transfer_requests @relation(fields: [request_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([request_id], map: "idx_stock_transfer_request_events_request")
 }
 
 model cart_items {
-  id                       Int                       @id @default(autoincrement())
-  customer_id              Int?
-  medicine_id              Int?
-  packaging_id             Int?
-  quantity                 Int                       @default(1)
-  created_at               DateTime?                 @default(now()) @db.Timestamp(6)
-  customers                customers?                @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  medicines                medicines?                @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  packaging_specifications packaging_specifications? @relation(fields: [packaging_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                 Int                 @id @default(autoincrement())
+  customer_id        Int?
+  variant_id         Int?
+  quantity           Int                 @default(1)
+  created_at         DateTime?           @default(now()) @db.Timestamptz(6)
+  customers          customers?          @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  packaging_variants packaging_variants? @relation(fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_cart_items_variant")
 
-  @@unique([customer_id, medicine_id, packaging_id], map: "uq_cart_item")
-}
-
-model product_reviews {
-  id          Int        @id @default(autoincrement())
-  customer_id Int?
-  medicine_id Int?
-  rating      Int?
-  content     String?
-  images      String[]
-  created_at  DateTime?  @default(now()) @db.Timestamp(6)
-  customers   customers? @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  medicines   medicines? @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@unique([customer_id, variant_id], map: "uq_cart_item")
 }
 
 model articles {
-  id              Int       @id @default(autoincrement())
-  title           String    @db.VarChar(255)
-  slug            String    @unique @db.VarChar(255)
-  summary         String?
-  content         String
-  cover_image_url String?
-  author_id       Int?
-  view_count      Int?      @default(0)
-  status          String?   @default("PUBLISHED") @db.VarChar(50)
-  created_at      DateTime? @default(now()) @db.Timestamp(6)
-  users           users?    @relation(fields: [author_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                    Int                @id @default(autoincrement())
+  title                 String             @db.VarChar(255)
+  slug                  String             @unique @db.VarChar(255)
+  summary               String?
+  content               String
+  cover_image_url       String?
+  cover_image_public_id String?
+  category_id           Int?
+  author_id             Int?
+  author_name           String?            @db.VarChar(255)
+  view_count            Int?
+  status                String             @default("DRAFT") @db.VarChar(50)
+  review_note           String?
+  published_at          DateTime?          @db.Timestamptz(6)
+  created_at            DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime           @default(now()) @db.Timestamptz(6)
+  users                 employees?         @relation(fields: [author_id], references: [id], onUpdate: NoAction)
+  category              article_categories? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  comments              article_comments[]
+}
+
+model article_categories {
+  id       Int        @id @default(autoincrement())
+  name     String     @db.VarChar(100)
+  slug     String     @unique @db.VarChar(120)
+  articles articles[]
+}
+
+model article_comments {
+  id          Int                @id @default(autoincrement())
+  article_id  Int
+  parent_id   Int?
+  customer_id Int?
+  employee_id Int?
+  author_name String             @db.VarChar(255)
+  content     String
+  status      String             @default("VISIBLE") @db.VarChar(20)
+  created_at  DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime           @default(now()) @db.Timestamptz(6)
+  article     articles           @relation(fields: [article_id], references: [id], onDelete: Cascade)
+  parent      article_comments?  @relation("CommentReplies", fields: [parent_id], references: [id], onDelete: Cascade)
+  replies     article_comments[] @relation("CommentReplies")
+
+  @@index([article_id, created_at], map: "idx_article_comments_article")
 }
 
 model purchase_orders {
-  id                     Int                    @id @default(autoincrement())
-  po_code                String                 @unique @db.VarChar(50)
-  supplier_id            Int
-  destination_facility_id Int?
-  created_by_id          Int?
-  total_amount           Decimal?               @default(0) @db.Decimal(15, 2)
-  status                 String?                @default("PENDING") @db.VarChar(50)
-  note                   String?
-  po_date                DateTime?              @default(now()) @db.Timestamp(6)
-  created_at             DateTime?              @default(now()) @db.Timestamp(6)
-  cash_flow_transactions cash_flow_transactions[]
-  purchase_order_items   purchase_order_items[]
-  users                  users?                 @relation(fields: [created_by_id], references: [id], onUpdate: NoAction)
-  destination_facility   facilities?            @relation("po_destination", fields: [destination_facility_id], references: [id], onUpdate: NoAction)
-  supplier               facilities             @relation("po_supplier", fields: [supplier_id], references: [id], onUpdate: NoAction)
-  supplier_debts         supplier_debts[]
+  id                       Int                     @id @default(autoincrement())
+  po_code                  String                  @unique @db.VarChar(50)
+  supplier_id              Int?
+  supplier_manufacturer_id Int?
+  facility_id              Int?
+  created_by_employee_id   Int?
+  approved_by_id           Int?
+  approved_at              DateTime?               @db.Timestamptz(6)
+  total_amount             Decimal?                @default(0) @db.Decimal(15, 2)
+  status                   String?                 @default("PENDING") @db.VarChar(50)
+  note                     String?
+  cancel_reason            String?
+  closed_reason            String?
+  rejected_reason          String?
+  expected_at              DateTime?               @db.Date
+  received_at              DateTime?               @db.Timestamptz(6)
+  created_at               DateTime?               @default(now()) @db.Timestamptz(6)
+  accounts_payable         accounts_payable[]
+  cashbook_logs            cashbook_logs[]
+  purchase_order_items     purchase_order_items[]
+  purchase_order_events    purchase_order_events[]
+  goods_receipts           goods_receipts[]
+  employees                employees?              @relation(fields: [created_by_employee_id], references: [id], onUpdate: NoAction)
+  approved_by              employees?              @relation("po_approver", fields: [approved_by_id], references: [id], onUpdate: NoAction)
+  supplier                 facilities?             @relation("po_supplier", fields: [supplier_id], references: [id], onUpdate: NoAction)
+  supplier_manufacturer    manufacturers?          @relation(fields: [supplier_manufacturer_id], references: [id], onUpdate: NoAction)
+  facility                 facilities?             @relation("po_facility", fields: [facility_id], references: [id], onUpdate: NoAction)
 
   @@index([status], map: "idx_po_status")
   @@index([supplier_id], map: "idx_po_supplier")
+  @@index([facility_id], map: "idx_po_facility")
+}
+
+model purchase_order_events {
+  id              BigInt          @id @default(autoincrement())
+  po_id           Int
+  action          String          @db.VarChar(30)
+  from_status     String?         @db.VarChar(50)
+  to_status       String          @db.VarChar(50)
+  actor_id        Int
+  note            String?
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  purchase_orders purchase_orders @relation(fields: [po_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  actor           employees       @relation("po_event_actor", fields: [actor_id], references: [id], onUpdate: NoAction)
+
+  @@index([po_id], map: "idx_po_events_po")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model goods_receipts {
+  id                        Int                         @id @default(autoincrement())
+  receipt_code              String                      @unique @db.VarChar(50)
+  po_id                     Int
+  facility_id               Int
+  received_by_id            Int
+  received_at               DateTime                    @default(now()) @db.Timestamptz(6)
+  note                      String?
+  purchase_orders           purchase_orders             @relation(fields: [po_id], references: [id], onUpdate: NoAction)
+  facility                  facilities                  @relation("gr_facility", fields: [facility_id], references: [id], onUpdate: NoAction)
+  received_by               employees                   @relation("gr_receiver", fields: [received_by_id], references: [id], onUpdate: NoAction)
+  goods_receipt_lines       goods_receipt_lines[]
+  goods_receipt_attachments goods_receipt_attachments[]
+  accounts_payable          accounts_payable?
+
+  @@index([po_id], map: "idx_goods_receipts_po")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model goods_receipt_lines {
+  id                   Int                  @id @default(autoincrement())
+  receipt_id           Int
+  po_item_id           Int
+  batch_id             Int
+  quantity_accepted    Int
+  quantity_rejected    Int
+  reject_reason        String?
+  box_uids             String[]             @default([]) @db.Uuid
+  rejected_box_uids    String[]             @default([]) @db.Uuid
+  goods_receipts       goods_receipts       @relation(fields: [receipt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchase_order_items purchase_order_items @relation(fields: [po_item_id], references: [id], onUpdate: NoAction)
+  batches              batches              @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+
+  @@unique([receipt_id, po_item_id, batch_id])
+  @@index([receipt_id], map: "idx_goods_receipt_lines_receipt")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model goods_receipt_attachments {
+  id              Int            @id @default(autoincrement())
+  receipt_id      Int
+  kind            String
+  batch_id        Int?
+  image_reference String
+  uploaded_by_id  Int
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  goods_receipts  goods_receipts @relation(fields: [receipt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  batches         batches?       @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+  uploaded_by     employees      @relation("gr_attachment_uploader", fields: [uploaded_by_id], references: [id], onUpdate: NoAction)
+
+  @@index([receipt_id], map: "idx_goods_receipt_attachments_receipt")
 }
 
 model purchase_order_items {
-  id                       Int                       @id @default(autoincrement())
-  purchase_order_id        Int
-  medicine_id              Int
-  batch_id                 Int?
-  packaging_id             Int?
-  ordered_quantity         Int
-  received_quantity        Int?                      @default(0)
-  unit_price               Decimal                   @db.Decimal(12, 2)
-  total_price              Decimal                   @db.Decimal(15, 2)
-  medicine_batches         medicine_batches?         @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
-  medicines                medicines                 @relation(fields: [medicine_id], references: [id], onUpdate: NoAction)
-  packaging_specifications packaging_specifications? @relation(fields: [packaging_id], references: [id], onUpdate: NoAction)
-  purchase_orders          purchase_orders           @relation(fields: [purchase_order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                  Int                   @id @default(autoincrement())
+  po_id               Int
+  medicine_id         Int
+  batch_id            Int?
+  variant_id          Int?
+  quantity            Int
+  received_quantity   Int                   @default(0)
+  unit_price          Decimal               @db.Decimal(12, 2)
+  total_price         Decimal?              @default(dbgenerated("((quantity)::numeric * unit_price)")) @db.Decimal(15, 2)
+  goods_receipt_lines goods_receipt_lines[]
+  packaging_variants  packaging_variants?   @relation(fields: [variant_id], references: [id], onUpdate: NoAction, map: "fk_po_items_variant")
+  medicine_batches    batches?              @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+  medicines           medicines             @relation(fields: [medicine_id], references: [id], onUpdate: NoAction)
+  purchase_orders     purchase_orders       @relation(fields: [po_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([medicine_id], map: "idx_po_items_medicine")
-  @@index([purchase_order_id], map: "idx_po_items_po")
+  @@index([medicine_id], map: "idx_po_items_medicine_id")
+  @@index([po_id], map: "idx_po_items_po_id")
 }
 
 model shipments {
-  id                      Int       @id @default(autoincrement())
-  order_id                Int       @unique
-  tracking_number         String    @unique @db.VarChar(50)
-  courier_name            String    @default("GiaoHangNhanh") @db.VarChar(100)
-  shipment_status         String    @default("PENDING_PICKUP") @db.VarChar(50)
-  pickup_date             DateTime? @db.Timestamp(6)
-  estimated_delivery_date DateTime? @db.Timestamp(6)
-  actual_delivery_date    DateTime? @db.Timestamp(6)
-  cod_amount              Decimal   @default(0) @db.Decimal(15, 2)
-  cod_status              String    @default("UNRECONCILED") @db.VarChar(50)
-  cod_reconciled_at       DateTime? @db.Timestamp(6)
-  note                    String?
-  created_at              DateTime? @default(now()) @db.Timestamp(6)
-  updated_at              DateTime? @default(now()) @db.Timestamp(6)
-  orders                  orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                    Int       @id @default(autoincrement())
+  order_id              Int       @unique
+  tracking_number       String    @db.VarChar(50)
+  courier_name          String    @default("EXPRESS_LOGISTICS") @db.VarChar(100)
+  carrier_confirmed_at  DateTime? @db.Timestamptz(6)
+  shipping_status       String    @default("PENDING_PICKUP") @db.VarChar(50)
+  picked_up_at          DateTime? @db.Timestamptz(6)
+  estimated_delivery_at DateTime? @db.Timestamptz(6)
+  actual_delivery_at    DateTime? @db.Timestamptz(6)
+  proof_type            String?   @db.VarChar(50)
+  proof_reference       String?
+  delivered_to_name     String?   @db.VarChar(150)
+  delivery_notes        String?
+  return_category       String?   @db.VarChar(50)
+  return_reason         String?
+  return_qa_status      String?   @db.VarChar(50)
+  return_qa_notes       String?
+  return_disposition    String?   @db.VarChar(50)
+  return_received_at    DateTime? @db.Timestamptz(6)
+  return_disposed_at    DateTime? @db.Timestamptz(6)
+  cod_amount            Decimal   @default(0) @db.Decimal(15, 2)
+  cod_settlement_status String    @default("UNSETTLED") @db.VarChar(50)
+  cod_settled_at        DateTime? @db.Timestamptz(6)
+  note                  String?
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
+  orders                orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([cod_status], map: "idx_shipments_cod_status")
-  @@index([order_id], map: "idx_shipments_order")
-}
-
-model verification_logs {
-  id                  Int             @id @default(autoincrement())
-  uid                 String          @db.Uuid
-  user_id             Int?
-  latitude            Decimal?        @db.Decimal(10, 7)
-  longitude           Decimal?        @db.Decimal(10, 7)
-  ip_address          String?         @db.VarChar(50)
-  user_agent          String?
-  scan_timestamp      DateTime?       @default(now()) @db.Timestamp(6)
-  verification_result String?         @default("AUTHENTIC_FIRST_TIME") @db.VarChar(50)
-  risk_score          Int?            @default(0)
-  medicine_boxes      medicine_boxes  @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
-  users               users?          @relation(fields: [user_id], references: [id], onUpdate: NoAction)
-
-  @@index([uid], map: "idx_verification_logs_uid")
+  @@unique([courier_name, tracking_number], map: "uq_shipments_courier_tracking")
+  @@index([cod_settlement_status], map: "idx_shipments_cod_status")
+  @@index([order_id], map: "idx_shipments_order_id")
 }
 
 model fraud_alerts {
-  id                 Int             @id @default(autoincrement())
-  uid                String?         @db.Uuid
-  alert_type         String          @db.VarChar(100)
-  severity           String?         @default("MEDIUM") @db.VarChar(50)
-  description        String?
-  latitude_1         Decimal?        @db.Decimal(10, 7)
-  longitude_1        Decimal?        @db.Decimal(10, 7)
-  latitude_2         Decimal?        @db.Decimal(10, 7)
-  longitude_2        Decimal?        @db.Decimal(10, 7)
-  distance_km        Float?
-  time_diff_minutes  Float?
-  velocity_kmh       Float?
-  resolution_status  String?         @default("OPEN") @db.VarChar(50)
-  created_at         DateTime?       @default(now()) @db.Timestamp(6)
-  medicine_boxes     medicine_boxes? @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+  id                   Int             @id @default(autoincrement())
+  uid                  String?         @db.Uuid
+  fraud_type           String          @db.VarChar(100)
+  severity_level       String?         @default("WARNING") @db.VarChar(50)
+  description          String?
+  latitude_1           Decimal?        @db.Decimal(10, 7)
+  longitude_1          Decimal?        @db.Decimal(10, 7)
+  latitude_2           Decimal?        @db.Decimal(10, 7)
+  longitude_2          Decimal?        @db.Decimal(10, 7)
+  distance_km          Float?
+  time_delta_minutes   Float?
+  calculated_speed_kmh Float?
+  resolution_status    String?         @default("UNRESOLVED") @db.VarChar(50)
+  created_at           DateTime?       @default(now()) @db.Timestamptz(6)
+  medicine_boxes       medicine_boxes? @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([uid], map: "idx_fraud_alerts_uid")
 }
 
 model loyalty_point_logs {
-  id               Int        @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   customer_id      Int
   order_id         Int?
-  transaction_type String     @db.VarChar(50)
+  transaction_type String    @db.VarChar(50)
   points           Int
   description      String?
-  created_at       DateTime?  @default(now()) @db.Timestamp(6)
-  customers        customers  @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  orders           orders?    @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  customers        customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders           orders?   @relation(fields: [order_id], references: [id], onUpdate: NoAction)
 
-  @@index([customer_id], map: "idx_point_logs_customer")
+  @@index([customer_id], map: "idx_loyalty_logs_customer_id")
+  @@index([order_id], map: "idx_loyalty_logs_order_id")
 }
 
-model return_orders {
-  id                 Int                  @id @default(autoincrement())
-  rma_code           String               @unique @db.VarChar(50)
-  order_id           Int
-  customer_id        Int
-  reason             String
-  return_status      String?              @default("PENDING") @db.VarChar(50)
-  refund_amount      Decimal?             @default(0) @db.Decimal(15, 2)
-  note               String?
-  created_at         DateTime?            @default(now()) @db.Timestamp(6)
-  return_order_items return_order_items[]
-  customers          customers            @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  orders             orders               @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([order_id], map: "idx_return_orders_order")
-}
-
-model return_order_items {
-  id              Int           @id @default(autoincrement())
-  return_order_id Int
-  medicine_id     Int
-  quantity        Int
-  reason          String?
-  medicines       medicines     @relation(fields: [medicine_id], references: [id], onUpdate: NoAction)
-  return_orders   return_orders @relation(fields: [return_order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-model cash_flow_transactions {
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model accounts_payable {
   id                Int              @id @default(autoincrement())
-  transaction_code  String           @unique @db.VarChar(50)
-  transaction_type  String           @db.VarChar(20)
-  category          String           @db.VarChar(50)
-  amount            Decimal          @db.Decimal(15, 2)
-  counterparty_type String?          @default("OTHER") @db.VarChar(30)
-  counterparty_name String?          @db.VarChar(255)
+  supplier_name     String           @db.VarChar(255)
+  supplier_id       Int?
+  po_id             Int?
+  goods_receipt_id  Int?             @unique
+  total_due_amount  Decimal          @db.Decimal(15, 2)
+  paid_amount       Decimal?         @default(0) @db.Decimal(15, 2)
+  remaining_balance Decimal?         @default(dbgenerated("(total_due_amount - paid_amount)")) @db.Decimal(15, 2)
+  due_date          DateTime?        @db.Timestamptz(6)
+  status            String?          @default("UNPAID") @db.VarChar(50)
+  created_at        DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?        @default(now()) @db.Timestamptz(6)
+  purchase_orders   purchase_orders? @relation(fields: [po_id], references: [id], onUpdate: NoAction)
+  supplier          facilities?      @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
+  goods_receipt     goods_receipts?  @relation(fields: [goods_receipt_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model accounts_receivable {
+  id                Int       @id @default(autoincrement())
+  customer_id       Int
   order_id          Int?
-  purchase_order_id Int?
-  payment_method    String?          @default("BANK_TRANSFER") @db.VarChar(50)
+  total_due_amount  Decimal   @db.Decimal(15, 2)
+  paid_amount       Decimal?  @default(0) @db.Decimal(15, 2)
+  remaining_balance Decimal?  @default(dbgenerated("(total_due_amount - paid_amount)")) @db.Decimal(15, 2)
+  due_date          DateTime? @db.Timestamptz(6)
+  status            String?   @default("UNPAID") @db.VarChar(50)
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+  customers         customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders            orders?   @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+}
+
+model batches {
+  id                                Int                         @id @default(autoincrement())
+  batch_number                      String                      @unique @db.VarChar(100)
+  medicine_id                       Int?
+  manufacturer_id                   Int?
+  legacy_manufacturer_facility_id   Int?
+  manufacturer_source_facility_name String?                     @db.VarChar(150)
+  manufacturer_source_facility_id   Int?
+  production_date                   DateTime                    @db.Date
+  expiry_date                       DateTime                    @db.Date
+  initial_quantity                  Int                         @default(0)
+  remaining_quantity                Int                         @default(0)
+  status                            String?                     @default("ACTIVE") @db.VarChar(50)
+  certificate_co_cq                 String?
+  hold_reason                       String?
+  held_by_id                        Int?
+  held_at                           DateTime?                   @db.Timestamptz(6)
+  created_at                        DateTime?                   @default(now()) @db.Timestamptz(6)
+  facilities                        facilities?                 @relation(fields: [legacy_manufacturer_facility_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  manufacturer                      manufacturers?              @relation(fields: [manufacturer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  medicines                         medicines?                  @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicine_boxes                    medicine_boxes[]
+  purchase_order_items              purchase_order_items[]
+  sscc_cartons                      sscc_cartons[]
+  inventory_logs                    inventory_logs[]
+  goods_receipt_lines               goods_receipt_lines[]
+  goods_receipt_attachments         goods_receipt_attachments[]
+
+  @@index([medicine_id], map: "idx_batches_medicine_id")
+  @@index([expiry_date], map: "idx_batches_expiry_date")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model cashbook_logs {
+  id                 Int              @id @default(autoincrement())
+  transaction_code   String           @unique @db.VarChar(50)
+  transaction_type   String           @db.VarChar(20)
+  category           String           @db.VarChar(50)
+  amount             Decimal          @db.Decimal(15, 2)
+  party_type         String?          @default("OTHER") @db.VarChar(30)
+  party_name         String?          @db.VarChar(255)
+  order_id           Int?
+  po_id              Int?
+  payment_method     String?          @default("BANK_TRANSFER") @db.VarChar(50)
+  note               String?
+  transaction_date   DateTime?        @default(now()) @db.Timestamptz(6)
+  created_by_user_id Int?
+  orders             orders?          @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+  purchase_orders    purchase_orders? @relation(fields: [po_id], references: [id], onUpdate: NoAction)
+  users              employees?       @relation(fields: [created_by_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([transaction_date], map: "idx_cashbook_transaction_date")
+}
+
+model inventories {
+  id                 Int                 @id @default(autoincrement())
+  facility_id        Int?
+  variant_id         Int?
+  stock_quantity     Int                 @default(0)
+  reserved_quantity  Int?                @default(0)
+  updated_at         DateTime?           @default(now()) @db.Timestamptz(6)
+  packaging_variants packaging_variants? @relation(fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_inventories_variant")
+  facilities         facilities?         @relation(fields: [facility_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([facility_id, variant_id], map: "uq_facility_inventory")
+  @@index([variant_id], map: "idx_inventories_variant_id")
+}
+
+model inventory_logs {
+  id                Int         @id @default(autoincrement())
+  facility_id       Int?
+  medicine_id       Int?
+  variant_id        Int?
+  batch_id          Int?
+  stock_bucket      String?
+  transaction_type  String      @db.VarChar(50)
+  quantity_changed  Int
+  previous_quantity Int
+  new_quantity      Int
+  reference_code    String?     @db.VarChar(100)
   note              String?
-  transaction_date  DateTime?        @default(now()) @db.Timestamp(6)
-  created_by_id     Int?
-  users             users?           @relation(fields: [created_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  orders            orders?          @relation(fields: [order_id], references: [id], onUpdate: NoAction)
-  purchase_orders   purchase_orders? @relation(fields: [purchase_order_id], references: [id], onUpdate: NoAction)
+  performed_by_id   Int?
+  created_at        DateTime?   @default(now()) @db.Timestamptz(6)
+  facilities        facilities? @relation(fields: [facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicines         medicines?  @relation(fields: [medicine_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users             employees?  @relation(fields: [performed_by_id], references: [id], onUpdate: NoAction)
+  batches           batches?    @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+
+  @@index([facility_id], map: "idx_inventory_logs_facility_id")
+  @@index([medicine_id], map: "idx_inventory_logs_medicine_id")
+  @@index([created_at], map: "idx_inventory_logs_created_at")
 }
 
-model customer_debts {
-  id                    Int       @id @default(autoincrement())
-  customer_id           Int
-  order_id              Int?
-  total_debt_amount     Decimal   @db.Decimal(15, 2)
-  paid_amount           Decimal?  @default(0) @db.Decimal(15, 2)
-  remaining_debt_amount Decimal   @db.Decimal(15, 2)
-  due_date              DateTime? @db.Timestamp(6)
-  debt_status           String?   @default("UNPAID") @db.VarChar(50)
-  created_at            DateTime? @default(now()) @db.Timestamp(6)
-  updated_at            DateTime? @default(now()) @db.Timestamp(6)
-  customers             customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  orders                orders?   @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+model qr_scan_logs {
+  id                 Int            @id @default(autoincrement())
+  uid                String         @db.Uuid
+  scanned_by_user_id Int?
+  latitude           Decimal?       @db.Decimal(10, 7)
+  longitude          Decimal?       @db.Decimal(10, 7)
+  ip_address         String?        @db.VarChar(50)
+  user_agent         String?
+  scanned_at         DateTime?      @default(now()) @db.Timestamptz(6)
+  scan_result        String?        @default("VALID") @db.VarChar(50)
+  risk_score         Int?           @default(0)
+  medicine_boxes     medicine_boxes @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+  customers          customers?     @relation(fields: [scanned_by_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([uid], map: "idx_qr_scan_logs_uid")
+  @@index([scanned_by_user_id], map: "idx_qr_scan_logs_user_id")
 }
 
-model supplier_debts {
-  id                    Int              @id @default(autoincrement())
-  supplier_name         String           @db.VarChar(255)
-  purchase_order_id     Int?
-  total_debt_amount     Decimal          @db.Decimal(15, 2)
-  paid_amount           Decimal?         @default(0) @db.Decimal(15, 2)
-  remaining_debt_amount Decimal          @db.Decimal(15, 2)
-  due_date              DateTime?        @db.Timestamp(6)
-  debt_status           String?          @default("UNPAID") @db.VarChar(50)
-  created_at            DateTime?        @default(now()) @db.Timestamp(6)
-  updated_at            DateTime?        @default(now()) @db.Timestamp(6)
-  purchase_orders       purchase_orders? @relation(fields: [purchase_order_id], references: [id], onUpdate: NoAction)
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model reviews {
+  id                    Int                     @id @default(autoincrement())
+  customer_id           Int?
+  medicine_id           Int?
+  rating_stars          Int?
+  comment               String?
+  images                String[]
+  status                String?                 @default("APPROVED") @db.VarChar(50)
+  is_verified_purchase  Boolean?                @default(false)
+  helpful_count         Int?                    @default(0)
+  admin_reply           String?
+  replied_at            DateTime?               @db.Timestamptz(6)
+  replied_by_name       String?                 @db.VarChar(150)
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  customers             customers?              @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicines             medicines?              @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  moderation_reports    moderation_reports[]
+  moderation_audit_logs moderation_audit_logs[]
+
+  @@index([medicine_id], map: "idx_reviews_medicine_id")
+  @@index([customer_id], map: "idx_reviews_customer_id")
+  @@index([status], map: "idx_reviews_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model sscc_cartons {
+  id                  Int              @id @default(autoincrement())
+  sscc_code           String           @unique @db.VarChar(50)
+  batch_id            Int?
+  current_facility_id Int?
+  status              String?          @default("PACKAGED") @db.VarChar(50)
+  box_count           Int?             @default(0)
+  created_at          DateTime?        @default(now()) @db.Timestamptz(6)
+  medicine_boxes      medicine_boxes[]
+  batches             batches?         @relation(fields: [batch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  facilities          facilities?      @relation(fields: [current_facility_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([batch_id], map: "idx_sscc_cartons_batch_id")
+  @@index([current_facility_id], map: "idx_sscc_cartons_facility_id")
+}
+
+model manufacturers {
+  id                           Int               @id @default(autoincrement())
+  name                         String            @unique @db.VarChar(255)
+  slug                         String?           @unique @db.VarChar(255)
+  country                      String?           @db.VarChar(100)
+  business_registration_number String?           @db.VarChar(100)
+  verification_status          String            @default("UNVERIFIED") @db.VarChar(20)
+  address                      String?
+  phone_number                 String?           @db.VarChar(20)
+  email                        String?           @db.VarChar(255)
+  logo_url                     String?           @db.VarChar(500)
+  website                      String?           @db.VarChar(255)
+  status                       String?           @default("ACTIVE") @db.VarChar(20)
+  created_at                   DateTime?         @default(now()) @db.Timestamptz(6)
+  medicines                    medicines[]
+  batches                      batches[]
+  purchase_orders              purchase_orders[]
+}
+
+model customer_wishlists {
+  customer_id Int
+  medicine_id Int
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  customers   customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicines   medicines @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([customer_id, medicine_id])
+  @@index([customer_id], map: "idx_wishlist_customer_id")
+  @@index([medicine_id], map: "idx_wishlist_medicine_id")
+}
+
+model moderation_reports {
+  id                      Int       @id @default(autoincrement())
+  review_id               Int
+  reporter_customer_id    Int?
+  reporter_employee_id    Int?
+  reason                  String    @db.VarChar(50)
+  description             String?
+  status                  String    @default("PENDING") @db.VarChar(50)
+  resolved_by_employee_id Int?
+  resolver_note           String?
+  created_at              DateTime? @default(now()) @db.Timestamptz(6)
+  resolved_at             DateTime? @db.Timestamptz(6)
+
+  reviews           reviews    @relation(fields: [review_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reporter_customer customers? @relation("report_reporter_customer", fields: [reporter_customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reporter_employee employees? @relation("report_reporter_employee", fields: [reporter_employee_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  resolver_employee employees? @relation("report_resolver_employee", fields: [resolved_by_employee_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([review_id], map: "idx_moderation_reports_review_id")
+  @@index([status], map: "idx_moderation_reports_status")
+}
+
+model moderation_audit_logs {
+  id                       Int       @id @default(autoincrement())
+  review_id                Int?
+  action                   String    @db.VarChar(50)
+  performed_by_employee_id Int?
+  performed_by_customer_id Int?
+  performed_by_role        String?   @db.VarChar(50)
+  reason                   String?
+  meta                     Json?     @default("{}")
+  created_at               DateTime? @default(now()) @db.Timestamptz(6)
+
+  reviews               reviews?   @relation(fields: [review_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  performed_by_employee employees? @relation("audit_employee", fields: [performed_by_employee_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  performed_by_customer customers? @relation("audit_customer", fields: [performed_by_customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([review_id], map: "idx_moderation_audit_logs_review_id")
+  @@index([action], map: "idx_moderation_audit_logs_action")
+  @@index([created_at], map: "idx_moderation_audit_logs_created_at")
+}
+
+model return_requests {
+  id                   Int      @id @default(autoincrement())
+  code                 String   @unique
+  order_id             Int
+  customer_id          Int?
+  facility_id          Int
+  channel              String
+  resolution           String
+  return_method        String
+  status               String   @default("REQUESTED")
+  description          String?
+  pickup_address       String?
+  customer_fee         Decimal  @default(0) @db.Decimal(15, 2)
+  courier_name         String?
+  tracking_number      String?
+  staff_note           String?
+  replacement_order_id Int?     @unique
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model return_request_lines {
+  request_id          Int
+  order_item_id       Int
+  variant_id          Int
+  quantity            Int
+  reason_code         String
+  reason_note         String?
+  restricted          Boolean  @default(false)
+  exchange_variant_id Int?
+  approved_quantity   Int?
+  received_quantity   Int?
+  box_uids            String[] @default([]) @db.Uuid
+  pass_quantity       Int?
+  fail_quantity       Int?
+  mismatch_quantity   Int?
+
+  @@id([request_id, order_item_id])
+}
+
+model return_attachments {
+  id               Int      @id @default(autoincrement())
+  request_id       Int
+  image_reference  String
+  uploaded_by_type String
+  uploaded_by_id   Int
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model return_request_events {
+  id          Int      @id @default(autoincrement())
+  request_id  Int
+  action      String
+  from_status String?
+  to_status   String
+  actor_type  String?
+  actor_id    Int?
+  actor_role  String?
+  actor_name  String?
+  facility_id Int?
+  note        String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model return_request_refunds {
+  request_id        Int       @id
+  goods_value       Decimal   @db.Decimal(15, 2)
+  customer_fee      Decimal   @db.Decimal(15, 2)
+  refund_amount     Decimal   @db.Decimal(15, 2)
+  payment_method    String
+  payment_reference String?
+  reason            String
+  approved_by       Int
+  approved_at       DateTime  @default(now()) @db.Timestamptz(6)
+  executed_by       Int?
+  executed_at       DateTime? @db.Timestamptz(6)
+  cashbook_id       Int?      @unique
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model order_packages {
+  id                  Int                        @id @default(autoincrement())
+  package_code        String                     @unique @db.VarChar(50)
+  order_id            Int
+  facility_id         Int
+  status              String                     @default("PACKED") @db.VarChar(20)
+  weight_g            Int?
+  dimensions          String?                    @db.VarChar(50)
+  packed_by_id        Int
+  packed_at           DateTime                   @default(now()) @db.Timestamptz(6)
+  void_reason         String?
+  voided_by_id        Int?
+  voided_at           DateTime?                  @db.Timestamptz(6)
+  orders              orders                     @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+  facility            facilities                 @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
+  packed_by           employees                  @relation("package_packer", fields: [packed_by_id], references: [id], onUpdate: NoAction)
+  voided_by           employees?                 @relation("package_voider", fields: [voided_by_id], references: [id], onUpdate: NoAction)
+  order_package_items order_package_items[]
+  handover            carrier_handover_packages?
+
+  @@index([order_id], map: "idx_order_packages_order")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model order_package_items {
+  id             Int            @id @default(autoincrement())
+  package_id     Int
+  order_item_id  Int
+  box_uid        String         @db.Uuid
+  voided_at      DateTime?      @db.Timestamptz(6)
+  order_packages order_packages @relation(fields: [package_id], references: [id], onUpdate: NoAction)
+  order_items    order_items    @relation(fields: [order_item_id], references: [id], onUpdate: NoAction)
+  medicine_boxes medicine_boxes @relation(fields: [box_uid], references: [uid], onUpdate: NoAction)
+
+  @@index([package_id], map: "idx_order_package_items_package")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model carrier_handovers {
+  id                Int                         @id @default(autoincrement())
+  handover_code     String                      @unique @db.VarChar(50)
+  facility_id       Int
+  courier_name      String                      @db.VarChar(100)
+  driver_name       String?                     @db.VarChar(100)
+  driver_phone      String?                     @db.VarChar(30)
+  vehicle_plate     String?                     @db.VarChar(20)
+  note              String?
+  handed_over_by_id Int
+  handed_over_at    DateTime                    @default(now()) @db.Timestamptz(6)
+  facility          facilities                  @relation(fields: [facility_id], references: [id], onUpdate: NoAction)
+  handed_over_by    employees                   @relation(fields: [handed_over_by_id], references: [id], onUpdate: NoAction)
+  packages          carrier_handover_packages[]
+
+  @@index([facility_id, handed_over_at(sort: Desc)], map: "idx_carrier_handovers_facility")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model carrier_handover_packages {
+  handover_id Int
+  package_id  Int               @unique
+  handover    carrier_handovers @relation(fields: [handover_id], references: [id], onUpdate: NoAction)
+  package     order_packages    @relation(fields: [package_id], references: [id], onUpdate: NoAction)
+
+  @@id([handover_id, package_id])
 }
