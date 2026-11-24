@@ -1,6 +1,6 @@
 -- PharmaTrace VN development fixtures. Never use these accounts in production.
 -- Catalog (medicines, packaging, categories, manufacturers), login accounts and facilities only.
--- Customer points/tier are reset to defaults. Orders, stock and batches live in 02_demo_transactions.sql.
+-- Customer points/tier are reset to defaults. Orders, stock and batches are in the demo transactions part at the end of this file.
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL search_path = public, pg_catalog;
