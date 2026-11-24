@@ -103,7 +103,7 @@ Requirements: Docker with Compose.
 
 3. Open `http://localhost` (or the port in `HTTP_PORT`). nginx serves the frontend on `/` and the API on `/v1/pharmatrace`.
 
-On the first start with an empty database volume, the PostgreSQL container runs the scripts in `database/`: it creates `app_user`, loads the schema, applies RLS and imports the development seed data. These scripts do **not** run again on an existing volume.
+On the first start with an empty database volume, the PostgreSQL container runs the scripts in `database/`: it creates `app_user`, loads the schema, applies RLS and imports the development seed data and the demo transactions. These scripts do **not** run again on an existing volume.
 
 To run only the database (for local development of the API and frontend): `docker compose up -d db`.
 
@@ -147,13 +147,25 @@ Notes:
 
    Open `http://localhost:3000`.
 
-### Demo accounts
+### Demo accounts and data
 
-The development seed contains catalog data, facilities and login accounts only (no orders or stock). Seeded accounts use these patterns:
+The development seed in `database/seeds/01_seed_data.sql` holds the catalog, facilities and login accounts, followed by a ready-made demo of a manual end-to-end test: purchase orders, batches and boxes, orders in several states, a return and refund, a batch recall and disposal, COD reconciliation, supplier payables, reviews with a moderation report, and a blog article. It is loaded last by `00_master_init.sql`. Personal data in it is replaced with placeholders, and image references point to the author's Cloudinary account, so uploaded images may not load on another setup.
 
-- Customers: `customer<ID>@example.test`
-- Employees: `employee<ID>@example.test` (for example `employee11` is a super administrator, `employee12` a store manager and `employee13` a pharmacist)
-- Password for every seeded account: `PharmaTraceDemo2026!` (development only)
+Accounts:
+
+| Role | Account |
+|---|---|
+| Super administrator | `admin@pharmatrace.vn` |
+| Store manager | `storemanager@pharmatrace.vn` |
+| Pharmacist | `pharmacist@pharmatrace.vn` |
+| Warehouse staff (distribution hub) | `warehouse@pharmatrace.vn` |
+| Factory warehouse staff | `factorywarehouse@pharmatrace.vn` |
+| Accountant | `accountant@pharmatrace.vn` |
+| Finance manager | `financemanager@pharmatrace.vn` |
+| Warehouse manager (distribution hub) | `warehousemanager@pharmatrace.vn` |
+| Customers | `customer1@pharmatrace.vn`, `customer2@pharmatrace.vn` |
+
+Password for every seeded account: `password123` (development only).
 
 ## Database
 
@@ -165,7 +177,7 @@ database/
 ├── 00_master_init.sql           # orchestrates the schema, security and seed scripts
 ├── schemas/                     # table DDL, constraints, keys, functions and triggers
 ├── security/                    # grants, RLS policies and workflow safeguards, grouped by module
-├── seeds/                       # development seed data (and a cleanup script)
+├── seeds/                       # development seed data, demo transactions and a cleanup script
 └── tests/                       # SQL checks for RLS and workflows
 ```
 
@@ -192,5 +204,5 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on every push a
 ## Security notes
 
 - Never commit `.env` files. The repository ignores them.
-- `PharmaTraceDemo2026!` and the seed data are for development only.
+- `password123` and the seed data are for development only.
 - Keep `AUTH_RLS_ENABLED` consistent with the state of your database: enable it only after the auth RLS scripts have been applied.

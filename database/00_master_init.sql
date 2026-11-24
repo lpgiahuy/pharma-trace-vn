@@ -19,11 +19,10 @@
 -- 3. Prescription review schema
 \i /docker-entrypoint-initdb.d/schemas/09_prescription_management.sql
 
--- 4. Development seed (all referenced tables must exist)
+-- 4. Remaining schemas (the seed data is loaded last, see step 10)
 \i /docker-entrypoint-initdb.d/schemas/13_fulfillment_policy.sql
 \i /docker-entrypoint-initdb.d/schemas/14_articles_blog.sql
 \i /docker-entrypoint-initdb.d/schemas/15_flash_sale_quota.sql
-\i /docker-entrypoint-initdb.d/seeds/01_seed_data.sql
 
 -- 5. Prescription review security
 \i /docker-entrypoint-initdb.d/security/prescription/prescription_rls.sql
@@ -140,5 +139,9 @@
 \i /docker-entrypoint-initdb.d/security/reporting/report_access.sql
 \i /docker-entrypoint-initdb.d/security/reporting/finance_reports.sql
 \i /docker-entrypoint-initdb.d/security/reporting/supplier_payments.sql
+
+-- 10. Seed data and demo transactions. Loaded last so every table, function and policy already exists.
+-- Development only.
+\i /docker-entrypoint-initdb.d/seeds/01_seed_data.sql
 
 \unset bootstrap_current_functions
