@@ -42,3 +42,27 @@ test('falls back to the base unit when nothing has stock', () => {
   const product = { packaging: { id: 773 }, packagingOptions: [{ ...box, stock: 0 }, { ...blister, stock: 0 }] };
   assert.equal(pickDisplayedVariant(product).id, 773);
 });
+
+import { pickVariantForPriceRange } from './product-variant.ts';
+
+const cheap = { id: 1, unitName: 'Blister', price: 20000, stock: 5 };
+const dear = { id: 2, unitName: 'Box', price: 70000, stock: 5 };
+
+test('a price filter shows the unit inside the range when the default unit is outside it (B3)', () => {
+  const product = { packaging: { id: 1 }, packagingOptions: [cheap, dear] };
+  assert.equal(pickVariantForPriceRange(product, 60000, 80000), dear);
+});
+
+test('keeps the default unit when it already matches, when there is no filter, or when nothing matches', () => {
+  const product = { packaging: { id: 1 }, packagingOptions: [cheap, dear] };
+  assert.equal(pickVariantForPriceRange(product, 10000, 25000), undefined);
+  assert.equal(pickVariantForPriceRange(product, null, null), undefined);
+  assert.equal(pickVariantForPriceRange(product, 30000, 50000), undefined);
+});
+
+test('supports one-sided ranges and inclusive bounds', () => {
+  const product = { packaging: { id: 1 }, packagingOptions: [cheap, dear] };
+  assert.equal(pickVariantForPriceRange(product, 70000, null), dear);
+  assert.equal(pickVariantForPriceRange(product, null, 70000), undefined);
+  assert.equal(pickVariantForPriceRange(product, 70000, 70000), dear);
+});

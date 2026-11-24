@@ -35,3 +35,30 @@ export function pickDisplayedVariant<V extends VariantLike>(
   if (base && hasStock(base)) return base;
   return options.find((option) => typeof option.stock === 'number' && option.stock > 0) ?? base ?? options[0];
 }
+
+interface PricedVariantLike extends VariantLike {
+  /** Effective price (sale price while a sale is on). */
+  price?: number | string | null;
+}
+
+const inRange = (price: unknown, min: number | null, max: number | null): boolean => {
+  const value = Number(price);
+  if (!Number.isFinite(value)) return false;
+  return (min === null || value >= min) && (max === null || value <= max);
+};
+
+/**
+ * When a price filter is active, the variant a result card should show instead of the default one: the first unit
+ * whose price is inside the range, but only when the default unit is outside it. Returns undefined when there is no
+ * filter, the default unit already matches, or no unit matches (the card then keeps its normal unit).
+ */
+export function pickVariantForPriceRange<V extends PricedVariantLike>(
+  product: ProductVariantSource<V>,
+  min: number | null,
+  max: number | null,
+): V | undefined {
+  if (min === null && max === null) return undefined;
+  const fallback = pickDisplayedVariant(product);
+  if (fallback && inRange(fallback.price, min, max)) return undefined;
+  return (product.packagingOptions ?? []).find((option) => inRange(option.price, min, max));
+}

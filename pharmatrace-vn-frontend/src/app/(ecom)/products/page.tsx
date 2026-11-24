@@ -22,6 +22,7 @@ import { Category } from '@/types/category.types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
 import { formatCurrency, cn } from '@/utils';
 import { parsePriceRange } from '@/utils/price-range';
+import { pickVariantForPriceRange } from '@/utils/product-variant';
 import { ProductCard } from '@/components/shared/ProductCard';
 
 const buildCategoryTree = (flatList: Category[]): (Category & { children?: Category[] })[] => {
@@ -837,6 +838,7 @@ function ProductListContainer() {
                 <ProductCard
                   key={p.id}
                   product={p}
+                  variant={pickVariantForPriceRange(p, minPrice ? Number(minPrice) : null, maxPrice ? Number(maxPrice) : null)}
                   isFavorite={wishlistIds.has(p.id)}
                   onToggleFavorite={handleToggleWishlist}
                 />

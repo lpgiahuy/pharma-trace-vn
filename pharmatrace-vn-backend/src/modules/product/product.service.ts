@@ -138,6 +138,33 @@ export class ProductService {
     private readonly cloudinaryService: CloudinaryService,
   ) { }
 
+  /**
+   * Ids of medicines that have at least one packaging variant whose effective price lies in [min, max].
+   * Mirrors getVariantPrice(): the sale price applies while the sale window is open and the sale quota is not used
+   * up; otherwise the regular price (original_price, or price when there is no original) applies.
+   */
+  private async findMedicineIdsByEffectivePrice(min?: number, max?: number): Promise<number[]> {
+    const lower = min !== undefined ? Prisma.sql`AND effective.price >= ${min}` : Prisma.empty;
+    const upper = max !== undefined ? Prisma.sql`AND effective.price <= ${max}` : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<{ medicine_id: number }[]>(Prisma.sql`
+      SELECT DISTINCT pv.medicine_id
+      FROM public.packaging_variants pv
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN (COALESCE(pv.discount_percent, 0) > 0 OR (pv.original_price IS NOT NULL AND pv.price < pv.original_price))
+            AND pv.sale_start_date IS NOT NULL AND pv.sale_end_date IS NOT NULL
+            AND pv.sale_start_date <= now() AND pv.sale_end_date >= now()
+            AND (pv.sale_quantity IS NULL
+                 OR pv.sale_quantity > COALESCE((SELECT sold FROM public.variant_sale_sold(ARRAY[pv.id]) LIMIT 1), 0))
+          THEN pv.price
+          ELSE COALESCE(pv.original_price, pv.price)
+        END AS price
+      ) effective
+      WHERE true ${lower} ${upper}
+    `);
+    return rows.map((row) => Number(row.medicine_id));
+  }
+
   async findAll(query?: ProductQueryDto) {
     const page = Math.max(1, Number(query?.page) || 1);
     const limit = Math.max(1, Math.min(10000, Number(query?.limit) || 12));
@@ -270,39 +297,27 @@ export class ProductService {
     }
 
     if (query?.minPrice !== undefined || query?.maxPrice !== undefined) {
+      // A medicine matches when ANY of its packaging variants has an effective price inside the range, so a product
+      // priced 20000 / 70000 is found by 60000-80000 through its second variant. A medicine with no variants falls
+      // back to its own price columns.
+      const matchingIds = await this.findMedicineIdsByEffectivePrice(query.minPrice, query.maxPrice);
       const minVal = query.minPrice !== undefined ? new Prisma.Decimal(query.minPrice) : undefined;
       const maxVal = query.maxPrice !== undefined ? new Prisma.Decimal(query.maxPrice) : undefined;
-
-      const promoCondition: Prisma.DecimalFilter = {};
-      const unitCondition: Prisma.DecimalFilter = {};
-
-      if (minVal !== undefined) {
-        promoCondition.gte = minVal;
-        unitCondition.gte = minVal;
-      }
-      if (maxVal !== undefined) {
-        promoCondition.lte = maxVal;
-        unitCondition.lte = maxVal;
-      }
-
+      const ownPrice: Prisma.DecimalFilter = {};
+      if (minVal !== undefined) ownPrice.gte = minVal;
+      if (maxVal !== undefined) ownPrice.lte = maxVal;
       andConditions.push({
         OR: [
+          { id: { in: matchingIds } },
           {
             AND: [
-              { promotional_price: { not: null } },
-              { promotional_price: { gt: new Prisma.Decimal(0) } },
-              { promotional_price: promoCondition },
-            ],
-          },
-          {
-            AND: [
+              { packaging_variants: { none: {} } },
               {
                 OR: [
-                  { promotional_price: null },
-                  { promotional_price: { equals: new Prisma.Decimal(0) } },
+                  { AND: [{ promotional_price: { gt: new Prisma.Decimal(0) } }, { promotional_price: ownPrice }] },
+                  { AND: [{ OR: [{ promotional_price: null }, { promotional_price: new Prisma.Decimal(0) }] }, { unit_price: ownPrice }] },
                 ],
               },
-              { unit_price: unitCondition },
             ],
           },
         ],
