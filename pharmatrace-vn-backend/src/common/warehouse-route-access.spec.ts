@@ -109,11 +109,16 @@ describe('Warehouse route access', () => {
     expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
   });
 
-  it('lets factory staff hold and release batches and draft disposals, but not approve or complete them', () => {
+  it('lets factory staff hold and release batches and draft, approve, complete and cancel disposals', () => {
     for (const method of ['hold', 'release']) expect(rolesOf(WarehouseInventoryController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
     // Staff routes inherit the controller roles; manager routes override them.
     expect(new Set(Reflect.getMetadata(ROLES_KEY, DisposalController) as string[]).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
-    for (const method of ['approve', 'complete', 'cancel']) expect(rolesOf(DisposalController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
+    for (const method of ['approve', 'complete', 'cancel']) {
+      const roles = rolesOf(DisposalController, method);
+      expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+      expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
+      expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
+    }
   });
 
   it('lets only managers read the stock of a source facility for a request', () => {

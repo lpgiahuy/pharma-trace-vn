@@ -6,7 +6,7 @@ import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/curr
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { WH_MANAGER, WH_QUALITY } from '../../../common/warehouse-roles';
+import { DISPOSAL_DECIDE, WH_QUALITY } from '../../../common/warehouse-roles';
 import { CreateDisposalDto, DisposalCandidateQueryDto, DisposalQueryDto, DisposalReasonDto } from './dto/disposal.dto';
 import { DisposalService } from './disposal.service';
 
@@ -45,7 +45,7 @@ export class DisposalController {
   }
 
   @Post(':id/approve')
-  @Roles(...WH_MANAGER)
+  @Roles(...DISPOSAL_DECIDE)
   @ApiOperation({ summary: 'Approve a draft disposal' })
   async approve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.disposals.approve(user, id) };
@@ -65,14 +65,14 @@ export class DisposalController {
   }
 
   @Post(':id/complete')
-  @Roles(...WH_MANAGER)
+  @Roles(...DISPOSAL_DECIDE)
   @ApiOperation({ summary: 'Complete an approved disposal that has an attachment: the boxes are destroyed and stock or quarantine drops' })
   async complete(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.disposals.complete(user, id) };
   }
 
   @Post(':id/cancel')
-  @Roles(...WH_MANAGER)
+  @Roles(...DISPOSAL_DECIDE)
   @ApiOperation({ summary: 'Cancel a draft or approved disposal' })
   async cancel(@Param('id', ParseIntPipe) id: number, @Body() dto: DisposalReasonDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.disposals.cancel(user, id, dto.reason) };

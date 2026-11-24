@@ -62,7 +62,8 @@ BEGIN
   END IF;
 END $$;
 
--- Disposal: factory staff draft it for the quarantined boxes; approving and completing it are manager actions.
+-- Disposal: factory staff draft it for the quarantined boxes, then approve and complete it themselves (the factory has
+-- no warehouse manager). Staff of another factory and warehouse floor staff cannot.
 DO $$
 DECLARE uids uuid[]; disposal integer;
 BEGIN
@@ -73,11 +74,12 @@ BEGIN
   PERFORM public.add_disposal_attachment(disposal, 'photo-ref');
   PERFORM set_config('test.disposal', disposal::text, true);
 END $$;
-SELECT pg_temp.fq_expect('DP_FORBIDDEN', format('SELECT public.approve_disposal(%s)', current_setting('test.disposal')));
-SELECT pg_temp.fq_expect('DP_FORBIDDEN', format('SELECT public.complete_disposal(%s)', current_setting('test.disposal')));
 SELECT pg_temp.fq_expect('DP_FORBIDDEN', format('SELECT public.create_disposal(%L, %s, %L, ARRAY[gen_random_uuid()])', 'FQ-DISP-0002', current_setting('test.g'), 'x'));
--- A manager of the factory approves and completes it.
-SELECT pg_temp.fq_as('WAREHOUSE_MANAGER','wm','f');
+SELECT pg_temp.fq_as('FACTORY_WAREHOUSE_STAFF','gs','g');
+SELECT pg_temp.fq_expect('DP_NOT_FOUND', format('SELECT public.approve_disposal(%s)', current_setting('test.disposal')));
+SELECT pg_temp.fq_as('WAREHOUSE_STAFF','ws','w');
+SELECT pg_temp.fq_expect('DP_FORBIDDEN', format('SELECT public.approve_disposal(%s)', current_setting('test.disposal')));
+SELECT pg_temp.fq_as('FACTORY_WAREHOUSE_STAFF','fs','f');
 SELECT public.approve_disposal(current_setting('test.disposal')::int);
 SELECT public.complete_disposal(current_setting('test.disposal')::int);
 DO $$ BEGIN

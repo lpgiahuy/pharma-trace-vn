@@ -3,7 +3,8 @@
 --   * hold / release a batch (the status change itself is a plain update; this opens the audit-event insert to them),
 --   * recall a batch: create_batch_recall() also accepts factory staff, only for batches made at their factory,
 --   * draft disposals of expired or quarantined boxes at the factory (WH_QUALITY = WH_ALL + factory staff).
--- Approving and completing a disposal and collecting or closing a recall stay with managers and SUPER_ADMIN.
+-- Factory staff also approve, complete and cancel the disposals of their own factory (DISPOSAL_DECIDE in
+-- drug_disposals.sql), since a factory has no warehouse manager. Closing a recall stays with SUPER_ADMIN.
 -- Apply as a trusted superuser after app_role_groups.sql, batch_sellability.sql, batch_recalls.sql and drug_disposals.sql.
 BEGIN;
 DO $$ BEGIN

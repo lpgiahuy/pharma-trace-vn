@@ -19,6 +19,11 @@ export const WH_TRANSFER = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
 /** Quality actions at a factory: drafting disposals and holding batches. Approval and completion stay with managers. */
 export const WH_QUALITY = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+/**
+ * Approving, completing and cancelling a disposal of the own facility. A factory has no warehouse manager, so its
+ * staff decide its disposals themselves; the database keeps everyone to their own facility (disposal_lock).
+ */
+export const DISPOSAL_DECIDE = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
 /** Holding or releasing a batch: warehouse managers, and factory staff for the batches of their own factory. */
 export const BATCH_HOLD = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
