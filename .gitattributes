@@ -1,1 +1,4 @@
 database/*.sh text eol=lf
+
+# Keep the large seed dump out of GitHub language statistics (it would show PLpgSQL as the main language)
+database/seeds/*.sql linguist-generated=true
