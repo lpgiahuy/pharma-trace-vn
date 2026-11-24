@@ -321,6 +321,17 @@ export class VoucherService {
       if (dto.endDate !== undefined) data.end_date = dto.endDate ? new Date(dto.endDate) : null;
       if (dto.status !== undefined) data.status = dto.status;
 
+      // EXPIRED is what the list shows for a voucher whose end date has passed, and the edit form sends that value back.
+      // Moving the end date to the future therefore has to make the voucher usable again. A voucher that was
+      // switched off on purpose (INACTIVE) is left alone.
+      const finalStatus = data.status ?? existing.status;
+      const newEnd: Date | null | undefined = 'end_date' in data ? data.end_date : undefined;
+      // Compared to the second: the form sends milliseconds while the column keeps microseconds.
+      const endMoved = newEnd instanceof Date && Math.abs(newEnd.getTime() - (existing.end_date?.getTime() ?? 0)) >= 1000;
+      if (finalStatus === 'EXPIRED' && endMoved && newEnd.getTime() >= Date.now()) {
+        data.status = 'ACTIVE';
+      }
+
       this.checkTerms({ ...existing, ...data });
       const updated = await tx.vouchers.update({
         where: { id },
