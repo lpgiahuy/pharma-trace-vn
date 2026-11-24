@@ -36,6 +36,8 @@ describe('Product detail and cart price consistency', () => {
     const quantity = 1;
     const tx = {
       customers: { findUnique: jest.fn().mockResolvedValue({ id: 1, status: 'ACTIVE' }) },
+      inventories: { findMany: jest.fn().mockResolvedValue([]) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
       cart_items: { findMany: jest.fn().mockResolvedValue([{
         id: 1, quantity, packaging_variants: { ...variant, medicine },
       }]) },

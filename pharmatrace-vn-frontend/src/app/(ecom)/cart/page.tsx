@@ -21,6 +21,7 @@ import {
 import { useCartStore, CartItem, CartPackagingOption } from '@/store/useCartStore';
 import { productService } from '@/services/product.service';
 import { formatCurrency } from '@/utils';
+import { findStockIssues, capToAvailable } from '@/utils/cart-stock';
 
 const FREE_SHIPPING_THRESHOLD = 500000;
 const STANDARD_SHIPPING_FEE = 30000;
@@ -188,7 +189,8 @@ export default function CartPage() {
 
   // Handlers
   const handleQuantityChange = (item: CartItem, delta: number) => {
-    const newQty = item.quantity + delta;
+    // Raising a quantity stops at the available stock; lowering it is always allowed.
+    const newQty = delta > 0 ? capToAvailable(item.quantity + delta, item.availableStock) : item.quantity + delta;
     if (newQty <= 0) {
       removeItem(item.id);
     } else {
@@ -208,7 +210,11 @@ export default function CartPage() {
     if (cleaned !== '') {
       const parsed = parseInt(cleaned, 10);
       if (parsed > 0 && parsed <= 9999) {
-        updateQuantity(id, parsed);
+        const current = items.find((i) => i.id === id);
+        const applied = parsed > (current?.quantity ?? 0) ? capToAvailable(parsed, current?.availableStock) : parsed;
+        updateQuantity(id, applied);
+        // Show what was actually applied when the request was above the stock.
+        if (applied !== parsed) setQuantityInputs((prev) => ({ ...prev, [id]: String(applied) }));
       }
     }
   };
@@ -223,7 +229,7 @@ export default function CartPage() {
     } else if (parsed > 9999) {
       updateQuantity(item.id, 9999);
     } else {
-      updateQuantity(item.id, parsed);
+      updateQuantity(item.id, parsed > item.quantity ? capToAvailable(parsed, item.availableStock) : parsed);
     }
 
     setQuantityInputs((prev) => {
@@ -238,8 +244,15 @@ export default function CartPage() {
     removeSelectedItems();
   };
 
+  // Lines asking for more than can be supplied; the ones selected for checkout block it.
+  const stockIssues = useMemo(() => findStockIssues(items), [items]);
+  const blockingIssues = useMemo(
+    () => stockIssues.filter((issue) => selectedItemIds.includes(issue.id)),
+    [stockIssues, selectedItemIds],
+  );
+
   const handleProceedToCheckout = () => {
-    if (selectedItems.length === 0) return;
+    if (selectedItems.length === 0 || blockingIssues.length > 0) return;
     router.push('/checkout');
   };
 
@@ -283,6 +296,17 @@ export default function CartPage() {
             </Link>
           </div>
         </header>
+
+        {stockIssues.length > 0 && (
+          <div role="alert" className="mb-4 rounded-[6px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="font-semibold">Some items are above the available stock</p>
+            <ul className="mt-1 list-disc pl-5 space-y-0.5">
+              {stockIssues.map((issue) => (
+                <li key={issue.id}>{issue.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {items.length === 0 ? (
           /* Empty State */
@@ -800,13 +824,15 @@ export default function CartPage() {
                   {/* Primary Checkout Button (Shopee style: disabled if 0 items selected) */}
                   <button
                     type="button"
-                    disabled={selectedItems.length === 0}
+                    disabled={selectedItems.length === 0 || blockingIssues.length > 0}
                     onClick={handleProceedToCheckout}
                     className="w-full mt-5 h-11 bg-[#004996] hover:bg-[#004084] disabled:bg-[#d1d5db] disabled:text-[#6b7280] disabled:cursor-not-allowed text-white font-semibold text-sm rounded-[6px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-none"
                   >
                     <span>
                       {selectedItems.length === 0
                         ? 'Select items to checkout'
+                        : blockingIssues.length > 0
+                        ? 'Fix quantities to continue'
                         : `Proceed to Checkout (${selectedItems.length})`}
                     </span>
                     <ArrowRight className="w-4 h-4" />
@@ -923,13 +949,15 @@ export default function CartPage() {
                 {/* Checkout Button (Full width) */}
                 <button
                   type="button"
-                  disabled={selectedItems.length === 0}
+                  disabled={selectedItems.length === 0 || blockingIssues.length > 0}
                   onClick={handleProceedToCheckout}
                   className="w-full h-11 bg-[#004996] hover:bg-[#004084] disabled:bg-[#d1d5db] disabled:text-[#6b7280] disabled:cursor-not-allowed text-white font-semibold text-sm rounded-[6px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-none"
                 >
                   <span>
                     {selectedItems.length === 0
                       ? 'Select items to checkout'
+                      : blockingIssues.length > 0
+                      ? 'Fix quantities to continue'
                       : `Proceed to Checkout (${selectedItems.length})`}
                   </span>
                   <ArrowRight className="w-4 h-4" />

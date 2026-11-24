@@ -25,6 +25,8 @@ export interface ServerCartItem {
   isPrescription: boolean;
   status: string;
   totalStock?: number;
+  /** Units that can still be supplied for this packaging unit. */
+  availableStock?: number;
   packagingOptions?: ServerCartPackagingOption[];
 }
 
