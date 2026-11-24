@@ -39,8 +39,9 @@ export class LogisticsController {
     return { success: true, data: await this.logistics.changeStatus(id, dto, user) };
   }
 
+  // Warehouse staff confirm the carrier of a shipment their warehouse packed; the database keeps them to it.
   @Patch('shipments/:id/carrier')
-  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist')
+  @Roles('SUPER_ADMIN', 'SuperAdmin', 'STORE_MANAGER', 'StoreManager', 'PHARMACIST', 'Pharmacist', ...WH_ALL)
   async updateCarrier(@Param('id', ParseIntPipe) id: number, @Body() dto: ShipmentCarrierDto, @CurrentUser() user: CurrentUserPayload) {
     return { success: true, data: await this.logistics.updateCarrier(id, dto, user) };
   }
