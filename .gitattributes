@@ -1,1 +1,4 @@
 database/*.sh text eol=lf
+
+# Generated data
+database/seeds/*.sql linguist-generated=true
