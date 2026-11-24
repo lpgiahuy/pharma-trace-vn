@@ -149,7 +149,7 @@ Notes:
 
 ### Demo accounts and data
 
-The development seed has two parts: `database/seeds/01_seed_data.sql` (catalog, facilities and login accounts) and `database/seeds/02_demo_transactions.sql` (a ready-made demo of a manual end-to-end test: purchase orders, batches and boxes, orders in several states, a return and refund, a batch recall and disposal, COD reconciliation, supplier payables, reviews with a moderation report, and a blog article). Personal data in it is replaced with placeholders, and image references point to the author's Cloudinary account, so uploaded images may not load on another setup.
+The development seed in `database/seeds/01_seed_data.sql` holds the catalog, facilities and login accounts, followed by a ready-made demo of a manual end-to-end test: purchase orders, batches and boxes, orders in several states, a return and refund, a batch recall and disposal, COD reconciliation, supplier payables, reviews with a moderation report, and a blog article. It is loaded last by `00_master_init.sql`. Personal data in it is replaced with placeholders, and image references point to the author's Cloudinary account, so uploaded images may not load on another setup.
 
 Accounts:
 
