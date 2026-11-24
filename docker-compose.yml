@@ -21,6 +21,7 @@ services:
       - pharmatrace-network
 
   backend:
+    container_name: phartrace-vn-backend
     build:
       context: ./pharmatrace-vn-backend
     restart: unless-stopped
@@ -53,6 +54,7 @@ services:
       - pharmatrace-network
 
   frontend:
+    container_name: phartrace-vn-frontend
     build:
       context: ./pharmatrace-vn-frontend
       args:
@@ -63,6 +65,7 @@ services:
       - pharmatrace-network
 
   nginx:
+    container_name: phartrace-vn-nginx
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
