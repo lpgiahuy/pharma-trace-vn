@@ -113,10 +113,14 @@ export default function ProfilePage({ portal }: { portal: 'customer' | 'admin' |
     }
   };
 
-  const changePassword = async (values: { currentPassword: string; newPassword: string }) => {
+  const changePassword = async (values: { currentPassword: string; newPassword: string; confirmPassword?: string }) => {
     setSavingPassword(true);
     try {
-      await authService.changePassword(values);
+      // The API rejects unknown fields (HTTP 400), so send only what it accepts; confirmPassword is checked in the form.
+      await authService.changePassword({
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      });
       passwordForm.resetFields();
       message.success('Password updated successfully');
     } catch (err: any) {
