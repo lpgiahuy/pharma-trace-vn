@@ -118,10 +118,91 @@ describe('RecallService.collect and close', () => {
     expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([4, 9]);
   });
 
+  it('accepts a factory as the destination of the administrator collection', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{ created: 1 }]);
+    loadsDetail(tx);
+    await service.collect(admin, 4, { destinationFacilityId: 2045 });
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([4, 2045]);
+  });
+
   it('refuses to close while a collection transfer is open', async () => {
     const { tx, service } = setup();
     tx.$executeRaw.mockRejectedValueOnce(databaseError('RC_COLLECTION_OPEN'));
     expect(await failure(service.close(admin, 4, { note: 'Done' }))).toBe('RC_COLLECTION_OPEN');
+  });
+});
+
+describe('RecallService.collectFromFacility', () => {
+  const transfer = { transferId: 31, transferCode: 'RCL-RCL-20261120-01-31', toFacilityId: 2045, created: true };
+
+  it.each(['collect', 'collectionDestination'])('lets only warehouse managers use %s from the warehouse routes', handler => {
+    expect(allows(WarehouseRecallController, handler, 'WAREHOUSE_MANAGER')).toBe(true);
+    for (const role of ['WAREHOUSE_STAFF', 'SUPER_ADMIN', 'STORE_MANAGER', 'FACTORY_WAREHOUSE_STAFF', 'PHARMACIST']) {
+      expect(allows(WarehouseRecallController, handler, role)).toBe(false);
+    }
+  });
+
+  it('reads the facility that started the recall as the only destination', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{ facilityId: 2045, facilityName: 'PharmaTrace Factory - Binh Duong' }]);
+    await expect(service.collectionDestination(manager, 4)).resolves.toEqual({ facilityId: 2045, facilityName: 'PharmaTrace Factory - Binh Duong' });
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([4]);
+  });
+
+  it('maps a recall the administrator started, which has no destination for the warehouse', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockRejectedValueOnce(databaseError('RC_ORIGIN_UNKNOWN'));
+    expect(await failure(service.collectionDestination(manager, 4))).toBe('RC_ORIGIN_UNKNOWN');
+  });
+
+  it('collects the stock of the caller warehouse into a factory', async () => {
+    const { tx, prisma, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([transfer]);
+    await expect(service.collectFromFacility(manager, 4, { toFacilityId: 2045, note: ' Return to the factory ' })).resolves.toEqual(transfer);
+    expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ role: 'WAREHOUSE_MANAGER', facilityId: 7 }), expect.any(Function));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([4, 2045, 'Return to the factory']);
+  });
+
+  it('takes the source from the account, never from the request', async () => {
+    const { tx, prisma, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([transfer]);
+    const forged = { toFacilityId: 2045, fromFacilityId: 99, facilityId: 99 } as unknown as { toFacilityId: number };
+    await service.collectFromFacility(manager, 4, forged);
+    expect(prisma.withActor).toHaveBeenCalledWith(expect.objectContaining({ facilityId: 7 }), expect.any(Function));
+    expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual([4, 2045, null]);
+  });
+
+  it('returns the open transfer instead of creating a duplicate', async () => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([{ ...transfer, created: false }]);
+    await expect(service.collectFromFacility(manager, 4, { toFacilityId: 2045 })).resolves.toMatchObject({ transferId: 31, created: false });
+  });
+
+  it('refuses the own warehouse as destination before the database', async () => {
+    const { prisma, service } = setup();
+    expect(await failure(service.collectFromFacility(manager, 4, { toFacilityId: 7 }))).toBe('RC_DESTINATION_INVALID');
+    expect(prisma.withActor).not.toHaveBeenCalled();
+  });
+
+  it('needs an account assigned to a warehouse', async () => {
+    const { prisma, service } = setup();
+    expect(await failure(service.collectFromFacility({ ...manager, facilityId: undefined }, 4, { toFacilityId: 2045 }))).toBe('RC_FACILITY_REQUIRED');
+    expect(prisma.withActor).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a closed recall', 'RC_NOT_ACTIVE'],
+    ['a pharmacy or unknown destination', 'RC_DESTINATION_INVALID'],
+    ['a destination other than the facility that started the recall', 'RC_DESTINATION_NOT_ORIGIN'],
+    ['a recall the administrator started', 'RC_ORIGIN_UNKNOWN'],
+    ['a warehouse without recalled stock', 'RC_NOTHING_TO_COLLECT'],
+    ['an account of another warehouse', 'RC_COLLECT_FORBIDDEN'],
+    ['an unknown recall', 'RC_NOT_FOUND'],
+  ])('maps the database refusal for %s', async (_case, code) => {
+    const { tx, service } = setup();
+    tx.$queryRaw.mockRejectedValueOnce(databaseError(code));
+    expect(await failure(service.collectFromFacility(manager, 4, { toFacilityId: 2045 }))).toBe(code);
   });
 });
 

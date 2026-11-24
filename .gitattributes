@@ -2,3 +2,6 @@ database/*.sh text eol=lf
 
 # Generated data
 database/seeds/*.sql linguist-generated=true
+
+# Keep SQL out of the repository language statistics
+*.sql linguist-detectable=false

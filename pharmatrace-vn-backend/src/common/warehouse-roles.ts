@@ -19,10 +19,21 @@ export const WH_TRANSFER = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
 /** Quality actions at a factory: drafting disposals and holding batches. Approval and completion stay with managers. */
 export const WH_QUALITY = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
+/**
+ * Approving, completing and cancelling a disposal of the own facility. A factory has no warehouse manager, so its
+ * staff decide its disposals themselves; the database keeps everyone to their own facility (disposal_lock).
+ */
+export const DISPOSAL_DECIDE = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
 /** Holding or releasing a batch: warehouse managers, and factory staff for the batches of their own factory. */
 export const BATCH_HOLD = [...WH_MANAGER, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
 export const FACTORY_INTAKE = ['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN'] as const;
+
+/**
+ * Receiving a transfer at its destination. Factory staff receive only recall collections sent back to their factory;
+ * the transfer service and public.consume_transfer_custody() refuse them any other transfer type.
+ */
+export const TRANSFER_RECEIVE = [...WH_ALL, 'FACTORY_WAREHOUSE_STAFF'] as const;
 
 export type WarehouseRole = (typeof WH_ALL)[number];
 

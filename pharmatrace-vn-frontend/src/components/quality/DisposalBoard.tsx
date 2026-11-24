@@ -32,7 +32,8 @@ export function DisposalBoard() {
   const mounted = useHydrated();
   const getUser = useAuthStore(state => state.getUser);
   const role = ((mounted ? getUser()?.role : '') || '').toUpperCase().replace(/[\s_-]/g, '');
-  const isManager = role === 'WAREHOUSEMANAGER' || role === 'SUPERADMIN';
+  // Who approves, completes and cancels: managers, and factory staff for their own factory (it has no manager).
+  const isManager = role === 'WAREHOUSEMANAGER' || role === 'SUPERADMIN' || role === 'FACTORYWAREHOUSESTAFF';
 
   const [candidates, setCandidates] = useState<DisposalCandidate[]>([]);
   const [candidateTotal, setCandidateTotal] = useState(0);

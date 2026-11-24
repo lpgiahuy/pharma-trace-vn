@@ -23,7 +23,7 @@ function rolesOf(controller: { prototype: object }, method: string): Set<string>
 }
 
 const managerRoutes: [string, { prototype: object }, string[]][] = [
-  ['transfers', InternalTransferController, ['cancelTransfer', 'receive', 'rejectDamaged', 'resolveDiscrepancy']],
+  ['transfers', InternalTransferController, ['cancelTransfer', 'rejectDamaged', 'resolveDiscrepancy']],
   ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'receiveReturn']],
   ['orders', AdminOrderController, ['getAllOrders', 'getOrderById', 'resolution', 'getAvailableBoxes', 'packOrder']],
   ['returns', AdminReturnsController, ['list', 'detail', 'addAttachment', 'attachment', 'rejectReceipt', 'receive']],
@@ -39,8 +39,9 @@ describe('Warehouse route access', () => {
     });
   });
 
-  // The factory sends stock out: it joins the source side of a transfer, never the receiving or resolving side.
-  it.each(['transfers', 'transfer', 'dispatch', 'transportStaff', 'halt', 'receiveReturn'])('transfers %s admits WAREHOUSE_MANAGER and FACTORY_WAREHOUSE_STAFF', (method) => {
+  // The factory sends stock out and receives back only recall collections (the service and the database check the
+  // transfer type); it never resolves a transfer.
+  it.each(['transfers', 'transfer', 'dispatch', 'transportStaff', 'halt', 'receiveReturn', 'receive'])('transfers %s admits WAREHOUSE_MANAGER and FACTORY_WAREHOUSE_STAFF', (method) => {
     const roles = rolesOf(InternalTransferController, method);
     expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
     expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
@@ -108,11 +109,16 @@ describe('Warehouse route access', () => {
     expect([...roles].sort()).toEqual(['FACTORY_WAREHOUSE_STAFF', 'SUPER_ADMIN']);
   });
 
-  it('lets factory staff hold and release batches and draft disposals, but not approve or complete them', () => {
+  it('lets factory staff hold and release batches and draft, approve, complete and cancel disposals', () => {
     for (const method of ['hold', 'release']) expect(rolesOf(WarehouseInventoryController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
     // Staff routes inherit the controller roles; manager routes override them.
     expect(new Set(Reflect.getMetadata(ROLES_KEY, DisposalController) as string[]).has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
-    for (const method of ['approve', 'complete', 'cancel']) expect(rolesOf(DisposalController, method).has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
+    for (const method of ['approve', 'complete', 'cancel']) {
+      const roles = rolesOf(DisposalController, method);
+      expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(true);
+      expect(roles.has('WAREHOUSE_MANAGER')).toBe(true);
+      expect(roles.has('WAREHOUSE_STAFF')).toBe(false);
+    }
   });
 
   it('lets only managers read the stock of a source facility for a request', () => {

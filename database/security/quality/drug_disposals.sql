@@ -11,6 +11,9 @@ DO $$ BEGIN
   IF to_regprocedure('public.stock_count_variant(integer,integer)') IS NULL OR to_regclass('public.batch_recalls') IS NULL THEN
     RAISE EXCEPTION 'Install stock_counts.sql and batch_recalls.sql first';
   END IF;
+  IF public.app_role_group('DISPOSAL_DECIDE') IS NULL THEN
+    RAISE EXCEPTION 'Re-apply security/access/app_role_groups.sql first (it defines DISPOSAL_DECIDE)';
+  END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS public.disposals (
@@ -182,7 +185,7 @@ GRANT EXECUTE ON FUNCTION public.add_disposal_attachment(integer, text) TO app_u
 
 CREATE OR REPLACE FUNCTION public.approve_disposal(target integer) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
-DECLARE actor integer := public.disposal_actor('WH_MANAGER');
+DECLARE actor integer := public.disposal_actor('DISPOSAL_DECIDE');
 BEGIN
   PERFORM public.disposal_lock(target, ARRAY['DRAFT']);
   UPDATE public.disposals SET status = 'APPROVED', approved_by_id = actor, approved_at = now() WHERE id = target;
@@ -194,7 +197,7 @@ GRANT EXECUTE ON FUNCTION public.approve_disposal(integer) TO app_user;
 CREATE OR REPLACE FUNCTION public.cancel_disposal(target integer, reason text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
 DECLARE
-  actor integer := public.disposal_actor('WH_MANAGER');
+  actor integer := public.disposal_actor('DISPOSAL_DECIDE');
   note text := public.disposal_note(reason);
   d public.disposals := public.disposal_lock(target, ARRAY['DRAFT', 'APPROVED']);
 BEGIN
@@ -209,7 +212,7 @@ GRANT EXECUTE ON FUNCTION public.cancel_disposal(integer, text) TO app_user;
 CREATE OR REPLACE FUNCTION public.complete_disposal(target integer) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
 DECLARE
-  actor integer := public.disposal_actor('WH_MANAGER');
+  actor integer := public.disposal_actor('DISPOSAL_DECIDE');
   d public.disposals := public.disposal_lock(target, ARRAY['APPROVED', 'COMPLETED']);
   lot record; variant integer; medicine integer; moved integer; balance integer;
 BEGIN

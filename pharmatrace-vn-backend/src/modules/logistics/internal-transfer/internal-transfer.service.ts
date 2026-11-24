@@ -375,6 +375,10 @@ export class InternalTransferService {
         throw new NotFoundException(`Internal transfer #${transferId} not found`);
       }
 
+      if (normalizeRole(user.role) === 'FACTORY_WAREHOUSE_STAFF' && transfer.transfer_type !== 'RECALL_COLLECTION') {
+        throw new ForbiddenException('Factory staff can receive only recall collection transfers.');
+      }
+
       if (transfer.status === "RECEIVED") {
         return transfer;
       }

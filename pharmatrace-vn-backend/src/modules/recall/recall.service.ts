@@ -4,7 +4,7 @@ import { authActor, normalizeRole } from '../../common/auth-identity';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WarehouseFacilityQueryDto } from '../warehouse/inventory/dto/warehouse-inventory-query.dto';
-import { CloseRecallDto, CollectRecallDto, CreateRecallDto } from './dto/recall.dto';
+import { CloseRecallDto, CollectFromFacilityDto, CollectRecallDto, CreateRecallDto } from './dto/recall.dto';
 import { recallDatabase, recallError } from './recall-errors';
 
 type Tx = Prisma.TransactionClient;
@@ -48,6 +48,19 @@ export interface RecallImpact {
   totalBoxes: number;
   byLocation: Record<RecallImpactBox['location'], number>;
   boxes: RecallImpactBox[];
+}
+
+export interface CollectionTransfer {
+  transferId: number;
+  transferCode: string;
+  toFacilityId: number;
+  /** False when an open collection transfer of this recall from this warehouse already existed and was returned. */
+  created: boolean;
+}
+
+export interface CollectionDestination {
+  facilityId: number;
+  facilityName: string;
 }
 
 export interface RecallTask {
@@ -94,7 +107,8 @@ export class RecallService {
 
   /**
    * Factory staff recall batches their own factory made. The database refuses any other batch. Collecting the stock and
-   * closing the recall stay with the super administrator, who sees the recall in the admin list.
+   * closing the recall stay with the super administrator, who sees the recall in the admin list; the manager of a warehouse
+   * holding recalled stock may also collect it (collectFromFacility).
    */
   createForFactory(user: CurrentUserPayload, dto: CreateRecallDto): Promise<{ id: number; recallCode: string }> {
     if (!Number.isInteger(Number(user.facilityId)) || Number(user.facilityId) <= 0) throw recallError('RC_FACILITY_REQUIRED');
@@ -108,6 +122,28 @@ export class RecallService {
 
   collect(user: CurrentUserPayload, id: number, dto: CollectRecallDto): Promise<RecallDetail> {
     return this.change(user, id, tx => tx.$queryRaw`SELECT public.collect_batch_recall(${id}::integer, ${dto.destinationFacilityId}::integer)`);
+  }
+
+  /** Where a warehouse manager may send the recalled stock: only the facility that started the recall. */
+  async collectionDestination(user: CurrentUserPayload, id: number): Promise<CollectionDestination> {
+    if (!Number.isInteger(Number(user.facilityId)) || Number(user.facilityId) <= 0) throw recallError('RC_FACILITY_REQUIRED');
+    const [destination] = await recallDatabase(this.prisma.withActor(authActor(user), tx => tx.$queryRaw<CollectionDestination[]>`
+      SELECT facility_id AS "facilityId", facility_name AS "facilityName" FROM public.recall_collection_origin(${id}::integer)`));
+    return destination;
+  }
+
+  /**
+   * A warehouse manager collects the recalled stock of their own warehouse, back to the facility that started the recall. The source is the facility of the signed-in
+   * account (the database reads it from the session), never a value of the request. Calling it again while the
+   * transfer is open returns that transfer.
+   */
+  async collectFromFacility(user: CurrentUserPayload, id: number, dto: CollectFromFacilityDto): Promise<CollectionTransfer> {
+    if (!Number.isInteger(Number(user.facilityId)) || Number(user.facilityId) <= 0) throw recallError('RC_FACILITY_REQUIRED');
+    if (dto.toFacilityId === Number(user.facilityId)) throw recallError('RC_DESTINATION_INVALID');
+    const [transfer] = await recallDatabase(this.prisma.withActor(authActor(user), tx => tx.$queryRaw<CollectionTransfer[]>`
+      SELECT transfer_id AS "transferId", transfer_code AS "transferCode", to_facility_id AS "toFacilityId", created
+      FROM public.collect_recall_from_facility(${id}::integer, ${dto.toFacilityId}::integer, ${dto.note?.trim() || null}::text)`));
+    return transfer;
   }
 
   close(user: CurrentUserPayload, id: number, dto: CloseRecallDto): Promise<RecallDetail> {

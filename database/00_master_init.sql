@@ -132,6 +132,7 @@
 \i /docker-entrypoint-initdb.d/security/quality/batch_recalls.sql
 \i /docker-entrypoint-initdb.d/security/quality/drug_disposals.sql
 \i /docker-entrypoint-initdb.d/security/quality/factory_quality_actions.sql
+\i /docker-entrypoint-initdb.d/security/quality/recall_collection_scope.sql
 \i /docker-entrypoint-initdb.d/security/quality/warehouse_traceability.sql
 \i /docker-entrypoint-initdb.d/security/quality/public_trace.sql
 \i /docker-entrypoint-initdb.d/security/reporting/sales_reports.sql

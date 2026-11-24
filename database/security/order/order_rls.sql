@@ -47,7 +47,7 @@ LANGUAGE sql STABLE SET search_path = pg_catalog AS $$
           WHEN 'status' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST')
           WHEN 'pack' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST') OR public.app_role_in_group('WH_ALL'))
           WHEN 'dispatch' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_TRANSFER'))
-          WHEN 'receive' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
+          WHEN 'receive' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER', 'FACTORY_WAREHOUSE_STAFF') OR public.app_role_in_group('WH_ALL'))
           WHEN 'replace' THEN (current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'STORE_MANAGER') OR public.app_role_in_group('WH_ALL'))
           WHEN 'prescription' THEN current_setting('app.current_user_role', true) IN ('SUPER_ADMIN', 'PHARMACIST')
           ELSE false END
