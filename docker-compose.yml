@@ -1,28 +1,89 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
     container_name: phartrace-vn-db
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
       POSTGRES_DB: ${DB_NAME:-phartrace-vn-db}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
-    ports:
-      - "${DB_PORT:-5433}:5432"
     volumes:
       - phartrace_postgres_data:/var/lib/postgresql/data
       - ./database:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DB_NAME:-phartrace-vn-db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - pharmatrace-network
+
+  backend:
+    container_name: phartrace-vn-backend
+    build:
+      context: ./pharmatrace-vn-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:-}@db:5432/${DB_NAME:-phartrace-vn-db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      QR_SECRET_KEY: ${QR_SECRET_KEY:-}
+      AUTH_RLS_ENABLED: ${AUTH_RLS_ENABLED:-false}
+      FACTORY_BATCH_MAX_BOXES: ${FACTORY_BATCH_MAX_BOXES:-10000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      API_GEMINI: ${API_GEMINI:-}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-}
+      GEMINI_CHAT_FALLBACK_MODEL: ${GEMINI_CHAT_FALLBACK_MODEL:-}
+      GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-}
+      GEMINI_EMBED_DIMENSIONS: ${GEMINI_EMBED_DIMENSIONS:-}
+    volumes:
+      - chatbot_cache:/app/cache
+      - uploads:/app/uploads
+    networks:
+      - pharmatrace-network
+
+  frontend:
+    container_name: phartrace-vn-frontend
+    build:
+      context: ./pharmatrace-vn-frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/v1/pharmatrace}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
+    restart: unless-stopped
+    networks:
+      - pharmatrace-network
+
+  nginx:
+    container_name: phartrace-vn-nginx
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - pharmatrace-network
 
 volumes:
   phartrace_postgres_data:
     driver: local
+  chatbot_cache:
+  uploads:
 
 networks:
   pharmatrace-network:
     driver: bridge
-

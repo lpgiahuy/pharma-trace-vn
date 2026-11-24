@@ -1,0 +1,5 @@
+# Local development only (loaded automatically by `docker compose`; skipped with `-f docker-compose.yml`).
+services:
+  db:
+    ports:
+      - "${DB_PORT:-5433}:5432"

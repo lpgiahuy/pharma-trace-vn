@@ -16,7 +16,10 @@ async function bootstrap() {
 
   // 1. Enable CORS for Next.js
   app.enableCors({
-    origin: ["http://localhost:3000", "http://localhost"],
+    origin: (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://localhost")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
     credentials: true,
   });
 
@@ -54,14 +57,22 @@ async function bootstrap() {
       "bearerAuth",
     )
     .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup("api-docs", app, document);
+  // Swagger is only exposed outside production; set SWAGGER_ENABLED=true to force it on.
+  const swaggerEnabled =
+    process.env.SWAGGER_ENABLED === "true" ||
+    process.env.NODE_ENV !== "production";
+  if (swaggerEnabled) {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup("api-docs", app, document);
+  }
 
   const PORT = process.env.PORT || 3002;
   await app.listen(PORT);
   console.log(
     `NestJS Backend running at http://localhost:${PORT}/v1/pharmatrace`,
   );
-  console.log(`Swagger Docs available at http://localhost:${PORT}/api-docs`);
+  if (swaggerEnabled) {
+    console.log(`Swagger Docs available at http://localhost:${PORT}/api-docs`);
+  }
 }
 void bootstrap();
