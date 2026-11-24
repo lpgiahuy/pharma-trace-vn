@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Alert, App, Button, Input, Modal, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Handover, PendingCarrier, PendingPackage, warehouseService } from '@/services/warehouse.service';
@@ -28,7 +29,7 @@ export function HandoverBoard() {
   const [code, setCode] = useState('');
   const [driver, setDriver] = useState({ driverName: '', driverPhone: '', vehiclePlate: '', note: '' });
   const [handoverCode, setHandoverCode] = useState(newHandoverCode);
-  const [feedback, setFeedback] = useState<{ ok: boolean; text: string }>();
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string; confirmCarrier?: boolean }>();
   const [busy, setBusy] = useState(false);
   const [manifest, setManifest] = useState<Handover>();
   const scanInput = useRef<React.ComponentRef<typeof Input>>(null);
@@ -46,11 +47,11 @@ export function HandoverBoard() {
     const pkg = owner?.packages.find(item => item.packageCode === value);
     const problem = !owner || !pkg ? `Package ${value} is not waiting for pickup at this warehouse.`
       : carrier && owner.courierName !== carrier ? `Package ${value} belongs to ${owner.courierName}, not ${carrier}.`
-      : !pkg.carrierConfirmed ? `Confirm the carrier tracking number of order ${pkg.orderCode} on the Shipments page first.`
+      : !pkg.carrierConfirmed ? `Confirm the carrier and tracking number of order ${pkg.orderCode} first: open it on the Shipments page and choose "Set carrier and tracking number".`
       : scanned.some(item => item.packageCode === value) ? `Package ${value} is already scanned.`
       : undefined;
     if (problem || !owner || !pkg) {
-      setFeedback({ ok: false, text: problem ?? '' });
+      setFeedback({ ok: false, text: problem ?? '', confirmCarrier: !!pkg && !pkg.carrierConfirmed });
     } else {
       setCarrier(owner.courierName);
       setScanned(list => [...list, pkg]);
@@ -88,7 +89,8 @@ export function HandoverBoard() {
         <h2 id="handover-heading" className="m-0 text-base font-semibold">New handover {carrier && <Tag color="blue">{carrier}</Tag>}</h2>
         <Input ref={scanInput} autoFocus size="large" placeholder="Scan a package code" value={code}
           onChange={event => setCode(event.target.value)} onPressEnter={scan} />
-        {feedback && <Alert showIcon type={feedback.ok ? 'success' : 'error'} title={feedback.text} />}
+        {feedback && <Alert showIcon type={feedback.ok ? 'success' : 'error'} title={feedback.text}
+          action={feedback.confirmCarrier ? <Link href="/warehouse/shipments" className="font-semibold">Open Shipments</Link> : undefined} />}
         <ul className="m-0 list-none space-y-1 p-0 text-sm">
           {scanned.map(pkg => (
             <li key={pkg.packageCode} className="flex items-center justify-between rounded border border-slate-200 p-2">
@@ -119,7 +121,9 @@ export function HandoverBoard() {
               {group.packages.map(pkg => (
                 <li key={pkg.packageCode}>
                   <span className="font-mono">{pkg.packageCode}</span> · order {pkg.orderCode} · {pkg.recipientName}
-                  {!pkg.carrierConfirmed && <Tag className="ml-2" color="orange">Carrier not confirmed</Tag>}
+                  {!pkg.carrierConfirmed && <Link href="/warehouse/shipments" className="ml-2" title={`Confirm the carrier of order ${pkg.orderCode} on the Shipments page`}>
+                    <Tag color="orange">Carrier not confirmed · confirm on Shipments</Tag>
+                  </Link>}
                 </li>
               ))}
             </ul>

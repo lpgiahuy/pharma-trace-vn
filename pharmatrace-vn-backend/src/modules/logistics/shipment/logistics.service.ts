@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { authActor } from '../../../common/auth-identity';
 import { workflowDatabase } from '../../../common/workflow-database';
@@ -13,6 +13,21 @@ import { ReconcileCodDto } from './dto/cod-reconciliation.dto';
 import { RecordRefundPaymentDto, ReturnRefundDto } from './dto/return-refund.dto';
 import { validateInspectionUids } from '../inspection.helper';
 import { LogisticsHistoryEvent } from '../logistics.types';
+
+/** Maps the errors of public.confirm_shipment_carrier() to the responses the carrier dialog shows. */
+function carrierError(error: unknown): unknown {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return error;
+  const meta = error.meta as { code?: string; message?: string } | undefined;
+  const text = `${meta?.message ?? ''} ${error.message}`;
+  if (error.code === 'P2002' || meta?.code === '23505' || /duplicate key value/i.test(text)) {
+    return new BadRequestException('This carrier tracking number is already registered');
+  }
+  if (text.includes('CR_NOT_FOUND')) return new NotFoundException('Shipment not found');
+  if (text.includes('CR_NOT_PENDING_PICKUP')) return new BadRequestException('Carrier details can only be changed before pickup');
+  if (text.includes('CR_INPUT_INVALID')) return new BadRequestException('Choose a carrier and enter its tracking number');
+  if (text.includes('CR_FORBIDDEN')) return new ForbiddenException('Only the facility that exports the order confirms its carrier');
+  return error;
+}
 
 @Injectable()
 export class LogisticsService {
@@ -120,19 +135,15 @@ export class LogisticsService {
     if (!dto.courierName?.trim() || !dto.trackingNumber?.trim()) {
       throw new BadRequestException('Choose a carrier and enter its tracking number');
     }
-    return this.prisma.withOrder('status', async (tx) => {
+    // public.confirm_shipment_carrier() keeps every role to the shipments of its own export facility.
+    return this.prisma.withOrder('carrier', async (tx) => {
       const shipment = await tx.shipments.findFirst({ where: { id } });
       if (!shipment) throw new NotFoundException('Shipment not found');
       if (shipment.shipping_status !== 'PENDING_PICKUP') throw new BadRequestException('Carrier details can only be changed before pickup');
       try {
-        const changed = await tx.shipments.updateMany({
-          where: { id, shipping_status: 'PENDING_PICKUP' },
-          data: { courier_name: dto.courierName.trim().toUpperCase(), tracking_number: dto.trackingNumber.trim(), carrier_confirmed_at: new Date(), updated_at: new Date() },
-        });
-        if (changed.count !== 1) throw new BadRequestException('Shipment changed. Reload before editing');
+        await tx.$executeRaw`SELECT public.confirm_shipment_carrier(${id}, ${dto.courierName.trim().toUpperCase()}, ${dto.trackingNumber.trim()})`;
       } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new BadRequestException('This carrier tracking number is already registered');
-        throw error;
+        throw carrierError(error);
       }
       return tx.shipments.findFirst({ where: { id } });
     }, authActor(user));

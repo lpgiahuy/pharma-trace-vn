@@ -13,7 +13,7 @@ const manager: AuthActor = { id: 4, type: 'employee', role: 'WAREHOUSE_MANAGER',
 const factory: AuthActor = { id: 5, type: 'employee', role: 'FACTORY_WAREHOUSE_STAFF', facilityId: 7 };
 
 describe('Order context for warehouse managers', () => {
-  it.each(['read', 'pack', 'transfer_read', 'dispatch', 'receive', 'replace'] as OrderOperation[])('allows %s at the own warehouse', async (operation) => {
+  it.each(['read', 'pack', 'carrier', 'transfer_read', 'dispatch', 'receive', 'replace'] as OrderOperation[])('allows %s at the own warehouse', async (operation) => {
     const { service, settings } = setup();
     await expect(service.withOrder(operation, () => Promise.resolve('ok'), manager)).resolves.toBe('ok');
     expect(settings()).toEqual([operation, '4', 'employee', 'WAREHOUSE_MANAGER', '7']);
@@ -31,7 +31,7 @@ describe('Order context for warehouse managers', () => {
     await expect(service.withOrder('dispatch', jest.fn(), { ...manager, facilityId: null })).rejects.toThrow('not assigned to a facility');
   });
 
-  it.each(['read', 'replace', 'pack'] as OrderOperation[])('keeps factory warehouse staff out of %s', async (operation) => {
+  it.each(['read', 'replace', 'pack', 'carrier'] as OrderOperation[])('keeps factory warehouse staff out of %s', async (operation) => {
     const { service } = setup();
     await expect(service.withOrder(operation, jest.fn(), factory)).rejects.toThrow('Invalid order access scope');
   });

@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { LogisticsService } from './logistics.service';
 import { ShipmentQueryDto } from './dto/shipment-query.dto';
 
@@ -123,14 +124,37 @@ describe('LogisticsService', () => {
     await expect(service.changeStatus(7, { status: 'PICKED_UP' }, actor)).rejects.toThrow(/does not match/);
   });
 
-  it('confirms actual carrier details before pickup', async () => {
+  it('confirms actual carrier details before pickup through the database function', async () => {
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    Object.assign(tx, { $executeRaw: executeRaw });
     tx.shipments.findFirst.mockResolvedValue({ id: 7, shipping_status: 'PENDING_PICKUP' });
-    tx.shipments.updateMany.mockResolvedValue({ count: 1 });
     await service.updateCarrier(7, { courierName: ' ghn ', trackingNumber: ' ABC ' }, actor);
-    expect(tx.shipments.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 7, shipping_status: 'PENDING_PICKUP' },
-      data: expect.objectContaining({ courier_name: 'GHN', tracking_number: 'ABC', carrier_confirmed_at: expect.any(Date) }),
-    }));
+    expect(prisma.withOrder).toHaveBeenCalledWith('carrier', expect.any(Function), expect.objectContaining(actor));
+    const [sql, ...values] = executeRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(sql.join('?')).toContain('public.confirm_shipment_carrier(');
+    expect(values).toEqual([7, 'GHN', 'ABC']);
+    expect(tx.shipments.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('lets warehouse staff confirm the carrier under the carrier operation', async () => {
+    const staff = { id: 9, type: 'employee' as const, role: 'WAREHOUSE_STAFF', facilityId: 2046 };
+    Object.assign(tx, { $executeRaw: jest.fn().mockResolvedValue(1) });
+    tx.shipments.findFirst.mockResolvedValue({ id: 7, shipping_status: 'PENDING_PICKUP' });
+    await service.updateCarrier(7, { courierName: 'GHN', trackingNumber: 'ABC' }, staff);
+    expect(prisma.withOrder).toHaveBeenCalledWith('carrier', expect.any(Function), expect.objectContaining(staff));
+  });
+
+  it.each([
+    ['CR_NOT_FOUND', NotFoundException, /not found/i],
+    ['CR_NOT_PENDING_PICKUP', BadRequestException, /before pickup/],
+    ['duplicate key value violates unique constraint "shipments_tracking_number_key"', BadRequestException, /already registered/],
+  ])('maps the database refusal %s', async (raised, type, text) => {
+    const error = new Prisma.PrismaClientKnownRequestError(`Raw query failed. Message: \`ERROR: ${raised}\``, { code: 'P2010', clientVersion: 'test', meta: { message: `ERROR: ${raised}` } });
+    Object.assign(tx, { $executeRaw: jest.fn().mockRejectedValue(error) });
+    tx.shipments.findFirst.mockResolvedValue({ id: 7, shipping_status: 'PENDING_PICKUP' });
+    const failure = service.updateCarrier(7, { courierName: 'GHN', trackingNumber: 'ABC' }, actor);
+    await expect(failure).rejects.toBeInstanceOf(type);
+    await expect(failure).rejects.toThrow(text);
   });
 
   it('rejects a blank carrier or tracking number before writing', async () => {

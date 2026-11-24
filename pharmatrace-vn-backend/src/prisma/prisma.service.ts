@@ -8,7 +8,7 @@ import { REPORT_READ } from '../common/report-roles';
 
 export type ReviewScope = 'public' | 'customer' | 'staff' | 'moderator' | 'helpful';
 export type VoucherScope = 'validate' | 'read' | 'manage' | 'available';
-export type OrderOperation = 'read' | 'checkout' | 'cancel' | 'customer_receive' | 'status' | 'pack' | 'transfer_read' | 'dispatch' | 'receive' | 'replace' | 'prescription' | 'loyalty';
+export type OrderOperation = 'read' | 'checkout' | 'cancel' | 'customer_receive' | 'status' | 'carrier' | 'pack' | 'transfer_read' | 'dispatch' | 'receive' | 'replace' | 'prescription' | 'loyalty';
 
 export interface AuthContext {
   actor?: AuthActor;
@@ -419,6 +419,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       read: ['CUSTOMER', 'SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL, 'ACCOUNTANT', 'FINANCE_MANAGER'],
       checkout: ['CUSTOMER'], cancel: ['CUSTOMER'], customer_receive: ['CUSTOMER'],
       status: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST'],
+      // The export facility confirms its carrier; mirrored by public.confirm_shipment_carrier().
+      carrier: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL],
       pack: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_ALL],
       // Factory staff send stock out and never resolve transfers; they receive only recall collections sent to their factory.
       transfer_read: ['SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST', ...WH_TRANSFER],

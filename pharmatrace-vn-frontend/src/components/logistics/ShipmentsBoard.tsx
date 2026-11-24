@@ -118,9 +118,10 @@ export function ShipmentsBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
     }
     setActionLoading(true);
     try {
-      const res = await logisticsService.updateCarrier(selectedShipment.id, chosenCarrier.trim(), carrierTracking.trim());
-      setSelectedShipment(res.data);
+      await logisticsService.updateCarrier(selectedShipment.id, chosenCarrier.trim(), carrierTracking.trim());
       setCarrierModalOpen(false);
+      // The update returns the bare shipment; reload the detail so the order, recipient and history stay visible.
+      void loadShipmentDetail(selectedShipment.id);
       fetchShipments();
       message.success('Carrier tracking confirmed');
     } catch (error: unknown) {
@@ -132,6 +133,8 @@ export function ShipmentsBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
   const role = (user?.role || '').toUpperCase().replace(/[\s_-]/g, '');
   // Delivery updates, RMA approval and refunds are not warehouse work.
   const canUpdateStatus = portal === 'admin' && (role === 'SUPERADMIN' || role === 'STOREMANAGER' || role === 'PHARMACIST');
+  // The facility that packed the order confirms its carrier; the server keeps warehouse staff to their own warehouse.
+  const canConfirmCarrier = canUpdateStatus || (portal === 'warehouse' && ['SUPERADMIN', 'WAREHOUSEMANAGER', 'WAREHOUSESTAFF'].includes(role));
 
   const loadList = useCallback(() => logisticsService.getShipments(shipmentQuery(page, filters)), [page, filters]);
   const { result, loading, reload: fetchShipments } = useLogisticsList(loadList, 'Unable to load shipments');
@@ -416,14 +419,14 @@ export function ShipmentsBoard({ portal }: { portal: 'admin' | 'warehouse' }) {
                 type="info"
                 showIcon
                 title="Warehouse operations"
-                description="Warehouse staff can receive physical returns into quarantine. Delivery updates and QA require Store Manager or Pharmacist roles."
+                description="Warehouse staff confirm the carrier and tracking number of the orders their warehouse packed, then hand the packages over on the Handover page. They also receive physical returns into quarantine. Delivery updates and return QA are done by the Store Manager or Pharmacist."
               />
             )}
 
             {selectedShipment.shipping_status === 'DELIVERED' && <Alert type="info" showIcon
               title="Customer returns are managed through RMA"
               description={<>The delivery history is preserved. A customer return must be approved before arranging its transport. <Link href={`/${portal}/returns`} className="font-semibold">Open Returns &amp; Exchanges</Link></>} />}
-            {canUpdateStatus && selectedShipment.shipping_status === 'PENDING_PICKUP' && <div className="space-y-2">
+            {canConfirmCarrier && selectedShipment.shipping_status === 'PENDING_PICKUP' && <div className="space-y-2">
               {!selectedShipment.carrier_confirmed_at && <Alert type="warning" showIcon title="Confirm the carrier tracking before pickup"
                 description="The reference created during packing is not a confirmed carrier booking." />}
               <Button onClick={() => {

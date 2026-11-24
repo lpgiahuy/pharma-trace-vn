@@ -127,6 +127,7 @@
 \i /docker-entrypoint-initdb.d/security/inventory/factory_batch_void.sql
 \i /docker-entrypoint-initdb.d/security/order/order_packages.sql
 \i /docker-entrypoint-initdb.d/security/order/carrier_handovers.sql
+\i /docker-entrypoint-initdb.d/security/order/shipment_carrier_confirmation.sql
 \i /docker-entrypoint-initdb.d/security/inventory/stock_counts.sql
 \i /docker-entrypoint-initdb.d/security/quality/batch_recalls.sql
 \i /docker-entrypoint-initdb.d/security/quality/drug_disposals.sql

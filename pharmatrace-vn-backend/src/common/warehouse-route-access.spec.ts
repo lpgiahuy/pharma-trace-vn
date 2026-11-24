@@ -24,7 +24,7 @@ function rolesOf(controller: { prototype: object }, method: string): Set<string>
 
 const managerRoutes: [string, { prototype: object }, string[]][] = [
   ['transfers', InternalTransferController, ['cancelTransfer', 'rejectDamaged', 'resolveDiscrepancy']],
-  ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'receiveReturn']],
+  ['shipments', LogisticsController, ['shipments', 'shipment', 'updateShipment', 'updateCarrier', 'receiveReturn']],
   ['orders', AdminOrderController, ['getAllOrders', 'getOrderById', 'resolution', 'getAvailableBoxes', 'packOrder']],
   ['returns', AdminReturnsController, ['list', 'detail', 'addAttachment', 'attachment', 'rejectReceipt', 'receive']],
   ['fulfillment', FulfillmentController, ['queue', 'pickList', 'addPackage', 'completePacking', 'voidPackage', 'label']],
@@ -68,9 +68,15 @@ describe('Warehouse route access', () => {
     expect(rolesOf(InternalTransferController, 'resolveDiscrepancy').has('WAREHOUSE_STAFF')).toBe(false);
   });
 
+  // The database keeps warehouse staff to the shipments their own warehouse exports (confirm_shipment_carrier).
+  it('lets every warehouse role confirm the carrier of a shipment, and keeps the store roles', () => {
+    const roles = rolesOf(LogisticsController, 'updateCarrier');
+    for (const role of ['WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SUPER_ADMIN', 'STORE_MANAGER', 'PHARMACIST']) expect(roles.has(role)).toBe(true);
+    expect(roles.has('FACTORY_WAREHOUSE_STAFF')).toBe(false);
+  });
+
   it('keeps manager-only and reviewer routes closed to warehouse managers', () => {
     expect(rolesOf(InternalTransferController, 'reroute').has('WAREHOUSE_MANAGER')).toBe(false);
-    expect(rolesOf(LogisticsController, 'updateCarrier').has('WAREHOUSE_MANAGER')).toBe(false);
     expect(rolesOf(AdminOrderController, 'updateOrderStatus').has('WAREHOUSE_MANAGER')).toBe(false);
     for (const method of ['approve', 'inspect', 'approveRefund', 'close']) {
       expect(rolesOf(AdminReturnsController, method).has('WAREHOUSE_MANAGER')).toBe(false);
