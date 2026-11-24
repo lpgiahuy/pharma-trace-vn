@@ -436,7 +436,8 @@ integration('Logistics workflow gaps using the restricted application role', () 
 
     const transfer = approved.transfer!.id;
     expect((await stock.warehouseTransfers(depotStaff, {})).find(row => row.id === transfer)).toMatchObject({ transfer_type: 'REPLENISHMENT', order_id: null });
-    await transfers.adminDispatchInternalTransfer(transfer, { transportMode: 'INTERNAL', transportEmployeeId: depotStaff.id, manifest: [{ variantId: variant, quantity: 20, boxUids: uids }] }, depotStaff);
+    // A transfer created from a stock request is carried by the employee who approved the request (transfer_transport_staff).
+    await transfers.adminDispatchInternalTransfer(transfer, { transportMode: 'INTERNAL', transportEmployeeId: depotManager.id, manifest: [{ variantId: variant, quantity: 20, boxUids: uids }] }, depotStaff);
     expect(await inventory(depot, variant)).toEqual({ stock_quantity: 0, reserved_quantity: 0 });
 
     const received = await transfers.adminReceiveInternalTransfer(transfer, pharmacyManager, { lines: [{ variantId: variant, receivedQuantity: 18, damagedQuantity: 2, missingQuantity: 0, goodUids: uids.slice(0, 18), damagedUids: uids.slice(18) }] });
