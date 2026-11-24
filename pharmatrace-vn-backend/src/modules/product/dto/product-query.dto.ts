@@ -8,6 +8,7 @@ import {
   IsBoolean,
   IsNumber,
   IsIn,
+  Min,
 } from 'class-validator';
 
 export class ProductQueryDto {
@@ -44,12 +45,14 @@ export class ProductQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(0, { message: 'Minimum price cannot be negative' })
   minPrice?: number;
 
   @ApiPropertyOptional({ description: 'Filter by maximum price (VND)' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(0, { message: 'Maximum price cannot be negative' })
   maxPrice?: number;
 
   @ApiPropertyOptional({ description: 'Filter by manufacturer name' })

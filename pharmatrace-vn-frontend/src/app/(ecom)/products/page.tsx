@@ -21,6 +21,7 @@ import { Product } from '@/types/product.types';
 import { Category } from '@/types/category.types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
 import { formatCurrency, cn } from '@/utils';
+import { parsePriceRange } from '@/utils/price-range';
 import { ProductCard } from '@/components/shared/ProductCard';
 
 const buildCategoryTree = (flatList: Category[]): (Category & { children?: Category[] })[] => {
@@ -213,6 +214,7 @@ function ProductListContainer() {
 
   const [localMin, setLocalMin] = useState(minPrice);
   const [localMax, setLocalMax] = useState(maxPrice);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(search);
 
   useEffect(() => {
@@ -278,18 +280,20 @@ function ProductListContainer() {
     setSearchInput('');
     setLocalMin('');
     setLocalMax('');
+    setPriceError(null);
     setBrandSearch('');
     router.push('/products');
   };
 
   const handleApplyCustomPrice = () => {
     const current = new URLSearchParams(Array.from(searchParams.entries()));
-    const parsedMin = localMin ? Math.max(0, parseInt(localMin.replace(/[^0-9]/g, ''), 10) || 0) : null;
-    const parsedMax = localMax ? Math.max(0, parseInt(localMax.replace(/[^0-9]/g, ''), 10) || 0) : null;
+    const { min: parsedMin, max: parsedMax, error } = parsePriceRange(localMin, localMax);
+    setPriceError(error);
+    if (error) return;
 
-    if (parsedMin !== null && !isNaN(parsedMin)) current.set('minPrice', String(parsedMin));
+    if (parsedMin !== null) current.set('minPrice', String(parsedMin));
     else current.delete('minPrice');
-    if (parsedMax !== null && !isNaN(parsedMax)) current.set('maxPrice', String(parsedMax));
+    if (parsedMax !== null) current.set('maxPrice', String(parsedMax));
     else current.delete('maxPrice');
     current.set('page', '1');
     router.push(`/products?${current.toString()}`);
@@ -545,6 +549,9 @@ function ProductListContainer() {
               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-medium">₫</span>
             </div>
           </div>
+          {priceError && (
+            <p role="alert" className="text-[11px] text-rose-600">{priceError}</p>
+          )}
           <button
             type="button"
             onClick={handleApplyCustomPrice}
