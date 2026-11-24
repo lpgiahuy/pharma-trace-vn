@@ -241,10 +241,10 @@ function WishlistContent() {
                   const displayPrice = activeVariant.price;
                   const displayOriginalPrice = activeVariant.originalPrice;
                   const hasDiscount = Boolean(displayOriginalPrice && displayOriginalPrice > displayPrice);
-                  const stockCount = product.totalStock !== undefined ? product.totalStock : 0;
-                  const isAvailable =
-                    product.status === 'ACTIVE' &&
-                    (product.totalStock ?? 0) > 0;
+                  // Stock of the selected packaging unit; fall back to the medicine total when the unit has no figure.
+                  const variantStock = (activeVariant as { stock?: number }).stock;
+                  const stockCount = typeof variantStock === 'number' ? variantStock : (product.totalStock ?? 0);
+                  const isAvailable = product.status === 'ACTIVE' && stockCount > 0;
 
                   return (
                     <tr key={product.id} className="hover:bg-slate-50/60 transition-colors">
@@ -387,10 +387,10 @@ function WishlistContent() {
               const displayPrice = activeVariant.price;
               const displayOriginalPrice = activeVariant.originalPrice;
               const hasDiscount = Boolean(displayOriginalPrice && displayOriginalPrice > displayPrice);
-              const stockCount = product.totalStock !== undefined ? product.totalStock : 0;
-              const isAvailable =
-                product.status === 'ACTIVE' &&
-                (product.totalStock ?? 0) > 0;
+              // Stock of the selected packaging unit; fall back to the medicine total when the unit has no figure.
+              const variantStock = (activeVariant as { stock?: number }).stock;
+              const stockCount = typeof variantStock === 'number' ? variantStock : (product.totalStock ?? 0);
+              const isAvailable = product.status === 'ACTIVE' && stockCount > 0;
 
               return (
                 <div key={product.id} className="py-4 space-y-3">

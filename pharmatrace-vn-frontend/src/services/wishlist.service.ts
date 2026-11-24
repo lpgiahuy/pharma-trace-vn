@@ -7,6 +7,8 @@ export interface WishlistItemPackagingOption {
   originalPrice?: number | null;
   discountPercent?: number;
   isBaseUnit?: boolean;
+  /** Available units (stock minus reserved) for this packaging unit. */
+  stock?: number;
 }
 
 export interface WishlistItem {
